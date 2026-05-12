@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastOJ - 在线评测系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <nav class="nav">
+            <a href="#" class="logo" onclick="showSection('problems')">FastOJ</a>
+            <div class="nav-links">
+                <button class="nav-btn" onclick="showSection('problems')">题目</button>
+                <button class="nav-btn" onclick="showSection('submit')" id="btn-submit" style="display:none;">提交</button>
+                <button class="nav-btn" onclick="showSection('status')" id="btn-status" style="display:none;">记录</button>
+                <button class="nav-btn" onclick="logout()" id="btn-logout" style="display:none;">退出</button>
+                <button class="nav-btn primary" onclick="showSection('login')" id="btn-login">登录</button>
+                <button class="nav-btn" onclick="showSection('register')" id="btn-register">注册</button>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-container">
+        <!-- Problems Section -->
+        <section id="section-problems" class="section active">
+            <div class="hero">
+                <h1>在线评测系统</h1>
+                <p>提升算法能力，为技术面试做准备</p>
+            </div>
+            <div id="problems-list" class="problems-grid">
+                <p class="loading">加载中...</p>
+            </div>
+        </section>
+
+        <!-- Problem Detail Section -->
+        <section id="section-problem-detail" class="section">
+            <a class="back-btn" onclick="showSection('problems')">← 返回题目列表</a>
+            <div id="problem-detail-content"></div>
+        </section>
+
+        <!-- Login Section -->
+        <section id="section-login" class="section">
+            <div class="form-container">
+                <h2 class="form-title">登录</h2>
+                <form onsubmit="login(event)">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" id="login-username" placeholder="请输入用户名" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="login-password" placeholder="请输入密码" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">登录</button>
+                </form>
+                <p style="text-align:center;margin-top:1rem;color:var(--text-secondary);">
+                    还没有账号? <a href="#" onclick="showSection('register')" style="color:var(--primary);">立即注册</a>
+                </p>
+            </div>
+        </section>
+
+        <!-- Register Section -->
+        <section id="section-register" class="section">
+            <div class="form-container">
+                <h2 class="form-title">注册</h2>
+                <form onsubmit="register(event)">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" id="register-username" placeholder="请输入用户名" required>
+                    </div>
+                    <div class="form-group">
+                        <label>邮箱</label>
+                        <input type="email" id="register-email" placeholder="请输入邮箱" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="register-password" placeholder="请输入密码" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">注册</button>
+                </form>
+                <p style="text-align:center;margin-top:1rem;color:var(--text-secondary);">
+                    已有账号? <a href="#" onclick="showSection('login')" style="color:var(--primary);">立即登录</a>
+                </p>
+            </div>
+        </section>
+
+        <!-- Submit Section -->
+        <section id="section-submit" class="section">
+            <a class="back-btn" onclick="showSection('problems')">← 返回题目列表</a>
+            <div class="submit-container">
+                <h2 style="margin-bottom:1rem;">提交代码</h2>
+                <div id="submit-problem-info" style="margin-bottom:1rem;">
+                    <p style="color:var(--text-secondary);">加载中...</p>
+                </div>
+                <div class="code-hint">
+                    <span class="hint-icon">💡</span>
+                    <span>只需实现函数逻辑，系统会自动调用测试</span>
+                </div>
+                <form onsubmit="submitCode(event)">
+                    <textarea id="code-input" class="code-editor" required></textarea>
+                    <div style="margin-top:1rem;">
+                        <select id="language-select" class="language-select">
+                            <option value="python">Python</option>
+                            <option value="javascript">JavaScript</option>
+                            <option value="c">C</option>
+                            <option value="cpp">C++</option>
+                            <option value="java">Java</option>
+                            <option value="golang">Go</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="submit-btn">🚀 提交代码</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Status Section -->
+        <section id="section-status" class="section">
+            <a class="back-btn" onclick="showSection('problems')">← 返回题目列表</a>
+            <h2 style="margin-bottom:1rem;">提交记录</h2>
+            <div id="submissions-list" class="submissions-list">
+                <p class="loading">加载中...</p>
+            </div>
+        </section>
+
+        <!-- Submission Result Section -->
+        <section id="section-result" class="section">
+            <a class="back-btn" onclick="showSection('status')">← 返回提交记录</a>
+            <h2 style="margin-bottom:1rem;">评测结果</h2>
+            <div id="result-content"></div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+  {
+    "permissions": {
+      "allow": [
+        { "command": "uv sync" },
+        { "command": "uv run *", "description": "运行任意 uv 命令" },
+        { "command": "pytest" },
+        { "command": "ruff check *" },
+        { "command": "docker ps *" },
+        { "command": "docker exec *" },
+        { "command": "python -c *" },
+        { "command": "python -m *", "description": "运行 Python 模块" }
+      ]
+    }
+  }

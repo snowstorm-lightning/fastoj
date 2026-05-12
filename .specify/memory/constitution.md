@@ -1,50 +1,136 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# FastOJ Constitution
+
+<!--
+  Sync Impact Report:
+  - Version: 1.0.0 (NEW - initial constitution)
+  - Added: 7 Core Principles, Technology Stack, Development Workflow, Governance
+  - Templates requiring updates: All templates reference this as foundation
+-->
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Strict Frontend-Backend Separation
+The system MUST maintain complete architectural separation between frontend and backend.
+Frontend and backend are independent deployables with well-defined API contracts.
+No shared state or direct database access from frontend.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+**Rationale**: Ensures maintainability, scalability, and independent iteration of each layer.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### II. PostgreSQL-First Storage
+PostgreSQL MUST be the primary data store for all persistent data.
+All business entities, user data, and problem submissions MUST be stored in PostgreSQL.
+No alternative primary databases permitted without explicit constitutional amendment.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+**Rationale**: Ensures ACID compliance, relational data integrity, and enterprise-grade reliability.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### III. Redis + Message Queue for Async Processing
+Redis MUST be used for caching and session management.
+Message Queue (via Redis) MUST handle all asynchronous job processing, including but not limited to:
+- Judge task dispatching
+- Score recalculations
+- Notification dispatches
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+**Rationale**: Decouples request handling from long-running operations, ensures system responsiveness.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### IV. Custom Sandbox (NON-NEGOTIABLE)
+The judging sandbox MUST be built from scratch using Python Docker SDK.
+Judge0 or any other pre-built judgment engine is strictly PROHIBITED.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+The sandbox MUST implement:
+- Network isolation: `network_mode='none'`
+- Fork bomb protection: `pids_limit` set to reasonable limit
+- CPU enforcement: cgroups-based CPU time limits for TLE detection
+- Memory enforcement: cgroups-based memory limits for MLE detection
+- Read-only filesystem: Mount code files as read-only during execution
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+**Rationale**: Security is paramount. Pre-built solutions introduce unknown attack vectors and cannot guarantee the isolation required for an OJ platform.
+
+### V. Modular Route Architecture
+All backend routes MUST be modular and decoupled.
+Routes MUST be organized by domain (e.g., problems, submissions, users) in separate modules.
+No monolithic route handlers permitted.
+
+**Rationale**: Enables independent development, testing, and scaling of feature domains.
+
+### VI. Judge Worker Decoupling
+Judge Worker MUST be completely decoupled from Web API.
+Communication MUST occur via message queue (Redis).
+Web API enqueues judge tasks; Worker picks up tasks, executes, and updates results.
+Both components MUST be independently deployable via docker-compose with physical isolation.
+
+**Rationale**: Ensures judge execution does not impact API responsiveness; enables horizontal scaling of workers.
+
+### VII. Docker-Compose Deployment Ready
+The entire system MUST be deployable via docker-compose on a single Linux VPS.
+All services (API, Worker, PostgreSQL, Redis) MUST be containerized with proper isolation.
+Physical isolation between API and Worker containers MUST be maintained.
+
+**Rationale**: Simplifies deployment, ensures consistent environments, and maintains security boundaries.
+
+## Technology Stack
+
+### Backend Requirements
+- **Language**: Python 3.11+
+- **Framework**: FastAPI
+- **Database**: PostgreSQL (required)
+- **Cache/Queue**: Redis (required) + Message Queue
+- **Container**: Python Docker SDK for sandbox
+
+### Sandbox Security Requirements
+- Network: Completely disabled (`network_mode='none'`)
+- Process limits: Restricted via `pids_limit`
+- CPU limits: cgroups-based enforcement for TLE
+- Memory limits: cgroups-based enforcement for MLE
+- Filesystem: Read-only mount for submitted code
+
+### Project Structure
+```
+backend/
+├── api/           # FastAPI routes (modular by domain)
+├── worker/        # Judge worker (decoupled)
+├── sandbox/       # Docker-based execution sandbox
+├── models/        # SQLAlchemy/Pydantic models
+└── services/      # Business logic services
+```
+
+## Development Workflow
+
+### Code Organization
+1. All API routes MUST reside in domain-specific modules under `backend/api/`
+2. Judge worker MUST be a separate process/service, communicating only via message queue
+3. Sandbox logic MUST be isolated in its own module with no direct API exposure
+
+### Testing Requirements
+- Unit tests for all services and models
+- Integration tests for API endpoints
+- Sandbox security tests (verify isolation)
+- Worker-API contract tests
+
+### Deployment Pipeline
+1. All services containerized
+2. docker-compose orchestrates all components
+3. Environment-based configuration (no hardcoded values)
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+### Constitution Supremacy
+This constitution supersedes all other development practices.
+Any deviation from these principles requires a formal constitutional amendment.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+### Amendment Procedure
+1. Proposal: Document the principle change with rationale
+2. Review: Cross-team review of security/compatibility implications
+3. Approval: Majority approval required
+4. Migration: Document migration plan for existing implementations
+
+### Compliance Verification
+All PRs MUST verify compliance with constitutional principles:
+- Technology stack choices align with required choices
+- Sandbox implementations use custom Docker SDK (no Judge0)
+- Worker decoupling maintained
+- Security measures implemented per sandbox requirements
+
+### Versioning
+- **Version**: 1.0.0
+- **Ratified**: 2026-03-16
+- **Last Amended**: 2026-03-16

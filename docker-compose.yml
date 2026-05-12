@@ -1,0 +1,92 @@
+services:
+  postgres:
+    image: postgres:14
+    container_name: fastoj-postgres
+    environment:
+      POSTGRES_DB: fastoj
+      POSTGRES_USER: fastoj
+      POSTGRES_PASSWORD: fastoj_secret
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fastoj"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fastoj-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: fastoj-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fastoj-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://fastoj:fastoj_secret@postgres:5432/fastoj
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key-change-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - fastoj-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.judge
+    environment:
+      - DATABASE_URL=postgresql://fastoj:fastoj_secret@postgres:5432/fastoj
+      - REDIS_URL=redis://redis:6379/0
+      - JUDGE_CONTAINER_IMAGE=fastoj-judge:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend:/app/backend
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "judge_worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - fastoj-network
+
+networks:
+  fastoj-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
