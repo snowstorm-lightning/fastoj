@@ -1,9 +1,9 @@
 import logging
 from typing import Any
 
-from backend.api.websocket.manager import manager
 from backend.core.database import SessionLocal
-from backend.models import SubmissionStatus
+from backend.models import SubmissionResult, SubmissionStatus
+from backend.services.queue_service import queue_service
 from backend.services.submission_service import SubmissionService
 from backend.worker.tasks.judge_task import JudgeTask
 
@@ -16,7 +16,7 @@ class JudgeTaskConsumer:
     def __init__(self):
         self.judge_task = JudgeTask()
 
-    def process_task(self, task: dict[str, Any]):
+    def process_task(self, task: dict[str, Any], message_id: str | None = None):
         """Process a single judge task."""
         submission_id = task.get("submission_id")
         if not submission_id:
@@ -31,6 +31,14 @@ class JudgeTaskConsumer:
             submission = service.get_submission_for_judge(submission_id)
             if not submission:
                 logger.error(f"Submission {submission_id} not found")
+                if message_id:
+                    queue_service.ack_task(message_id)
+                return
+
+            if submission.status == SubmissionStatus.FINISHED and submission.testcase_results:
+                logger.info("Submission %s already judged; acking duplicate task", submission_id)
+                if message_id:
+                    queue_service.ack_task(message_id)
                 return
 
             # Update status to judging
@@ -39,19 +47,11 @@ class JudgeTaskConsumer:
                 SubmissionStatus.JUDGING,
             )
 
-            # Notify via WebSocket
-            import asyncio
-
-            async def notify():
-                await manager.send_status_update(
-                    submission_id,
-                    "judging",
-                    progress=0,
-                    current_testcase=0,
-                    total_testcases=0,
-                )
-
-            asyncio.run(notify())
+            queue_service.publish_status(
+                submission_id,
+                "judging",
+                {"status": "judging", "progress": 0},
+            )
 
             # Execute judge task
             result = self.judge_task.execute(
@@ -74,18 +74,19 @@ class JudgeTaskConsumer:
                 score=result.get("score", 0),
             )
 
-            # Notify final result via WebSocket
-            async def notify_result():
-                await manager.send_result(
-                    submission_id,
-                    "finished",
-                    result=result.get("result").value if result.get("result") else None,
-                    execute_time=result.get("execute_time", 0),
-                    memory_used=result.get("memory_used", 0),
-                    score=result.get("score", 0),
-                )
-
-            asyncio.run(notify_result())
+            queue_service.publish_status(
+                submission_id,
+                "result",
+                {
+                    "status": "finished",
+                    "result": result.get("result").value if result.get("result") else None,
+                    "execute_time": result.get("execute_time", 0),
+                    "memory_used": result.get("memory_used", 0),
+                    "score": result.get("score", 0),
+                },
+            )
+            if message_id:
+                queue_service.ack_task(message_id)
 
             logger.info(f"Completed judging submission {submission_id}: {result.get('result')}")
 
@@ -99,17 +100,20 @@ class JudgeTaskConsumer:
                 service.update_submission_status(
                     submission_id,
                     SubmissionStatus.FINISHED,
+                    result=SubmissionResult.SE,
                     error_message=error_message,
                 )
             except Exception as update_error:
                 logger.error(f"Failed to update submission status: {update_error}")
 
-            # Notify error via WebSocket
-            async def notify_error():
-                await manager.send_error(submission_id, error_message, "JUDGE_ERROR")
-
             try:
-                asyncio.run(notify_error())
+                queue_service.publish_status(
+                    submission_id,
+                    "error",
+                    {"status": "finished", "result": "se", "message": error_message, "code": "JUDGE_ERROR"},
+                )
+                if message_id:
+                    queue_service.retry_or_dead_letter(message_id, task, error_message)
             except Exception:
                 pass
 

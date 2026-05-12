@@ -34,6 +34,7 @@ class TestLanguage:
         assert Language.CPP.value == "cpp"
         assert Language.JAVA.value == "java"
         assert Language.JAVASCRIPT.value == "javascript"
+        assert Language.TYPESCRIPT.value == "typescript"
         assert Language.GOLANG.value == "golang"
 
     def test_language_is_string_enum(self):

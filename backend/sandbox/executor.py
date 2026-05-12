@@ -51,7 +51,7 @@ class SandboxExecutor:
                 self._docker_client = get_docker_client()
                 self._docker_client.ping()
             except docker.errors.DockerException as e:
-                logger.warning(f"Docker not available, falling back to subprocess: {e}")
+                logger.warning("Docker not available for judge execution: %s", e)
                 self._use_docker = False
                 return None
         return self._docker_client
@@ -79,8 +79,25 @@ class SandboxExecutor:
         Returns:
             Dict with keys: status, output, error_message, execute_time, memory_used
         """
-        # For LeetCode style (function call input), use function execution
+        if language not in self._runners:
+            return {
+                "status": "se",
+                "output": None,
+                "error_message": f"Unsupported language: {language}",
+                "execute_time": 0,
+                "memory_used": 0,
+            }
+
+        # For LeetCode style (function call input), use function execution only in unsafe local mode.
         if function_name or self._is_function_call(input_data):
+            if not settings.FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION:
+                return {
+                    "status": "se",
+                    "output": None,
+                    "error_message": "Function-call harness requires FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true in local development.",
+                    "execute_time": 0,
+                    "memory_used": 0,
+                }
             return self._execute_function_test(
                 code=code,
                 language=language,
@@ -100,7 +117,15 @@ class SandboxExecutor:
                 memory_limit=memory_limit,
             )
 
-        # Fall back to subprocess
+        if not settings.FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION:
+            return {
+                "status": "se",
+                "output": None,
+                "error_message": "Docker judge is unavailable. Unsafe local execution is disabled.",
+                "execute_time": 0,
+                "memory_used": 0,
+            }
+
         return self._execute_in_subprocess_fallback(
             code=code,
             language=language,
@@ -246,18 +271,23 @@ except Exception as e:
                 # Create and run container
                 container = self.docker_client.containers.run(
                     image,
-                    f"sh -c 'cat /input.txt | {run_cmd}'",
+                    f"sh -lc 'mkdir -p /tmp/work && cp /code/* /tmp/work/ && cd /tmp/work && cat /input.txt | {run_cmd}'",
                     detach=True,
                     mem_limit=f"{memory_limit}m",
                     memswap_limit=f"{memory_limit}m",
                     cpu_period=100000,
                     cpu_quota=int(time_limit * 1000),
                     network_disabled=True,
+                    pids_limit=128,
+                    cap_drop=["ALL"],
+                    security_opt=["no-new-privileges"],
+                    read_only=True,
+                    tmpfs={"/tmp": "rw,noexec,nosuid,size=64m", "/tmp/work": "rw,nosuid,size=128m"},
                     volumes={
                         temp_dir: {"bind": "/code", "mode": "ro"},
                         input_file: {"bind": "/input.txt", "mode": "ro"},
                     },
-                    working_dir="/code",
+                    working_dir="/tmp/work",
                     user="nobody",
                     stdout=True,
                     stderr=True,
@@ -283,14 +313,33 @@ except Exception as e:
                         "memory_used": 0,
                     }
 
-                logs = container.logs(stdout=True, stderr=True).decode("utf-8", errors="replace")
+                raw_logs = container.logs(stdout=True, stderr=True)
+                output_truncated = len(raw_logs) > settings.JUDGE_MAX_OUTPUT_BYTES
+                logs = raw_logs[: settings.JUDGE_MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
                 execute_time = int((time.time() - start_time) * 1000)
+                error_suffix = "\nOutput truncated." if output_truncated else None
 
                 if exit_code == 0:
                     return {
                         "status": "ac",
                         "output": logs,
-                        "error_message": None,
+                        "error_message": error_suffix,
+                        "execute_time": execute_time,
+                        "memory_used": memory_limit,
+                    }
+                if exit_code == 42:
+                    return {
+                        "status": "ce",
+                        "output": None,
+                        "error_message": f"Compilation error:\n{logs}",
+                        "execute_time": execute_time,
+                        "memory_used": 0,
+                    }
+                if exit_code in {137, 139}:
+                    return {
+                        "status": "mle" if exit_code == 137 else "re",
+                        "output": logs if logs else None,
+                        "error_message": "Memory limit exceeded" if exit_code == 137 else "Runtime error",
                         "execute_time": execute_time,
                         "memory_used": memory_limit,
                     }
@@ -298,20 +347,28 @@ except Exception as e:
                     return {
                         "status": "re",
                         "output": logs if logs else None,
-                        "error_message": f"Runtime error (exit code {exit_code})",
+                        "error_message": f"Runtime error (exit code {exit_code}){error_suffix or ''}",
                         "execute_time": execute_time,
                         "memory_used": 0,
                     }
 
         except docker.errors.DockerException as e:
-            logger.warning(f"Docker execution failed, falling back to subprocess: {e}")
-            return self._execute_in_subprocess_fallback(
-                code=code,
-                language=language,
-                input_data=input_data,
-                time_limit=time_limit,
-                memory_limit=memory_limit,
-            )
+            logger.warning("Docker execution failed: %s", e)
+            if settings.FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION:
+                return self._execute_in_subprocess_fallback(
+                    code=code,
+                    language=language,
+                    input_data=input_data,
+                    time_limit=time_limit,
+                    memory_limit=memory_limit,
+                )
+            return {
+                "status": "se",
+                "output": None,
+                "error_message": f"Docker judge failed and unsafe local execution is disabled: {e}",
+                "execute_time": 0,
+                "memory_used": 0,
+            }
         except Exception as e:
             logger.error(f"Docker execution error: {e}")
             return {
@@ -331,13 +388,13 @@ except Exception as e:
     def _get_run_command_docker(self, code_file: str, language: str) -> str:
         """Get the command to run the code in Docker."""
         commands = {
-            "python": f"python {code_file}",
-            "c": f"gcc {code_file} -o solution && ./solution",
-            "cpp": f"g++ {code_file} -o solution && ./solution",
-            "java": f"javac {code_file} && java Solution",
-            "javascript": f"node {code_file}",
-            "typescript": f"ts-node {code_file}",
-            "golang": f"go run {code_file}",
+            "python": "python solution.py",
+            "c": "gcc solution.c -o solution || exit 42; ./solution",
+            "cpp": "g++ solution.cpp -o solution || exit 42; ./solution",
+            "java": "javac Solution.java || exit 42; java Solution",
+            "javascript": "node solution.js",
+            "typescript": "ts-node solution.ts",
+            "golang": "go run solution.go",
         }
         return commands.get(language, f"python {code_file}")
 
@@ -402,7 +459,7 @@ except Exception as e:
         }
 
         extension = extension_map.get(language, ".txt")
-        filename = f"solution{extension}"
+        filename = "Solution.java" if language == "java" else f"solution{extension}"
         filepath = os.path.join(temp_dir, filename)
 
         with open(filepath, "w", encoding="utf-8") as f:
@@ -497,7 +554,10 @@ except Exception as e:
             }
 
         # Success - return output
-        stdout = result.stdout.decode("utf-8", errors="replace")
+        stdout_bytes = result.stdout[: settings.JUDGE_MAX_OUTPUT_BYTES]
+        stdout = stdout_bytes.decode("utf-8", errors="replace")
+        if len(result.stdout) > settings.JUDGE_MAX_OUTPUT_BYTES:
+            stdout += "\nOutput truncated."
         return {
             "status": "ac",
             "output": stdout,

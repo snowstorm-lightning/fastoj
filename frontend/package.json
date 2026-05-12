@@ -1,0 +1,46 @@
+{
+  "name": "fastoj-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@chenglou/pretext": "0.0.7",
+    "@tanstack/react-query": "5.100.10",
+    "@vitejs/plugin-react": "6.0.1",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "@xyflow/react": "12.10.2",
+    "autoprefixer": "10.5.0",
+    "monaco-editor": "0.55.1",
+    "postcss": "8.5.14",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "shiki": "4.0.2",
+    "tailwindcss": "4.3.0",
+    "typescript": "6.0.3",
+    "vite": "8.0.12",
+    "zod": "4.4.3",
+    "zustand": "5.0.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@tailwindcss/postcss": "4.3.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/node": "25.7.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "eslint": "10.3.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "jsdom": "29.1.1",
+    "typescript-eslint": "8.59.3",
+    "vitest": "4.1.6"
+  }
+}

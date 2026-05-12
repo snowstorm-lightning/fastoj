@@ -1,10 +1,11 @@
+import asyncio
 import logging
 import sys
 from pathlib import Path
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.core.config import settings
@@ -21,11 +22,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import routers
+from backend.api.ai import router as ai_router
 from backend.api.auth import router as auth_router
 from backend.api.problems import router as problems_router
 from backend.api.problems.solutions import router as solutions_router
 from backend.api.submissions import router as submissions_router
 from backend.api.submissions.run import router as run_router
+from backend.api.websocket.judge import router as judge_ws_router
+from backend.api.websocket.status_relay import relay_judge_status_events
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -37,12 +41,17 @@ app = FastAPI(
 # local checkout so `uvicorn backend.main:app` serves the same UI.
 repo_root = Path(__file__).resolve().parents[1]
 candidate_static_dirs = [
+    Path("/app/frontend/dist"),
+    repo_root / "frontend" / "dist",
     Path("/app/frontend/src"),
     repo_root / "frontend" / "src",
 ]
 static_dir = next((path for path in candidate_static_dirs if path.exists()), None)
 if static_dir:
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    assets_dir = static_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
 # CORS middleware
 app.add_middleware(
@@ -88,6 +97,8 @@ app.include_router(problems_router, prefix="/api/v1")
 app.include_router(solutions_router, prefix="/api/v1")
 app.include_router(submissions_router, prefix="/api/v1")
 app.include_router(run_router, prefix="/api/v1")
+app.include_router(ai_router, prefix="/api/v1")
+app.include_router(judge_ws_router)
 
 
 # Health check endpoint
@@ -100,20 +111,34 @@ async def health_check():
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting FastOJ API...")
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables initialized")
+    if settings.DEBUG:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Development database tables initialized")
+    app.state.judge_status_stop = asyncio.Event()
+    app.state.judge_status_task = asyncio.create_task(
+        relay_judge_status_events(app.state.judge_status_stop)
+    )
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Shutting down FastOJ API...")
+    stop_event = getattr(app.state, "judge_status_stop", None)
+    task = getattr(app.state, "judge_status_task", None)
+    if stop_event and task:
+        stop_event.set()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 @app.get("/")
 async def root():
     """Redirect to web UI."""
     if static_dir and (static_dir / "index.html").exists():
-        return RedirectResponse(url="/static/index.html")
+        return FileResponse(static_dir / "index.html")
     return {"message": "FastOJ API", "version": settings.APP_VERSION}
 
 

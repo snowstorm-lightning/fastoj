@@ -1,285 +1,246 @@
-# FastOJ - 面向面试者的在线评测平台
+# FastOJ
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11+-blue?style=flat-square&logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/FastAPI-0.109-green?style=flat-square&logo=fastapi" alt="FastAPI">
-  <img src="https://img.shields.io/badge/PostgreSQL-14+-blue?style=flat-square&logo=postgresql" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/Redis-7+-red?style=flat-square&logo=redis" alt="Redis">
-  <img src="https://img.shields.io/badge/Docker-Ready-blue?style=flat-square&logo=docker" alt="Docker">
-</p>
+FastOJ is an AI-explainable interview training OJ platform. It keeps traditional OJ judging strictness while making judge explanations, code review, progressive hints, judge timelines, training graphs, and submission trails first-class user experiences.
 
-## 项目简介
+AI explanations are grounded in the real submission verdict and public testcase information. Hidden testcase input, expected output, and actual output are never returned to normal users and are never sent to the AI provider.
 
-FastOJ 是一个面向面试者的在线评测（OJ）平台，旨在帮助开发者通过刷题提升算法能力，为技术面试做准备。
+## Architecture
 
-### 核心特性
+- Backend: FastAPI, SQLAlchemy 2.0, PostgreSQL, Alembic, JWT auth.
+- Queue: Redis Streams with consumer groups, ack, retry, dead-letter, and pending reclaim.
+- Judge: Docker sandbox worker. Production does not fall back to host subprocess execution.
+- Realtime: Worker publishes status events to Redis pub/sub; API relays events to WebSocket clients.
+- Frontend: Vite, React, TypeScript, Tailwind CSS, Monaco Editor, TanStack Query, Zustand, Zod, xterm, Shiki, @xyflow/react, @chenglou/pretext.
+- AI: OpenAI-compatible chat completions provider, disabled by default.
 
-- **题目大厅** - 支持按难度、标签筛选，分页浏览
-- **刷题工作台** - 左右分屏布局，题目描述与代码编辑一体化
-- **多语言支持** - Python、C/C++、Java、JavaScript、Go
-- **实时评测** - WebSocket 实时推送 Pending → Judging → AC/WA/TLE/MLE/CE
-- **公开/隐藏用例** - 运行仅用公开用例，提交使用全部用例
+## Dependency Audit
 
-## 技术架构
+Phase 0 audit results are recorded in `docs/dependency-audit.md`.
 
-### 技术栈
+Verified locally:
 
-| 组件 | 技术 |
-|------|------|
-| 后端框架 | FastAPI |
-| 数据库 | PostgreSQL 14+ |
-| 缓存/队列 | Redis 7+ |
-| ORM | SQLAlchemy 2.0 |
-| 认证 | JWT |
-| 判题沙箱 | Docker |
-| 部署 | Docker Compose |
+- Python 3.12.10
+- uv 0.10.2
+- Node.js v24.15.0
+- npm 11.12.1
+- Docker 29.2.1
+- Docker Compose v5.1.0
 
-### 架构图
-
-```
-┌─────────────┐     ┌─────────┐     ┌──────────┐     ┌─────────┐     ┌─────────┐
-│  前端提交   │────▶│ FastAPI │────▶│  Redis   │────▶│  Worker │────▶│ 沙箱   │
-│  代码请求   │     │   API   │     │  Queue   │     │  判题   │     │ 执行   │
-└─────────────┘     └─────────┘     └──────────┘     └─────────┘     └─────────┘
-      │                                    │                                    │
-      │                                    ▼                                    │
-      │                             ┌──────────┐                                │
-      │                             │ 更新状态 │◀───────────────────────────────┘
-      │                             │ DB: Pending->Judging                     │
-      │                             └──────────┘                                │
-      │                                    │                                    │
-      ▼                                    ▼                                    ▼
-┌─────────────┐                     ┌──────────┐                         ┌─────────┐
-│ WebSocket   │◀────────────────────│ 更新状态 │                          │ 返回结果│
-│ 实时推送    │                     │ DB: Judging->AC/WA...            │ 存储DB  │
-└─────────────┘                     └──────────┘                          └─────────┘
-```
-
-## 快速开始
-
-### 环境要求
-
-- Python 3.11+
-- uv (Python 包管理工具)
-- Docker & Docker Compose
-- PostgreSQL 14+ (Docker 提供)
-- Redis 7+ (Docker 提供)
-
-### 本地开发
-
-#### 1. 克隆项目
+## Backend Startup
 
 ```bash
-git clone https://github.com/your-repo/fastoj.git
-cd fastoj
-```
-
-#### 2. 启动基础服务
-
-```bash
-# 启动 PostgreSQL 和 Redis
-docker-compose up -d postgres redis
-```
-
-#### 3. 安装 Python 依赖
-
-```bash
-# 使用 uv 安装依赖
-uv sync
-```
-
-#### 4. 配置环境变量
-
-```bash
-cp .env.example .env
-# 编辑 .env 文件
-```
-
-#### 5. 初始化数据库
-
-```bash
-uv run python -c "from backend.core.database import engine, Base; Base.metadata.create_all(engine)"
-```
-
-#### 6. 导入示例数据
-
-```bash
-uv run python scripts/seed_data.py
-```
-
-#### 7. 启动服务
-
-```bash
-# 启动 API 服务
+uv sync --extra dev
+uv run alembic -c backend/alembic.ini upgrade head
 uv run uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
-
-# 启动判题 Worker (新终端)
-uv run python -m backend.worker.judge_worker
 ```
 
-#### 8. 访问服务
+For local development only, you may initialize tables by running the API with `DEBUG=true`; production should use Alembic migrations instead of unconditional `Base.metadata.create_all()`.
 
-- API: http://localhost:8000
-- API 文档: http://localhost:8000/docs
-
-### Docker 部署
+## Frontend Startup
 
 ```bash
-# 构建并启动所有服务
-docker-compose up -d
-
-# 查看服务状态
-docker-compose ps
-
-# 查看日志
-docker-compose logs -f api
-docker-compose logs -f worker
+cd frontend
+npm install
+npm run dev
 ```
 
-## API 文档
+The Vite dev server proxies API calls by using the same origin unless `VITE_API_BASE_URL` is configured.
 
-### 认证接口
-
-| 方法 | 路径 | 描述 |
-|------|------|------|
-| POST | /api/v1/auth/register | 用户注册 |
-| POST | /api/v1/auth/login | 用户登录 |
-| POST | /api/v1/auth/refresh | 刷新 Token |
-
-### 题目接口
-
-| 方法 | 路径 | 描述 |
-|------|------|------|
-| GET | /api/v1/problems | 获取题目列表 (支持分页/筛选) |
-| GET | /api/v1/problems/{id} | 获取题目详情 |
-| GET | /api/v1/problems/{id}/solutions | 获取官方解法 |
-
-### 提交接口
-
-| 方法 | 路径 | 描述 |
-|------|------|------|
-| POST | /api/v1/submissions | 提交代码 (完整评测) |
-| POST | /api/v1/submissions/run | 运行代码 (仅公开用例) |
-| GET | /api/v1/submissions | 获取用户提交列表 |
-| GET | /api/v1/submissions/{id} | 获取提交详情 |
-
-### WebSocket
-
-| 路径 | 描述 |
-|------|------|
-| /api/v1/ws/judge/{submission_id} | 实时判题状态推送 |
-
-### 请求示例
-
-#### 获取题目列表
+## Docker Compose
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/problems?page=1&page_size=20&difficulty=easy"
+docker compose up --build
 ```
 
-#### 提交代码
+Services:
+
+- `postgres`: PostgreSQL database.
+- `redis`: queue and judge status bus.
+- `api`: FastAPI plus built frontend static assets.
+- `worker`: Redis Streams judge worker.
+- `judge-runtime`: builds and keeps the `fastoj-judge:latest` sandbox runtime image available.
+
+The API container runs `alembic upgrade head` before starting.
+
+## Database Migration
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/submissions" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "problem_id": "uuid-here",
-    "code": "print(\"hello\")",
-    "language": "python"
-  }'
+uv run alembic -c backend/alembic.ini upgrade head
+uv run alembic -c backend/alembic.ini revision --autogenerate -m "message"
 ```
 
-## 项目结构
+Production deployments should run migrations explicitly. Development may use `DEBUG=true` table creation for quick local experiments, but that is not recommended for production.
 
-```
-fastoj/
-├── backend/
-│   ├── api/                    # API 路由
-│   │   ├── auth/               # 认证接口
-│   │   ├── problems/            # 题目接口
-│   │   ├── submissions/         # 提交接口
-│   │   ├── websocket/           # WebSocket
-│   │   └── middleware/          # 中间件
-│   ├── core/                    # 核心配置
-│   │   ├── config.py           # 配置管理
-│   │   ├── database.py          # 数据库连接
-│   │   ├── security.py          # JWT 认证
-│   │   └── languages.py         # 语言配置
-│   ├── models/                  # SQLAlchemy 模型
-│   ├── schemas/                 # Pydantic schemas
-│   ├── services/                # 业务逻辑
-│   │   ├── problem_service.py
-│   │   ├── submission_service.py
-│   │   ├── queue_service.py
-│   │   └── judge_service.py
-│   ├── worker/                  # 判题 Worker
-│   │   ├── judge_worker.py
-│   │   └── tasks/
-│   ├── sandbox/                 # Docker 沙箱
-│   │   ├── executor.py
-│   │   ├── security.py
-│   │   └── languages/
-│   └── scripts/
-│       └── seed_data.py         # 示例数据
-├── frontend/                    # 前端 (待实现)
-├── docker-compose.yml           # 容器编排
-├── Dockerfile.api               # API 容器
-├── Dockerfile.worker            # Worker 容器
-├── pyproject.toml               # 项目配置
-└── README.md                    # 本文件
+## Judge Worker
+
+Submissions are enqueued into Redis Stream `judge:tasks`. Workers use consumer group `judge-workers`, acknowledge completed messages, retry failed messages up to `JUDGE_TASK_MAX_RETRIES`, and move exhausted tasks into `judge:dead-letter`.
+
+Duplicate tasks are safe: a worker checks whether a submission is already finished with testcase results before writing another result batch.
+
+## Sandbox Security
+
+Production uses Docker sandbox execution only. If Docker is unavailable, submissions return a system error unless:
+
+```bash
+FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true
 ```
 
-## 判题流程
+That option is only for local development and must not be enabled in production.
 
-### 支持的语言
+Sandbox containers are configured with:
 
-| 语言 | 编译命令 | 执行命令 |
-|------|----------|----------|
-| Python | 无 | `python3 {file}` |
-| C | `gcc -o {out} {file} -O2 -std=c11` | `{out}` |
-| C++ | `g++ -o {out} {file} -O2 -std=c++17` | `{out}` |
-| Java | `javac {file}` | `java -cp . {class}` |
-| JavaScript | 无 | `node {file}` |
-| Go | 无 | `go run {file}` |
+- network disabled
+- memory and memswap limits
+- pids limit
+- `cap_drop=["ALL"]`
+- `no-new-privileges`
+- read-only root filesystem
+- read-only source mount
+- tmpfs working directories
+- non-root user
+- output truncation
+- timeout kill and cleanup
 
-### 状态流转
+MLE detection depends on Docker exit/status behavior and may be reported as MLE or system error depending on runtime details.
 
+## WebSocket Realtime Judging
+
+Clients connect to:
+
+```text
+/ws/judge/{submission_id}?token={JWT}
 ```
-Pending → Judging → Finished
-                         ↓
-                   AC / WA / TLE / MLE / CE / RE / SE
+
+The frontend shows Pending immediately, then prefers WebSocket events. If the socket fails or disconnects, it polls:
+
+```text
+GET /api/v1/submissions/{submission_id}
 ```
 
-- **AC** - Accepted (通过)
-- **WA** - Wrong Answer (答案错误)
-- **TLE** - Time Limit Exceeded (超时)
-- **MLE** - Memory Limit Exceeded (内存超限)
-- **CE** - Compile Error (编译错误)
-- **RE** - Runtime Error (运行时错误)
-- **SE** - System Error (系统错误)
+Status event types include `pending`, `judging`, `progress`, `result`, and `error`.
 
-## 贡献指南
+## AI Features
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/xxx`)
-3. 提交更改 (`git commit -m 'Add xxx'`)
-4. 推送分支 (`git push origin feature/xxx`)
-5. 创建 Pull Request
+AI is disabled by default:
 
-## 待实现功能
+```bash
+AI_PROVIDER=disabled
+```
 
-- [ ] 前端界面 (React/Vue)
-- [ ] 完整 Docker 沙箱执行
-- [ ] 单元测试/集成测试
-- [ ] 用户个人信息管理
-- [ ] 题目管理后台
-- [ ] 排行榜功能
+When disabled, AI endpoints return HTTP 503 and the core OJ flow still works.
 
-## 许可证
+Endpoints:
 
-MIT License
+- `POST /api/v1/ai/submissions/{submission_id}/explain`
+- `POST /api/v1/ai/submissions/{submission_id}/review`
+- `POST /api/v1/ai/problems/{problem_id}/hint`
 
----
+Rules:
 
-<p align="center">Made with ❤️ for developers</p>
+- AI explain/review require login.
+- Users may explain/review only their own submissions; admins may access all.
+- Hidden testcase input, expected output, and actual output are never included in AI prompts.
+- If a hidden testcase fails, the AI context only says hidden data cannot be shown and suggests boundary categories.
+- The AI is instructed not to reveal complete accepted solutions.
+
+## llama.cpp Local Model
+
+Recommended runtime:
+
+```bash
+llama-server -m /models/qwen2.5-coder-3b-instruct-q4_k_m.gguf \
+  --host 0.0.0.0 \
+  --port 8080 \
+  -c 8192 \
+  -np 2
+```
+
+Recommended models:
+
+- Low resource: Qwen2.5-Coder-1.5B-Instruct-GGUF, Q4_K_M or similar 4-bit quantization.
+- Default quality: Qwen2.5-Coder-3B-Instruct-GGUF, Q4_K_M or similar 4-bit quantization.
+
+FastOJ configuration:
+
+```bash
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=http://localhost:8080/v1
+AI_API_KEY=sk-no-key-required
+AI_MODEL=qwen2.5-coder-3b-instruct
+```
+
+In Docker Compose on Docker Desktop, use:
+
+```bash
+AI_BASE_URL=http://host.docker.internal:8080/v1
+```
+
+## Environment Variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DATABASE_URL` | `postgresql://fastoj:fastoj_secret@localhost:5432/fastoj` | PostgreSQL DSN |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis DSN |
+| `SECRET_KEY` | development placeholder | JWT signing secret |
+| `JUDGE_ASYNC` | `false` | Queue judging through Redis worker |
+| `JUDGE_CONTAINER_IMAGE` | `fastoj-judge:latest` | Docker judge runtime image |
+| `FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION` | `false` | Local-only subprocess fallback |
+| `JUDGE_MAX_OUTPUT_BYTES` | `65536` | stdout/stderr truncation limit |
+| `AI_PROVIDER` | `disabled` | `disabled` or `openai_compatible` |
+| `AI_BASE_URL` | `http://localhost:8080/v1` | OpenAI-compatible base URL |
+| `AI_API_KEY` | `sk-no-key-required` | Provider API key |
+| `AI_MODEL` | `qwen2.5-coder-3b-instruct` | Chat model |
+| `AI_TIMEOUT_SECONDS` | `60` | AI request timeout |
+| `AI_MAX_OUTPUT_TOKENS` | `1200` | AI response token cap |
+
+## Test Commands
+
+Backend:
+
+```bash
+uv sync --extra dev
+uv run ruff check .
+uv run pytest
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run build
+npm test
+```
+
+Docker:
+
+```bash
+docker compose up --build
+```
+
+## Manual Acceptance Path
+
+1. Open the frontend.
+2. Register and log in.
+3. Browse the problem console.
+4. Filter by keyword, tag, and difficulty.
+5. Open a problem workspace.
+6. Select a language.
+7. Write code or use the template.
+8. Run public cases.
+9. Submit full judging.
+10. Observe Pending -> Judging -> Result status.
+11. Explain a failed submission.
+12. Run AI code review.
+13. Request level 1, 2, and 3 hints.
+14. Open the training graph.
+15. Review the submission trail.
+16. Confirm hidden testcase details are not exposed.
+
+## Known Limits
+
+- The bundled frontend currently uses Monaco and Shiki directly, so production chunks are large.
+- MLE classification depends on Docker runtime exit behavior.
+- AI quality depends on the configured OpenAI-compatible model.
+- The AI review UI is submission-oriented; reviewing unsaved code is implemented through the latest run/submission flow.
+- The initial Alembic migration is a baseline for the current schema and should be validated against existing production databases before rollout.

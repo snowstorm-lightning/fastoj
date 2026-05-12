@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from backend.core.config import settings
+from backend.core.languages import Language
 from backend.models import Problem, Submission, SubmissionStatus
 from backend.schemas.submission import (
     SubmissionCreate,
@@ -26,6 +27,8 @@ class SubmissionService:
     ) -> Submission:
         """Create a new submission and queue it for judging."""
         # Verify problem exists
+        if not Language.is_supported(submission_data.language):
+            raise ValueError(f"Unsupported language: {submission_data.language}")
         problem = self.db.query(Problem).filter(Problem.id == submission_data.problem_id).first()
         if not problem:
             raise ValueError("Problem not found")
@@ -57,6 +60,8 @@ class SubmissionService:
     ) -> Submission:
         """Create a run (test with public testcases only)."""
         # Verify problem exists
+        if not Language.is_supported(submission_data.language):
+            raise ValueError(f"Unsupported language: {submission_data.language}")
         problem = self.db.query(Problem).filter(Problem.id == submission_data.problem_id).first()
         if not problem:
             raise ValueError("Problem not found")
@@ -92,6 +97,11 @@ class SubmissionService:
         if settings.JUDGE_ASYNC:
             try:
                 queue_service.push_task(task)
+                queue_service.publish_status(
+                    str(submission.id),
+                    "pending",
+                    {"status": "pending", "progress": 0},
+                )
                 return
             except Exception as exc:
                 logger.warning("Judge queue unavailable; running submission inline: %s", exc)
@@ -117,13 +127,17 @@ class SubmissionService:
             score=result.get("score", 0),
         )
 
-    def get_submission(self, submission_id: str, user_id: str) -> SubmissionDetail | None:
+    def get_submission(
+        self,
+        submission_id: str,
+        user_id: str,
+        is_admin: bool = False,
+    ) -> SubmissionDetail | None:
         """Get submission by ID."""
-        submission = (
-            self.db.query(Submission)
-            .filter(Submission.id == submission_id, Submission.user_id == user_id)
-            .first()
-        )
+        query = self.db.query(Submission).filter(Submission.id == submission_id)
+        if not is_admin:
+            query = query.filter(Submission.user_id == user_id)
+        submission = query.first()
         if not submission:
             return None
 

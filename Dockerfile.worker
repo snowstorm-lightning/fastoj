@@ -2,25 +2,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install uv
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy project files
-COPY pyproject.toml .
-
-# Install dependencies with uv
+COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-# Copy application code
 COPY backend/ backend/
 
-# Run the worker
-CMD ["python", "-m", "backend.worker.judge_worker"]
+CMD ["uv", "run", "python", "-m", "backend.worker.judge_worker"]

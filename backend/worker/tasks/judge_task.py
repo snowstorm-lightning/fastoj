@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.core.languages import Language
 from backend.models import Problem, SubmissionResult, TestCaseResult
 from backend.sandbox.executor import SandboxExecutor
 from backend.services.problem_service import ProblemService
@@ -36,6 +37,28 @@ class JudgeTask:
                 return {
                     "result": SubmissionResult.SE,
                     "error_message": f"Problem {problem_id} not found",
+                    "execute_time": 0,
+                    "memory_used": 0,
+                    "score": 0,
+                }
+
+            if not Language.is_supported(language):
+                return {
+                    "result": SubmissionResult.SE,
+                    "error_message": f"Unsupported language: {language}",
+                    "execute_time": 0,
+                    "memory_used": 0,
+                    "score": 0,
+                }
+
+            existing_results = (
+                db.query(TestCaseResult).filter(TestCaseResult.submission_id == submission_id).count()
+            )
+            if existing_results:
+                logger.info("Submission %s already has testcase results; skipping duplicate write", submission_id)
+                return {
+                    "result": SubmissionResult.SE,
+                    "error_message": "Duplicate judge task ignored",
                     "execute_time": 0,
                     "memory_used": 0,
                     "score": 0,
@@ -87,7 +110,7 @@ class JudgeTask:
                     status=SubmissionResult(result.get("status", "wa")),
                     input=testcase.input if not testcase.is_hidden else None,  # type: ignore[arg-type]
                     expected_output=testcase.output if not testcase.is_hidden else None,  # type: ignore[arg-type]
-                    actual_output=result.get("output"),
+                    actual_output=result.get("output") if not testcase.is_hidden else None,
                     execute_time=result.get("execute_time"),
                     memory_used=result.get("memory_used"),
                     is_hidden=testcase.is_hidden,
@@ -100,6 +123,23 @@ class JudgeTask:
 
                 if result.get("status") == "ac":
                     total_score += testcase.score  # type: ignore[assignment]
+
+                try:
+                    from backend.services.queue_service import queue_service
+
+                    queue_service.publish_status(
+                        submission_id,
+                        "progress",
+                        {
+                            "status": "judging",
+                            "current_testcase": i + 1,
+                            "total_testcases": len(testcases),
+                            "progress": int(((i + 1) / len(testcases)) * 100),
+                            "last_status": result.get("status"),
+                        },
+                    )
+                except Exception:
+                    pass
 
                 # Stop on first failure if not hidden
                 if result.get("status") != "ac" and not testcase.is_hidden:

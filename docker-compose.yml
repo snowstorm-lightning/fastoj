@@ -44,6 +44,11 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=dev-secret-key-change-in-production
       - JUDGE_ASYNC=true
+      - DEBUG=false
+      - AI_PROVIDER=${AI_PROVIDER:-disabled}
+      - AI_BASE_URL=${AI_BASE_URL:-http://host.docker.internal:8080/v1}
+      - AI_API_KEY=${AI_API_KEY:-sk-no-key-required}
+      - AI_MODEL=${AI_MODEL:-qwen2.5-coder-3b-instruct}
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,7 +56,6 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app/backend
-      - ./frontend:/app/frontend
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 30s
@@ -63,16 +67,20 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.judge
+      dockerfile: Dockerfile.worker
     environment:
       - DATABASE_URL=postgresql://fastoj:fastoj_secret@postgres:5432/fastoj
       - REDIS_URL=redis://redis:6379/0
       - JUDGE_CONTAINER_IMAGE=fastoj-judge:latest
+      - JUDGE_USE_DOCKER=true
+      - FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=false
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      judge-runtime:
+        condition: service_started
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./backend:/app/backend
@@ -81,6 +89,15 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - fastoj-network
+
+  judge-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile.judge
+    image: fastoj-judge:latest
+    command: ["sh", "-lc", "sleep infinity"]
     networks:
       - fastoj-network
 

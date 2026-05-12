@@ -39,10 +39,12 @@ class JudgeWorker:
         # Main loop
         while self.running:
             try:
-                task = queue_service.pop_task(timeout=5)
-                if task:
+                queue_service.reclaim_pending()
+                stream_task = queue_service.pop_stream_task(timeout_ms=5000)
+                if stream_task:
+                    message_id, task = stream_task
                     logger.info(f"Received task: {task.get('submission_id')}")
-                    self.consumer.process_task(task)
+                    self.consumer.process_task(task, message_id)
                 else:
                     # No task available, continue
                     pass

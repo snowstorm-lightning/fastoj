@@ -1,0 +1,24 @@
+from dataclasses import dataclass
+
+from backend.core.config import settings
+
+
+@dataclass(frozen=True)
+class AIConfig:
+    provider: str
+    base_url: str
+    api_key: str
+    model: str
+    timeout_seconds: int
+    max_output_tokens: int
+
+    @classmethod
+    def from_settings(cls) -> "AIConfig":
+        return cls(
+            provider=settings.AI_PROVIDER,
+            base_url=settings.AI_BASE_URL.rstrip("/"),
+            api_key=settings.AI_API_KEY,
+            model=settings.AI_MODEL,
+            timeout_seconds=settings.AI_TIMEOUT_SECONDS,
+            max_output_tokens=settings.AI_MAX_OUTPUT_TOKENS,
+        )

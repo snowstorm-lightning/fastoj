@@ -56,6 +56,31 @@ class ConnectionManager:
         for conn in disconnected:
             self.disconnect(submission_id, conn)
 
+    async def broadcast_event(self, submission_id: str, event_type: str, data: dict):
+        if event_type == "result":
+            await self.send_result(
+                submission_id,
+                data.get("status", "finished"),
+                result=data.get("result"),
+                execute_time=data.get("execute_time", 0),
+                memory_used=data.get("memory_used", 0),
+                score=data.get("score", 0),
+            )
+        elif event_type == "error":
+            await self.send_error(
+                submission_id,
+                data.get("message", "Judge error"),
+                data.get("code", "JUDGE_ERROR"),
+            )
+        else:
+            await self.send_status_update(
+                submission_id,
+                data.get("status", event_type),
+                progress=data.get("progress", 0),
+                current_testcase=data.get("current_testcase", 0),
+                total_testcases=data.get("total_testcases", 0),
+            )
+
     async def send_result(
         self,
         submission_id: str,

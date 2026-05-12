@@ -34,6 +34,24 @@ class Settings(BaseSettings):
 
     # Queue
     JUDGE_QUEUE_NAME: str = "judge_tasks"
+    JUDGE_STREAM_NAME: str = "judge:tasks"
+    JUDGE_CONSUMER_GROUP: str = "judge-workers"
+    JUDGE_DEAD_LETTER_STREAM: str = "judge:dead-letter"
+    JUDGE_STATUS_CHANNEL: str = "judge:status"
+    JUDGE_TASK_MAX_RETRIES: int = 3
+    JUDGE_PENDING_IDLE_MS: int = 30000
+
+    # Sandbox safety
+    FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION: bool = False
+    JUDGE_MAX_OUTPUT_BYTES: int = 65536
+
+    # AI
+    AI_PROVIDER: str = "disabled"
+    AI_BASE_URL: str = "http://localhost:8080/v1"
+    AI_API_KEY: str = "sk-no-key-required"
+    AI_MODEL: str = "qwen2.5-coder-3b-instruct"
+    AI_TIMEOUT_SECONDS: int = 60
+    AI_MAX_OUTPUT_TOKENS: int = 1200
 
     model_config = SettingsConfigDict(
         env_file=".env",

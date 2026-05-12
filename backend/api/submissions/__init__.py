@@ -47,6 +47,8 @@ async def create_submission(
             finished_at=submission.finished_at.isoformat() if submission.finished_at else None,
         )
     except ValueError as e:
+        if "Unsupported language" in str(e):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
@@ -61,7 +63,11 @@ async def get_submission(
 ):
     """Get submission detail."""
     service = SubmissionService(db)
-    submission = service.get_submission(submission_id, str(current_user.id))
+    submission = service.get_submission(
+        submission_id,
+        str(current_user.id),
+        is_admin=current_user.role == "admin",
+    )
 
     if not submission:
         raise HTTPException(

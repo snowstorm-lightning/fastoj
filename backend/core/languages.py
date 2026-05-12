@@ -18,6 +18,7 @@ class Language(str, Enum):
             cls.CPP,
             cls.JAVA,
             cls.JAVASCRIPT,
+            cls.TYPESCRIPT,
             cls.GOLANG,
         ]
 
