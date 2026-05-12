@@ -45,12 +45,16 @@ export function AICopilotPanel({
         <p className="verdict">{explain?.verdict ?? submission?.result ?? "No submission selected"}</p>
       </section>
       <section>
-        <h3>Error Cause</h3>
+        <h3>Next Action</h3>
+        <p>{explain?.next_action ?? review?.suggested_next_action ?? hint?.hint ?? "Choose an AI action below."}</p>
+      </section>
+      <details className="copilot-details" open={Boolean(explain?.summary || review?.summary)}>
+        <summary>Error Cause</summary>
         <p>{explain?.summary ?? submission?.error_message ?? "Run or submit code to unlock result-aware guidance."}</p>
         {submission?.error_message ? <CodeBlock code={submission.error_message} language="text" /> : null}
-      </section>
-      <section>
-        <h3>Suspicious Regions</h3>
+      </details>
+      <details className="copilot-details">
+        <summary>Suspicious Regions</summary>
         {explain?.suspicious_code_regions.length ? (
           <ul className="compact-list">
             {explain.suspicious_code_regions.map((region) => (
@@ -63,9 +67,9 @@ export function AICopilotPanel({
         ) : (
           <p className="muted">No line-level suspicion yet.</p>
         )}
-      </section>
-      <section>
-        <h3>Public Case Comparison</h3>
+      </details>
+      <details className="copilot-details">
+        <summary>Public Case Comparison</summary>
         {explain?.public_case_analysis.length ? (
           explain.public_case_analysis.map((item) => (
             <div className="case-card" key={item.case_index}>
@@ -78,19 +82,15 @@ export function AICopilotPanel({
         ) : (
           <p className="muted">Only public testcase details will appear here.</p>
         )}
-      </section>
-      <section>
-        <h3>Boundary Checks</h3>
+      </details>
+      <details className="copilot-details">
+        <summary>Boundary Checks</summary>
         <List items={explain?.edge_cases_to_check ?? review?.edge_cases_to_check ?? []} />
-      </section>
-      <section>
-        <h3>Complexity</h3>
+      </details>
+      <details className="copilot-details">
+        <summary>Complexity</summary>
         <p>{explain?.complexity_comment ?? review?.complexity_comment ?? "No complexity review yet."}</p>
-      </section>
-      <section>
-        <h3>Next Action</h3>
-        <p>{explain?.next_action ?? review?.suggested_next_action ?? hint?.hint ?? "Choose an AI action below."}</p>
-      </section>
+      </details>
       <div className="copilot-actions">
         <button onClick={onExplain} disabled={!submission}>Explain</button>
         <button onClick={onReview} disabled={!submission}>Review Code</button>
