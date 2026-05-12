@@ -27,6 +27,11 @@ class ProblemService:
                 )
             )
 
+        if filters.tags:
+            tags = [tag.strip() for tag in filters.tags.split(",") if tag.strip()]
+            if tags:
+                query = query.filter(Problem.tags.contains(tags))
+
         # Get total count before pagination
         total = query.count()
 
@@ -74,13 +79,15 @@ class ProblemService:
         if not problem or not problem.is_public:
             return None
 
-        # Get sample testcases
+        # Expose public testcases in the problem detail. Hidden testcases remain
+        # available only to the judge worker during full submissions.
         sample_testcases = (
             self.db.query(TestCase)
             .filter(
                 TestCase.problem_id == problem_id,
-                TestCase.is_sample == True,
+                TestCase.is_hidden == False,
             )
+            .order_by(TestCase.order)
             .all()
         )
 

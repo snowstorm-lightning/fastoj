@@ -125,7 +125,7 @@ class DockerExecutor:
             "python": f"python {code_file}",
             "c": f"./solution {code_file}",
             "cpp": f"./solution {code_file}",
-            "java": f"java Solution",
+            "java": "java Solution",
             "javascript": f"node {code_file}",
             "typescript": f"ts-node {code_file}",
             "golang": f"go run {code_file}",

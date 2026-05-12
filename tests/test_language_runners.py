@@ -2,11 +2,11 @@
 
 import pytest
 
-from backend.sandbox.languages.python import PythonRunner
-from backend.sandbox.languages.javascript import JavaScriptRunner, TypeScriptRunner
-from backend.sandbox.languages.java import JavaRunner
-from backend.sandbox.languages.golang import GolangRunner
 from backend.sandbox.languages.cpp import CppRunner, CRunner
+from backend.sandbox.languages.golang import GolangRunner
+from backend.sandbox.languages.java import JavaRunner
+from backend.sandbox.languages.javascript import JavaScriptRunner, TypeScriptRunner
+from backend.sandbox.languages.python import PythonRunner
 
 
 class TestPythonRunner:

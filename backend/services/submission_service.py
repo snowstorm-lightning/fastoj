@@ -1,8 +1,10 @@
+import logging
 import uuid
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from backend.core.config import settings
 from backend.models import Problem, Submission, SubmissionStatus
 from backend.schemas.submission import (
     SubmissionCreate,
@@ -11,6 +13,8 @@ from backend.schemas.submission import (
     TestCaseResultResponse,
 )
 from backend.services.queue_service import queue_service
+
+logger = logging.getLogger(__name__)
 
 
 class SubmissionService:
@@ -44,14 +48,7 @@ class SubmissionService:
         problem.total_submissions = problem.total_submissions + 1  # type: ignore[assignment]
         self.db.commit()
 
-        # Queue the submission for judging
-        queue_service.push_task({
-            "submission_id": str(submission.id),
-            "problem_id": str(submission.problem_id),
-            "code": submission.code,
-            "language": submission.language,
-            "use_hidden": True,  # Full submission uses all testcases
-        })
+        self._queue_or_judge_now(submission, use_hidden=True)
 
         return submission
 
@@ -78,16 +75,47 @@ class SubmissionService:
         self.db.commit()
         self.db.refresh(submission)
 
-        # Queue the run (with public testcases only)
-        queue_service.push_task({
+        self._queue_or_judge_now(submission, use_hidden=False)
+
+        return submission
+
+    def _queue_or_judge_now(self, submission: Submission, use_hidden: bool) -> None:
+        """Queue a judge task, or execute it inline when Redis/worker is unavailable."""
+        task = {
             "submission_id": str(submission.id),
             "problem_id": str(submission.problem_id),
             "code": submission.code,
             "language": submission.language,
-            "use_hidden": False,  # Run only uses public testcases
-        })
+            "use_hidden": use_hidden,
+        }
 
-        return submission
+        if settings.JUDGE_ASYNC:
+            try:
+                queue_service.push_task(task)
+                return
+            except Exception as exc:
+                logger.warning("Judge queue unavailable; running submission inline: %s", exc)
+
+        from backend.worker.tasks.judge_task import JudgeTask
+
+        self.update_submission_status(str(submission.id), SubmissionStatus.JUDGING)
+        result = JudgeTask().execute(
+            submission_id=str(submission.id),
+            problem_id=str(submission.problem_id),
+            code=submission.code,
+            language=submission.language,
+            use_hidden=use_hidden,
+            db=self.db,
+        )
+        self.update_submission_status(
+            str(submission.id),
+            SubmissionStatus.FINISHED,
+            result=result.get("result"),
+            error_message=result.get("error_message"),
+            execute_time=result.get("execute_time"),
+            memory_used=result.get("memory_used"),
+            score=result.get("score", 0),
+        )
 
     def get_submission(self, submission_id: str, user_id: str) -> SubmissionDetail | None:
         """Get submission by ID."""

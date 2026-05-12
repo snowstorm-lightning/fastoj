@@ -135,13 +135,14 @@ class SandboxExecutor:
             )
 
         # For Python, wrap the code with a test harness
-        return self._execute_python_function(code, input_data, time_limit)
+        return self._execute_python_function(code, input_data, time_limit, memory_limit)
 
     def _execute_python_function(
         self,
         code: str,
         input_data: str,
         time_limit: int,
+        memory_limit: int,
     ) -> dict[str, Any]:
         """Execute Python function call."""
         import re

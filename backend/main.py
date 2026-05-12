@@ -1,10 +1,10 @@
 import logging
 import sys
-import os
+from pathlib import Path
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.core.config import settings
@@ -33,10 +33,16 @@ app = FastAPI(
     debug=settings.DEBUG,
 )
 
-# Mount static files for web UI
-static_dir = "/app/frontend/src"
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+# Mount static files for web UI. Prefer the container path, but also work from a
+# local checkout so `uvicorn backend.main:app` serves the same UI.
+repo_root = Path(__file__).resolve().parents[1]
+candidate_static_dirs = [
+    Path("/app/frontend/src"),
+    repo_root / "frontend" / "src",
+]
+static_dir = next((path for path in candidate_static_dirs if path.exists()), None)
+if static_dir:
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # CORS middleware
 app.add_middleware(
@@ -106,7 +112,17 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     """Redirect to web UI."""
-    static_index = "/app/frontend/src/index.html"
-    if os.path.exists(static_index):
+    if static_dir and (static_dir / "index.html").exists():
         return RedirectResponse(url="/static/index.html")
     return {"message": "FastOJ API", "version": settings.APP_VERSION}
+
+
+@app.get("/app")
+async def web_app():
+    """Serve the web UI entrypoint directly."""
+    if static_dir and (static_dir / "index.html").exists():
+        return FileResponse(static_dir / "index.html")
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"success": False, "error": {"message": "Web UI not found"}},
+    )

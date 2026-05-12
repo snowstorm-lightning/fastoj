@@ -43,6 +43,7 @@ services:
       - DATABASE_URL=postgresql://fastoj:fastoj_secret@postgres:5432/fastoj
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=dev-secret-key-change-in-production
+      - JUDGE_ASYNC=true
     depends_on:
       postgres:
         condition: service_healthy

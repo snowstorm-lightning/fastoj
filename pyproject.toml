@@ -50,7 +50,6 @@ ignore = [
     "E402",  # Import not at top (FastAPI pattern)
     "E712",  # True/False comparison
     "N805",  # First argument naming (Pydantic validator)
-    "UP042", # StrEnum (use enum.StrEnum)
     "B904",  # Raise in except (FastAPI pattern)
     "F841",  # Unused variable (intentional placeholders)
     "E741",  # Ambiguous variable name (single letter)
@@ -60,6 +59,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/*" = ["F401", "F811"]
+"tests/conftest.py" = ["N806"]
+"mock_server.py" = ["N802"]
 "main.py" = ["E402"]
 
 [tool.ruff.lint.isort]
