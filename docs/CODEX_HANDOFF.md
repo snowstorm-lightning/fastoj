@@ -10,6 +10,10 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 
 - Phase 0 dependency audit completed and recorded in `docs/dependency-audit.md`.
 - Vite + React + TypeScript frontend implemented with Tailwind, Monaco, TanStack Query, Zustand, Zod, xterm, Shiki, @xyflow/react, and Pretext adapter.
+- Frontend information architecture simplified into a problem library, focused workbench, and training graph.
+- Workbench now keeps code editor and AI Copilot as the primary focus; statement, public cases, official solution, judge terminal, and submission trail are in a tabbed detail dock.
+- AI Copilot details are collapsed behind expandable sections by default to reduce cognitive load.
+- Pretext is wrapped by `frontend/src/lib/textLayout.ts` and used by problem cards, graph nodes, and submission trail summaries.
 - Backend AI module implemented with disabled and OpenAI-compatible providers, structured explain/review/hint responses, JSON fallback wrapping, and hidden-test filtering.
 - AI endpoints added under `/api/v1/ai`.
 - Redis Streams judge queue implemented with consumer groups, ack, retry, dead-letter helpers, pending reclaim, and status pub/sub.
@@ -22,6 +26,8 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Added `backend/scripts/migrate_or_stamp.py` so existing prototype databases with tables but no `alembic_version` are stamped safely before startup.
 - README rewritten with architecture, AI provider, llama.cpp, migrations, testing, sandbox, WebSocket, and known limits.
 - Checkpoint commit already exists: `74f7c68 chore: checkpoint codex progress`.
+- Docker Compose startup fix commit exists: `e00a30c fix: make docker compose startup robust`.
+- Frontend simplification commit exists: `b36053b refactor: simplify frontend training workspace`.
 - Docker Compose now builds and starts successfully after Dockerfile fixes.
 
 ## Not Completed Yet
@@ -29,21 +35,11 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Full browser manual acceptance path has not been executed by Codex.
 - WebSocket fallback behavior has not been verified in a real browser session.
 - Real Redis dead-letter behavior is covered by unit-level tests but not manually exercised end to end.
-- Frontend graph node click records intent but does not fully drive shared problem-console filters.
 - Frontend bundle size is large because Monaco and Shiki are loaded directly.
 
 ## Current Modified File List
 
-Tracked modified files after the checkpoint commit:
-
-- `Dockerfile.api`
-- `Dockerfile.judge`
-- `Dockerfile.worker`
-- `docker-compose.yml`
-
-New/untracked files after the checkpoint commit:
-
-- `backend/scripts/migrate_or_stamp.py`
+No modified or untracked files at the time of this handoff update, before the documentation-only commit requested by the user.
 
 ## Executed Commands And Results
 
@@ -58,6 +54,11 @@ New/untracked files after the checkpoint commit:
 - `docker compose ps`: postgres, redis, api, worker, and judge runtime are running.
 - `Invoke-WebRequest -UseBasicParsing http://localhost:8000/api/v1/health`: passed with HTTP 200 and `{"status":"healthy","app":"FastOJ"}`.
 - `docker compose logs --tail=120 api worker`: API starts successfully; worker starts successfully.
+- `cd frontend && npm run build`: passed after frontend information architecture simplification.
+- `cd frontend && npm test`: passed after frontend information architecture simplification.
+- `uv run ruff check .`: passed after frontend information architecture simplification.
+- `docker compose up --build -d`: passed after frontend information architecture simplification; new frontend bundle is served by the API image.
+- `Invoke-WebRequest -UseBasicParsing http://localhost:8000`: passed with HTTP 200 and returned frontend HTML.
 
 ## Failed Commands And Error Summary
 

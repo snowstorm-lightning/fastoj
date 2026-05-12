@@ -74,6 +74,10 @@
 - [x] API client.
 - [x] Zustand localStorage draft/cache store.
 - [x] Pretext adapter.
+- [x] Pretext adapter uses `prepareWithSegments`, `measureNaturalWidth`, `measureLineStats`, and `layoutWithLines`.
+- [x] Problem library, focused workbench, and training graph split into separate views.
+- [x] Workbench detail dock tabs for statement, public cases, solution, judge terminal, and submission trail.
+- [x] AI Copilot dense details collapsed into expandable sections.
 - [x] Monaco editor component.
 - [x] AI Copilot panel.
 - [x] xterm judge timeline.
@@ -82,7 +86,7 @@
 - [x] Wire Shiki code block rendering.
 - [x] Run and fix full frontend build/test after app implementation.
 - [x] Add frontend smoke tests for schemas, textLayout, graph, copilot.
-- [ ] Make graph node click drive actual tag filtering.
+- [x] Make graph node click drive actual tag filtering.
 
 ## Database And Migrations
 
@@ -100,6 +104,7 @@
 - [x] Progress checklist doc.
 - [x] Recovery prompt doc.
 - [x] README full rewrite.
+- [x] README updated for simplified frontend architecture and Pretext adapter usage.
 - [ ] Final summary.
 
 ## Verification
@@ -112,6 +117,7 @@
 - [x] Full frontend `npm test`.
 - [x] `docker compose up --build -d`.
 - [x] API health check returned HTTP 200.
+- [x] Docker API serves rebuilt frontend HTML at `http://localhost:8000`.
 - [ ] Browser manual acceptance path.
 
 ## Checkpoint
@@ -121,4 +127,6 @@
 - [x] Created handoff/progress/recovery files.
 - [x] Generated `docs/codex-checkpoint.patch`.
 - [x] Created checkpoint commit `74f7c68 chore: checkpoint codex progress`.
-- [ ] Commit latest Docker/migration compatibility fixes.
+- [x] Commit latest Docker/migration compatibility fixes.
+- [x] Commit frontend training workspace simplification.
+- [x] Commit documentation updates.

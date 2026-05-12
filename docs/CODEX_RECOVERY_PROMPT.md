@@ -14,11 +14,13 @@ Important constraints:
 - Worker must publish judge status through Redis pub/sub; API relays to WebSocket clients.
 - Production must not fall back to host subprocess execution unless FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true.
 - Frontend stack is Vite + React + TypeScript + Tailwind + Monaco + TanStack Query + Zustand + Zod + xterm + Shiki + @xyflow/react + @chenglou/pretext.
+- Frontend information architecture is split into problem library, focused workbench, and training graph. The workbench detail dock holds statement, public cases, solution, judge terminal, and submission trail.
+- Pretext is wrapped only through frontend/src/lib/textLayout.ts and is used for problem cards, graph nodes, and submission trail summaries.
 - Docker Compose now builds and starts successfully. API health returned HTTP 200.
 - Existing prototype DB volumes are handled by backend/scripts/migrate_or_stamp.py, which stamps the Alembic baseline if core tables already exist and alembic_version is absent.
 
 Immediate next steps:
-1. Run the browser manual acceptance path at http://localhost:8000.
+1. Run the browser manual acceptance path at http://localhost:8000 with the simplified frontend.
 2. Exercise register/login, problem filters, run, submit, WebSocket status, AI disabled 503 path, and hidden-case redaction.
 3. If preparing for production, review the Alembic baseline/stamp strategy against the target database before rollout.
 4. Before ending again, update docs/CODEX_HANDOFF.md, docs/CODEX_PROGRESS.md, docs/CODEX_RECOVERY_PROMPT.md and either commit a clean checkpoint or refresh docs/codex-checkpoint.patch.

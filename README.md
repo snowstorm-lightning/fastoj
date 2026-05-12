@@ -10,7 +10,7 @@ AI explanations are grounded in the real submission verdict and public testcase 
 - Queue: Redis Streams with consumer groups, ack, retry, dead-letter, and pending reclaim.
 - Judge: Docker sandbox worker. Production does not fall back to host subprocess execution.
 - Realtime: Worker publishes status events to Redis pub/sub; API relays events to WebSocket clients.
-- Frontend: Vite, React, TypeScript, Tailwind CSS, Monaco Editor, TanStack Query, Zustand, Zod, xterm, Shiki, @xyflow/react, @chenglou/pretext.
+- Frontend: Vite, React, TypeScript, Tailwind CSS, Monaco Editor, TanStack Query, Zustand, Zod, xterm, Shiki, @xyflow/react, @chenglou/pretext. The UI is organized as a three-view training flow: problem library, focused workbench, and training graph.
 - AI: OpenAI-compatible chat completions provider, disabled by default.
 
 ## Dependency Audit
@@ -46,6 +46,34 @@ npm run dev
 
 The Vite dev server proxies API calls by using the same origin unless `VITE_API_BASE_URL` is configured.
 
+## Frontend Experience
+
+The React frontend is intentionally split into focused views instead of one dense all-in-one page:
+
+- Problem library: keyword, tag, difficulty, pagination, training summary, and recommendation entry.
+- Workbench: code editor and AI Copilot are the primary focus.
+- Detail dock: problem statement, public cases, official solution, judge terminal, and submission trail are available as tabs.
+- Training graph: @xyflow/react renders knowledge nodes; clicking a node returns to the library and applies the tag filter.
+
+AI Copilot defaults to the current verdict and next action. Longer information such as suspicious code regions, public-case comparison, boundary checks, and complexity notes is placed in expandable sections to reduce cognitive load.
+
+## Pretext Text Layout
+
+Business components should not call `@chenglou/pretext` directly. Use `frontend/src/lib/textLayout.ts`, which wraps:
+
+- `prepareWithSegments`
+- `measureNaturalWidth`
+- `measureLineStats`
+- `layoutWithLines`
+
+Current users of the adapter:
+
+- problem cards, for stable card height around mixed title/tag text
+- training graph nodes, for node label sizing
+- submission trail summaries, for dense attempt text layout
+
+If Pretext measurement fails, the adapter falls back to deterministic approximate dimensions so UI rendering is not blocked.
+
 ## Docker Compose
 
 ```bash
@@ -60,7 +88,7 @@ Services:
 - `worker`: Redis Streams judge worker.
 - `judge-runtime`: builds and keeps the `fastoj-judge:latest` sandbox runtime image available.
 
-The API container runs `alembic upgrade head` before starting.
+The API container runs `python -m backend.scripts.migrate_or_stamp` before starting. New databases run Alembic normally. Existing prototype databases that already have core tables but no `alembic_version` are stamped to the baseline revision before startup, so local Docker volumes are not destroyed or recreated.
 
 ## Database Migration
 
@@ -222,9 +250,9 @@ docker compose up --build
 
 1. Open the frontend.
 2. Register and log in.
-3. Browse the problem console.
+3. Browse the problem library.
 4. Filter by keyword, tag, and difficulty.
-5. Open a problem workspace.
+5. Open a problem workbench.
 6. Select a language.
 7. Write code or use the template.
 8. Run public cases.
@@ -233,8 +261,8 @@ docker compose up --build
 11. Explain a failed submission.
 12. Run AI code review.
 13. Request level 1, 2, and 3 hints.
-14. Open the training graph.
-15. Review the submission trail.
+14. Open the training graph and click a tag node to filter the library.
+15. Review the submission trail from the workbench detail dock.
 16. Confirm hidden testcase details are not exposed.
 
 ## Known Limits
