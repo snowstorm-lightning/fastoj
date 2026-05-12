@@ -10,12 +10,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+RUN pip install --no-cache-dir uv==0.10.2
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
@@ -25,4 +20,4 @@ COPY --from=frontend-build /app/frontend/dist frontend/dist
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "uv run alembic -c backend/alembic.ini upgrade head && uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "uv run python -m backend.scripts.migrate_or_stamp && uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000"]

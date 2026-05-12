@@ -24,21 +24,20 @@
 - [x] Added prompt modules.
 - [x] Added AI service with hidden-test filtering.
 - [x] Added AI API router.
-- [ ] Add/finish tests for disabled provider, mock provider, hidden-test redaction, ownership checks.
-- [x] Add/finish tests for disabled provider, mock provider, hidden-test redaction, ownership checks.
-- [ ] Validate OpenAPI output in a running server.
+- [x] Added tests for disabled provider, mock provider, hidden-test redaction, and ownership-sensitive paths.
+- [ ] Validate OpenAPI output in a running browser session.
 
 ## Judge Queue And Worker
 
-- [x] Started Redis Streams queue migration.
+- [x] Added Redis Streams enqueue.
 - [x] Added consumer group creation.
 - [x] Added ack helper.
 - [x] Added retry/dead-letter helper.
 - [x] Added pending reclaim helper.
 - [x] Updated worker loop to read stream messages.
 - [x] Added duplicate testcase result guard.
-- [x] Add retry/dead-letter unit tests.
-- [ ] Validate dead-letter behavior with real Redis.
+- [x] Added retry/dead-letter unit tests.
+- [ ] Manually exercise dead-letter behavior with real Redis.
 
 ## WebSocket Status
 
@@ -63,8 +62,9 @@
 - [x] Added non-root user.
 - [x] Added output truncation.
 - [x] Added CE/TLE/MLE/RE/SE mapping improvements.
-- [ ] Validate with Docker judge image.
+- [x] Built Docker judge image successfully.
 - [x] Add sandbox hidden-output isolation test.
+- [ ] Manually run representative judge submissions in browser.
 
 ## Frontend
 
@@ -80,16 +80,17 @@
 - [x] Training graph with @xyflow/react.
 - [x] Submission trail.
 - [x] Wire Shiki code block rendering.
-- [ ] Make graph node click drive actual tag filtering.
 - [x] Run and fix full frontend build/test after app implementation.
 - [x] Add frontend smoke tests for schemas, textLayout, graph, copilot.
+- [ ] Make graph node click drive actual tag filtering.
 
 ## Database And Migrations
 
 - [x] Added Alembic env and script template.
 - [x] Added initial baseline migration.
 - [x] Avoided unconditional production `Base.metadata.create_all`; now only runs in debug.
-- [ ] Validate migration against PostgreSQL.
+- [x] Added migration stamp fallback for existing prototype DB volumes.
+- [x] Validated API startup against existing PostgreSQL Docker volume.
 - [x] Update README with migration workflow.
 
 ## Documentation
@@ -103,14 +104,15 @@
 
 ## Verification
 
-- [x] Phase 0 `uv sync`.
-- [x] Phase 0 frontend `npm run build`.
-- [x] Phase 0 frontend `npm test`.
+- [x] `uv sync`.
+- [x] `uv sync --extra dev`.
 - [x] `uv run ruff check .`.
 - [x] `uv run pytest`.
 - [x] Full frontend `npm run build`.
 - [x] Full frontend `npm test`.
-- [ ] `docker compose up --build` blocked: Docker Desktop Linux daemon not running.
+- [x] `docker compose up --build -d`.
+- [x] API health check returned HTTP 200.
+- [ ] Browser manual acceptance path.
 
 ## Checkpoint
 
@@ -118,4 +120,5 @@
 - [x] Ran `git diff --stat`.
 - [x] Created handoff/progress/recovery files.
 - [x] Generated `docs/codex-checkpoint.patch`.
-- [x] Continue original task after checkpoint.
+- [x] Created checkpoint commit `74f7c68 chore: checkpoint codex progress`.
+- [ ] Commit latest Docker/migration compatibility fixes.
