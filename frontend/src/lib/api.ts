@@ -23,6 +23,16 @@ export type ProblemFilters = {
   page?: number;
 };
 
+export type AIModelProfile = "default" | "deepseek" | "qwen-local";
+export type CurrentUser = {
+  id: string;
+  username: string;
+  email: string;
+  avatar_url?: string | null;
+  role: string;
+  is_active: boolean;
+};
+
 export class ApiError extends Error {
   status: number;
 
@@ -76,6 +86,36 @@ export const api = {
     localStorage.setItem("fastoj.jwt", data.access_token);
     return data;
   },
+  async me(): Promise<CurrentUser> {
+    return request("/api/v1/auth/me", { method: "GET" }, (data: any) => data);
+  },
+  async updateMe(payload: Record<string, unknown>): Promise<CurrentUser> {
+    return request("/api/v1/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }, (data: any) => data);
+  },
+  async adminOverview() {
+    return request("/api/v1/admin/overview", { method: "GET" }, (data: any) => data.data);
+  },
+  async adminUpdateUser(userId: string, payload: Record<string, unknown>) {
+    return request(`/api/v1/admin/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }, (data: any) => data);
+  },
+  async adminUpdateProblem(problemId: string, payload: Record<string, unknown>) {
+    return request(`/api/v1/admin/problems/${problemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }, (data: any) => data);
+  },
+  async adminUpsertSolution(problemId: string, payload: Record<string, unknown>) {
+    return request(`/api/v1/admin/problems/${problemId}/solutions`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }, (data: any) => data);
+  },
   async problems(filters: ProblemFilters): Promise<ProblemListItem[]> {
     const params = new URLSearchParams();
     if (filters.keyword) params.set("keyword", filters.keyword);
@@ -107,27 +147,41 @@ export const api = {
     if (problemId) params.set("problem_id", problemId);
     return request(`/api/v1/submissions?${params}`, { method: "GET" }, (data: any) => data.data ?? []);
   },
-  async solutions(problemId: string, language?: string) {
+  async solutions(problemId: string, language?: string, locale = "en") {
     const params = new URLSearchParams();
     if (language) params.set("language", language);
+    params.set("locale", locale);
     return request(`/api/v1/problems/${problemId}/solutions?${params}`, { method: "GET" }, (data: any) =>
       data.data ?? [],
     );
   },
-  async explain(submissionId: string): Promise<AIExplain> {
-    return request(`/api/v1/ai/submissions/${submissionId}/explain`, { method: "POST" }, (data) =>
+  async explain(submissionId: string, model_profile: AIModelProfile = "default", locale = "en"): Promise<AIExplain> {
+    return request(`/api/v1/ai/submissions/${submissionId}/explain`, {
+      method: "POST",
+      body: JSON.stringify({ model_profile, locale }),
+    }, (data) =>
       aiExplainSchema.parse(data),
     );
   },
-  async review(submissionId: string): Promise<AIReview> {
-    return request(`/api/v1/ai/submissions/${submissionId}/review`, { method: "POST" }, (data) =>
+  async review(submissionId: string, model_profile: AIModelProfile = "default", locale = "en"): Promise<AIReview> {
+    return request(`/api/v1/ai/submissions/${submissionId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ model_profile, locale }),
+    }, (data) =>
       aiReviewSchema.parse(data),
     );
   },
-  async hint(problemId: string, level: 1 | 2 | 3, language: string | null, current_code: string | null): Promise<AIHint> {
+  async hint(
+    problemId: string,
+    level: 1 | 2 | 3,
+    language: string | null,
+    current_code: string | null,
+    model_profile: AIModelProfile = "default",
+    locale = "en",
+  ): Promise<AIHint> {
     return request(`/api/v1/ai/problems/${problemId}/hint`, {
       method: "POST",
-      body: JSON.stringify({ level, language, current_code }),
+      body: JSON.stringify({ level, language, current_code, model_profile, locale }),
     }, (data) => aiHintSchema.parse(data));
   },
 };

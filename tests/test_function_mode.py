@@ -41,9 +41,33 @@ def two_sum(nums, target):
     assert "target = json.loads(lines[1])" in wrapped
 
 
-def test_function_mode_rejects_unavailable_language():
-    with pytest.raises(ValueError, match="Function mode currently supports Python"):
-        wrap_function_submission("int main() {}", "cpp", "two-sum")
+def test_wrap_two_sum_cpp_function_mode():
+    wrapped = wrap_function_submission(
+        """
+vector<int> two_sum(vector<int> nums, int target) {
+    return {0, 1};
+}
+""",
+        "cpp",
+        "two-sum",
+    )
+    assert "parseIntVector" in wrapped
+    assert "two_sum(nums, target)" in wrapped
+    assert "int main()" in wrapped
+
+
+def test_wrap_two_sum_javascript_function_mode():
+    wrapped = wrap_function_submission(
+        """
+function twoSum(nums, target) {
+  return [0, 1];
+}
+""",
+        "javascript",
+        "two-sum",
+    )
+    assert "JSON.parse(lines[0])" in wrapped
+    assert "fn(nums, target)" in wrapped
 
 
 def test_function_mode_rejects_unavailable_problem():

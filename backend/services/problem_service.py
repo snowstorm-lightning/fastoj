@@ -10,6 +10,20 @@ class ProblemService:
     def __init__(self, db: Session):
         self.db = db
 
+    @staticmethod
+    def _ac_rate(problem: Problem) -> float:
+        total = int(problem.total_submissions or 0)
+        accepted = int(problem.accepted_submissions or 0)
+        if total <= 0:
+            return 0.0
+        return round(min(max(accepted / total, 0.0), 1.0), 2)
+
+    @staticmethod
+    def _accepted_submissions(problem: Problem) -> int:
+        total = max(int(problem.total_submissions or 0), 0)
+        accepted = max(int(problem.accepted_submissions or 0), 0)
+        return min(accepted, total)
+
     def get_problems(self, filters: ProblemFilter) -> tuple[list[ProblemListItem], int]:
         """Get paginated and filtered problem list."""
         query = self.db.query(Problem).filter(Problem.is_public.is_(True))
@@ -51,11 +65,7 @@ class ProblemService:
         # Convert to response models
         result = []
         for problem in problems:
-            ac_rate = (
-                problem.accepted_submissions / problem.total_submissions
-                if problem.total_submissions > 0
-                else 0.0
-            )
+            ac_rate = self._ac_rate(problem)
             result.append(
                 ProblemListItem(
                     id=str(problem.id),
@@ -64,8 +74,8 @@ class ProblemService:
                     difficulty=problem.difficulty.value,
                     tags=problem.tags or [],  # type: ignore[arg-type]
                     total_submissions=problem.total_submissions,  # type: ignore[arg-type]
-                    accepted_submissions=problem.accepted_submissions,  # type: ignore[arg-type]
-                    ac_rate=round(ac_rate, 2),
+                    accepted_submissions=self._accepted_submissions(problem),
+                    ac_rate=ac_rate,
                     is_public=problem.is_public,  # type: ignore[arg-type]
                     created_at=problem.created_at.isoformat(),
                 )
@@ -91,11 +101,7 @@ class ProblemService:
             .all()
         )
 
-        ac_rate = (
-            problem.accepted_submissions / problem.total_submissions
-            if problem.total_submissions > 0
-            else 0.0
-        )
+        ac_rate = self._ac_rate(problem)
 
         return ProblemDetail(
             id=str(problem.id),
@@ -108,8 +114,8 @@ class ProblemService:
             memory_limit=problem.memory_limit,  # type: ignore[arg-type]
             hint=problem.hint,  # type: ignore[arg-type]
             total_submissions=problem.total_submissions,  # type: ignore[arg-type]
-            accepted_submissions=problem.accepted_submissions,  # type: ignore[arg-type]
-            ac_rate=round(ac_rate, 2),
+            accepted_submissions=self._accepted_submissions(problem),
+            ac_rate=ac_rate,
             sample_testcases=[
                 SampleTestCase(input=tc.input, output=tc.output) for tc in sample_testcases  # type: ignore[arg-type]
             ],

@@ -24,7 +24,7 @@ describe("problem mode metadata", () => {
     expect(buildStarter(twoSum, "python", "function")).toContain("def two_sum");
   });
 
-  it("falls back to ACM starter for unsupported function languages", () => {
-    expect(buildStarter(twoSum, "cpp", "function")).toContain("int main");
+  it("builds a C++ function starter", () => {
+    expect(buildStarter(twoSum, "cpp", "function")).toContain("vector<int> two_sum");
   });
 });

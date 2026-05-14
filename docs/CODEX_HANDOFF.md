@@ -13,7 +13,7 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Frontend information architecture simplified into a problem library, focused workbench, and training graph.
 - Workbench now keeps code editor and AI Copilot as the primary focus; statement, public cases, official solution, judge terminal, and submission trail are in a tabbed detail dock.
 - AI Copilot details are collapsed behind expandable sections by default to reduce cognitive load.
-- Workbench was upgraded again into a LeetCode-style three-column layout with collapsible statement and result sidebars.
+- Workbench was upgraded again into a focused three-column layout with collapsible statement and result sidebars.
 - Workbench sidebars now have smoother transitions, narrower collapsed width, drag handles, min/max widths, and localStorage persistence.
 - Login/register moved from header inputs into a dedicated auth page.
 - Unauthenticated workbench run/submit now routes the user to the dedicated login page instead of silently staying on the workbench.
@@ -21,7 +21,7 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Added a single-button function/ACM mode toggle. It changes localized text and mode-colored status dots instead of rendering two competing buttons.
 - Added frontend-side Chinese/English i18n for navigation, auth, problem display text, verdict labels, hover verdict explanations, tabs, mode labels, and AI Copilot/submission trail text.
 - Added static visual step panels for supported problem types so basic explanations do not require AI calls.
-- Seed data now appends missing problems by slug and includes Hot100-style tasks plus AI algorithm practice tasks for logistic regression sigmoid, KNN, KMeans, scaled dot-product attention, softmax cross entropy, and attention mask application.
+- Seed data now appends missing problems by slug and includes interview-list tasks plus AI algorithm practice tasks for logistic regression sigmoid, KNN, KMeans, scaled dot-product attention, softmax cross entropy, and attention mask application.
 - Removed prototype testcase compatibility. Per user direction, this is a new project and function-mode input targets the current JSON-line format only.
 - Seed data now normalizes existing seeded problems by slug instead of deleting testcase rows, so incompatible local DB testcase inputs are rewritten to JSON-line format without breaking historical testcase-result foreign keys.
 - Pretext is wrapped by `frontend/src/lib/textLayout.ts` and used by problem cards, graph nodes, and submission trail summaries.
@@ -44,6 +44,8 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Frontend simplification commit exists: `b36053b refactor: simplify frontend training workspace`.
 - Docker Compose now builds and starts successfully after Dockerfile fixes.
 - Latest WIP adds token-expiry alert before auth redirect, AI provider response normalization for hint/explain/review, fixed-viewport workbench scrolling, sample explanations, expanded seeded testcase counts, and the Softmax expected-output correction without exposing hidden testcase contents.
+- Current WIP adds a controlled AI model selector (`default`, `deepseek`, `qwen-local`), backend named AI profiles, localized graph labels, structured sample cards, local discussion/settings views, removal of visible old-site wording, and backend/frontend acceptance-rate clamping so invalid historical counts cannot show rates above 100%.
+- The Qwen local profile expects an OpenAI-compatible local server such as `llama-server` on `http://host.docker.internal:8080/v1`. `llama-server` is not installed in the current PATH, so the local Qwen server has not been started.
 
 ## Not Completed Yet
 
@@ -51,13 +53,15 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - WebSocket fallback behavior has not been verified in a real browser session.
 - Real Redis dead-letter behavior is covered by unit-level tests but not manually exercised end to end.
 - Frontend bundle size is large because Monaco and Shiki are loaded directly.
-- Function mode wrappers currently support Python only; other languages should use ACM mode.
+- Function mode wrappers now support Python, C++, Java, JavaScript, TypeScript, Go, and selected simpler C signatures. C still needs expanded matrix/string harnesses for some AI tasks.
+- Docker sandbox compiled-language execution now redirects `input.txt` into the final program instead of piping it into the compiler, and `/tmp/work` permissions are relaxed with `chmod` so `nobody` can create compiled binaries without adding Linux capabilities.
 - Docker Compose rebuild passed after the latest worker/dependency edits. After Docker Desktop was restarted on 2026-05-14, API and worker reported healthy, HTTP health and frontend returned 200, and worker-in-container Docker SDK access returned `True`.
 - Browser manual acceptance still needs to be run end to end.
+- In-app browser automation tooling is not currently exposed in this session, so visual browser acceptance was not run by Codex after the latest UI polish.
 
 ## Current Modified File List
 
-Modified and new files after the latest UI/mode/i18n/problem-set work include frontend `main.tsx`, `styles.css`, `lib/api.ts`, `lib/i18n.ts`, `lib/problemModes.ts`, backend submission/function-mode code, seed data, tests, README, and Codex docs.
+Modified and new files after the latest UI/mode/i18n/problem-set work include `AGENTS.md`, frontend `main.tsx`, `styles.css`, `lib/api.ts`, `lib/i18n.ts`, `lib/problemModes.ts`, backend AI/auth/admin/solution/function-mode code, seed data, tests, README files, and Codex docs.
 
 ## Executed Commands And Results
 
@@ -143,6 +147,15 @@ Modified and new files after the latest UI/mode/i18n/problem-set work include fr
 - `docker compose ps`: API and worker healthy; PostgreSQL and Redis healthy; judge runtime running.
 - `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/v1/health`: passed with HTTP 200 and `{"status":"healthy","app":"FastOJ"}`. In this PowerShell session, `localhost` may time out while `127.0.0.1` works.
 - `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000`: passed with HTTP 200 and returned rebuilt frontend HTML.
+- `uv run ruff check .`: passed after account/admin/AI-locale/function-starter edits.
+- `uv run pytest`: passed after account/admin/AI-locale/function-starter edits, 72 tests passed with 3 datetime deprecation warnings.
+- `cd frontend && npm run build`: passed after account/admin/AI-locale/function-starter edits, with existing Monaco/Shiki chunk-size warnings.
+- `cd frontend && npm test`: passed after account/admin/AI-locale/function-starter edits, 6 test files and 8 tests passed; jsdom printed expected canvas `getContext` warnings.
+- `docker compose up --build -d api worker`: passed after Docker Desktop was restarted and after the sandbox stdin/permission fixes.
+- `docker compose ps`: API and worker healthy; PostgreSQL and Redis healthy; judge runtime running.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/v1/health`: passed with HTTP 200 and `{"status":"healthy","app":"FastOJ"}`.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000`: passed with HTTP 200.
+- Real Docker-backed public run for Two Sum C++ function mode passed with `result=ac`.
 
 ## Failed Commands And Error Summary
 
@@ -162,8 +175,8 @@ Modified and new files after the latest UI/mode/i18n/problem-set work include fr
 
 ## Next Minimal Continue Plan
 
-1. Run the browser manual acceptance path at `http://127.0.0.1:8000`, including register/login redirect, token-expiry alert, language switch, sidebar toggles/resizing, function/ACM single-button toggle, public run, full submit, WebSocket/polling status, and DeepSeek AI hint/explain/review.
-2. Inspect the Chinese UI in a real browser for any remaining mojibake or mixed-language problem text; fix frontend dictionaries or move content to backend localized fields if needed.
-3. Move problem statement/solution translations from the temporary frontend dictionary to backend-managed localized fields when the content model is finalized. Keep UI chrome translations frontend-side.
-4. If production data already exists, review the baseline migration/stamp strategy before rollout.
+1. Run the browser manual acceptance path at `http://127.0.0.1:8000`, including register/login redirect, token-expiry alert, language switch, sidebar toggles/resizing, function/ACM single-button toggle across languages, public run, full submit, WebSocket/polling status, and DeepSeek AI hint/explain/review in Chinese.
+2. Inspect the Chinese UI in a real browser for any remaining mixed-language problem text; move problem statement/solution translations from temporary frontend/backend maps to backend-managed localized fields when the content model is finalized.
+3. Expand admin UI beyond basic controls when ready: full problem editor, official-solution editor, and testcase editor that never exposes hidden testcase contents to non-admins and warns before editing hidden data.
+4. Expand C function-mode harnesses for AI tasks that require matrices or strings, or hide C function mode for those tasks until supported.
 5. Optionally split Monaco/Shiki into lazy chunks to reduce initial frontend bundle size.

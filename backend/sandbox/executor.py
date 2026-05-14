@@ -190,11 +190,28 @@ class SandboxExecutor:
                     "memory_used": 0,
                 }
 
+            permission_exit_code, permission_logs = container.exec_run(
+                "sh -lc 'chmod -R a+rwX /tmp/work'",
+                stdout=True,
+                stderr=True,
+                workdir="/tmp",
+                user="root",
+            )
+            if permission_exit_code != 0:
+                permission_output = permission_logs.decode("utf-8", errors="replace")
+                return {
+                    "status": "se",
+                    "output": None,
+                    "error_message": f"Failed to prepare judge workspace permissions: {permission_output}",
+                    "execute_time": 0,
+                    "memory_used": 0,
+                }
+
             import time
 
             start_time = time.time()
             exit_code, raw_logs = container.exec_run(
-                f"timeout {timeout_seconds}s sh -lc 'cd /tmp/work && cat input.txt | {run_cmd}'",
+                f"timeout {timeout_seconds}s sh -lc 'cd /tmp/work && {run_cmd} < input.txt'",
                 stdout=True,
                 stderr=True,
                 workdir="/tmp/work",

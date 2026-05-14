@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 
 import "./styles.css";
-import { api, isUnauthorized, makeJudgeSocket, type ProblemFilters } from "./lib/api";
+import { api, isUnauthorized, makeJudgeSocket, type AIModelProfile, type CurrentUser, type ProblemFilters } from "./lib/api";
 import {
   type AIExplain,
   type AIHint,
@@ -15,6 +15,7 @@ import {
 import {
   buildStarter,
   getFunctionSpec,
+  getLocalizedFunctionDescription,
   getProblemMode,
   getVisualSpec,
   type JudgeMode,
@@ -31,22 +32,32 @@ import { TrainingGraph } from "./components/TrainingGraph";
 
 const queryClient = new QueryClient();
 
-type View = "library" | "workbench" | "graph" | "auth";
-type DetailTab = "cases" | "solution" | "judge" | "trail";
+type View = "library" | "workbench" | "graph" | "auth" | "settings" | "admin";
+type DetailTab = "cases" | "solution" | "judge" | "trail" | "discussion";
 type AuthMode = "login" | "register";
+type DiscussionPost = { id: string; author: string; body: string; createdAt: string };
+
+const AI_MODEL_OPTIONS: Array<{ value: AIModelProfile; label: string }> = [
+  { value: "default", label: "Default" },
+  { value: "deepseek", label: "DeepSeek" },
+  { value: "qwen-local", label: "Qwen local" },
+];
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-const MenuIcon = () => (
-  <span className="menu-icon" aria-hidden="true">
-    <span />
-    <span />
-    <span />
-  </span>
-);
+const percent = (value: number) => Math.round(clamp(value, 0, 1) * 100);
+
+function IconGlyph({ children }: { children: React.ReactNode }) {
+  return <span className="icon-glyph" aria-hidden="true">{children}</span>;
+}
+
+function PanelToggleIcon({ open, side }: { open: boolean; side: "left" | "right" }) {
+  return <span aria-hidden="true">{open ? (side === "left" ? "<" : ">") : side === "left" ? ">" : "<"}</span>;
+}
 
 function AuthBar({
   view,
   authenticated,
+  currentUser,
   locale,
   onView,
   onAuth,
@@ -55,6 +66,7 @@ function AuthBar({
 }: {
   view: View;
   authenticated: boolean;
+  currentUser: CurrentUser | null;
   locale: Locale;
   onView: (view: View) => void;
   onAuth: (mode: AuthMode) => void;
@@ -74,12 +86,20 @@ function AuthBar({
         <button className={view === "graph" ? "active" : ""} onClick={() => onView("graph")}>{text.navGraph}</button>
       </nav>
       <div className="authbar">
-        <button className="locale-button" title={locale === "zh" ? "Switch to English" : "切换到中文"} onClick={onLocale}>
+        <button className="icon-button locale-button tip" data-tip={locale === "zh" ? "Switch to English" : "切换到中文"} onClick={onLocale}>
           {locale === "zh" ? "EN" : "中"}
         </button>
         {authenticated ? (
           <>
             <span className="auth-state">{text.loggedIn}</span>
+            {currentUser?.role === "admin" ? (
+              <button className={view === "admin" ? "icon-button active tip" : "icon-button tip"} data-tip={locale === "zh" ? "管理后台" : "Admin"} onClick={() => onView("admin")}>
+                <IconGlyph>A</IconGlyph>
+              </button>
+            ) : null}
+            <button className={view === "settings" ? "icon-button active tip" : "icon-button tip"} data-tip={text.navSettings} onClick={() => onView("settings")}>
+              <IconGlyph>*</IconGlyph>
+            </button>
             <button onClick={onLogout}>{text.logout}</button>
           </>
         ) : (
@@ -113,7 +133,7 @@ function AuthPage({
 
   useEffect(() => {
     setMessage(text.authMessage);
-  }, [locale]);
+  }, [text.authMessage]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -140,9 +160,9 @@ function AuthPage({
           <h1>{mode === "login" ? text.loginTitle : text.registerTitle}</h1>
           <p>{text.accountCopy}</p>
           <div className="auth-proof">
-            <span>Docker 沙箱</span>
+            <span>Docker sandbox</span>
             <span>Redis Streams</span>
-            <span>隐藏用例隔离</span>
+            <span>{locale === "zh" ? "隐藏用例隔离" : "Hidden case isolation"}</span>
           </div>
         </div>
         <form className="auth-form" onSubmit={submit}>
@@ -150,20 +170,9 @@ function AuthPage({
             <button type="button" className={mode === "login" ? "active" : ""} onClick={() => onMode("login")}>{text.login}</button>
             <button type="button" className={mode === "register" ? "active" : ""} onClick={() => onMode("register")}>{text.register}</button>
           </div>
-          <label>
-            {text.username}
-            <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
-          </label>
-          {mode === "register" ? (
-            <label>
-              {text.email}
-              <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" />
-            </label>
-          ) : null}
-          <label>
-            {text.password}
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} />
-          </label>
+          <label>{text.username}<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" /></label>
+          {mode === "register" ? <label>{text.email}<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" /></label> : null}
+          <label>{text.password}<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>
           <button className="primary auth-submit" disabled={busy}>
             {busy ? text.processing : mode === "login" ? text.loginContinue : text.registerContinue}
           </button>
@@ -171,6 +180,132 @@ function AuthPage({
         </form>
       </section>
     </main>
+  );
+}
+
+function SettingsPage({ locale, currentUser, onClose, onProfileSaved }: { locale: Locale; currentUser: CurrentUser | null; onClose: () => void; onProfileSaved: (user: CurrentUser) => void }) {
+  const text = UI[locale];
+  const [displayName, setDisplayName] = useState(localStorage.getItem("fastoj.displayName") ?? currentUser?.username ?? "FastOJ User");
+  const [username, setUsername] = useState(currentUser?.username ?? "");
+  const [email, setEmail] = useState(currentUser?.email ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatar_url ?? "");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [compact, setCompact] = useState(localStorage.getItem("fastoj.compactMode") === "true");
+  const [saved, setSaved] = useState("");
+
+  useEffect(() => {
+    setDisplayName(localStorage.getItem("fastoj.displayName") ?? currentUser?.username ?? "FastOJ User");
+    setUsername(currentUser?.username ?? "");
+    setEmail(currentUser?.email ?? "");
+    setAvatarUrl(currentUser?.avatar_url ?? "");
+  }, [currentUser?.id, currentUser?.username, currentUser?.email, currentUser?.avatar_url]);
+
+  async function save() {
+    localStorage.setItem("fastoj.displayName", displayName);
+    localStorage.setItem("fastoj.compactMode", String(compact));
+    const payload: Record<string, unknown> = {
+      username: username.trim(),
+      email: email.trim(),
+      avatar_url: avatarUrl.trim() || null,
+    };
+    if (newPassword) {
+      payload.current_password = currentPassword;
+      payload.new_password = newPassword;
+    }
+    try {
+      const updated = await api.updateMe(payload);
+      onProfileSaved(updated);
+      setCurrentPassword("");
+      setNewPassword("");
+      setSaved(locale === "zh" ? "已保存。" : "Saved.");
+    } catch (error) {
+      setSaved(error instanceof Error ? error.message : locale === "zh" ? "保存失败。" : "Save failed.");
+    }
+  }
+
+  return (
+    <main className="settings-page">
+      <section className="settings-card account-card">
+        <button className="icon-button close-button tip" data-tip={locale === "zh" ? "关闭" : "Close"} onClick={onClose}>
+          <IconGlyph>x</IconGlyph>
+        </button>
+        <p className="eyebrow">Account</p>
+        <h1>{text.settingsTitle}</h1>
+        <p className="muted">{text.settingsCopy}</p>
+        <div className="account-profile">
+          <div className="avatar-preview">{avatarUrl ? <img src={avatarUrl} alt="" /> : displayName.slice(0, 1).toUpperCase()}</div>
+          <div>
+            <strong>{displayName || username}</strong>
+            <span>{currentUser?.role === "admin" ? "Admin" : "User"}</span>
+          </div>
+        </div>
+        <div className="settings-grid">
+          <label>{text.displayName}<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
+          <label>{text.username}<input value={username} onChange={(event) => setUsername(event.target.value)} /></label>
+          <label>{text.email}<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" /></label>
+          <label>{locale === "zh" ? "头像 URL" : "Avatar URL"}<input value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value)} /></label>
+          <label>{locale === "zh" ? "当前密码" : "Current password"}<input value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} type="password" autoComplete="current-password" /></label>
+          <label>{locale === "zh" ? "新密码" : "New password"}<input value={newPassword} onChange={(event) => setNewPassword(event.target.value)} type="password" autoComplete="new-password" /></label>
+        </div>
+        <label className="toggle-row">
+          <input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} />
+          {text.compactMode}
+        </label>
+        <button className="primary" onClick={save}>{text.saveSettings}</button>
+        {saved ? <p className="muted">{saved}</p> : null}
+      </section>
+    </main>
+  );
+}
+
+function DifficultyDropdown({
+  value,
+  locale,
+  onChange,
+}: {
+  value: string;
+  locale: Locale;
+  onChange: (value: string) => void;
+}) {
+  const text = UI[locale];
+  const [open, setOpen] = useState(false);
+  const options = [
+    { value: "", label: text.allDifficulty },
+    { value: "easy", label: "Easy" },
+    { value: "medium", label: "Medium" },
+    { value: "hard", label: "Hard" },
+  ];
+  const selected = options.find((item) => item.value === value) ?? options[0];
+  return (
+    <div
+      className={`custom-select ${open ? "open" : ""}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button type="button" className="custom-select-button" title={locale === "zh" ? "选择难度" : "Choose difficulty"} onClick={() => setOpen((current) => !current)}>
+        <span>{selected.label}</span>
+        <span aria-hidden="true">v</span>
+      </button>
+      <div className="custom-select-menu" role="listbox">
+        {options.map((item) => (
+          <button
+            type="button"
+            role="option"
+            aria-selected={item.value === value}
+            className={item.value === value ? "selected" : ""}
+            key={item.value || "all"}
+            onClick={() => {
+              onChange(item.value);
+              setOpen(false);
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -204,7 +339,7 @@ function LibraryPage({
   const aiCount = problems.filter((problem) => getProblemMode(problem).isAiPractice).length;
   const functionCount = problems.filter((problem) => getProblemMode(problem).supportsFunction).length;
   const averageAc = problems.length
-    ? Math.round((problems.reduce((sum, problem) => sum + problem.ac_rate, 0) / problems.length) * 100)
+    ? percent(problems.reduce((sum, problem) => sum + clamp(problem.ac_rate, 0, 1), 0) / problems.length)
     : 0;
   const recommendation = problems.find((problem) => problem.ac_rate < 0.45) ?? problems[0];
 
@@ -221,12 +356,7 @@ function LibraryPage({
         <div className="filter-group">
           <strong>{text.filters}</strong>
           <input placeholder={text.keyword} value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-          <select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>
-            <option value="">{text.allDifficulty}</option>
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
+          <DifficultyDropdown value={difficulty} locale={locale} onChange={setDifficulty} />
           <input placeholder={text.tagsPlaceholder} value={tags} onChange={(event) => { setTags(event.target.value); setPage(1); }} />
           <button title={text.resetFilters} onClick={resetFilters}>{text.resetFilters}</button>
         </div>
@@ -237,7 +367,6 @@ function LibraryPage({
           <Metric label={text.averageAc} value={`${averageAc}%`} />
         </div>
       </aside>
-
       <section className="library-main">
         <div className="library-header">
           <div>
@@ -252,20 +381,12 @@ function LibraryPage({
             <button onClick={onGraph}>{text.graph}</button>
           </div>
         </div>
-
-        <div className="problem-list" aria-label="题目列表">
+        <div className="problem-list" aria-label={locale === "zh" ? "题目列表" : "Problem list"}>
           {problemsQuery.isLoading ? <p className="muted">{locale === "zh" ? "加载题库中..." : "Loading problems..."}</p> : null}
           {problems.map((problem) => (
-            <ProblemCard
-              key={problem.id}
-              problem={problem}
-              locale={locale}
-              active={problem.id === selectedId}
-              onSelect={() => onSelect(problem.id)}
-            />
+            <ProblemCard key={problem.id} problem={problem} locale={locale} active={problem.id === selectedId} onSelect={() => onSelect(problem.id)} />
           ))}
         </div>
-
         <div className="pager">
           <button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{text.previous}</button>
           <span>{text.page} {page}</span>
@@ -277,12 +398,7 @@ function LibraryPage({
 }
 
 function Metric({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="metric">
-      <strong>{value}</strong>
-      <span>{label}</span>
-    </div>
-  );
+  return <div className="metric"><strong>{value}</strong><span>{label}</span></div>;
 }
 
 function ProblemCard({ problem, locale, active, onSelect }: { problem: ProblemListItem; locale: Locale; active: boolean; onSelect: () => void }) {
@@ -290,11 +406,10 @@ function ProblemCard({ problem, locale, active, onSelect }: { problem: ProblemLi
   const text = UI[locale];
   const titleLayout = measureTrainingText(`${displayProblem.title} ${displayProblem.tags.join(" ")}`, 280, "14px Inter, system-ui, sans-serif", 18);
   const mode = getProblemMode(displayProblem);
-
   return (
     <button
       className={active ? "problem-card active" : "problem-card"}
-      title={locale === "zh" ? `打开 ${displayProblem.title} 的刷题工作台` : `Open ${displayProblem.title}`}
+      title={locale === "zh" ? `打开 ${displayProblem.title}` : `Open ${displayProblem.title}`}
       onClick={onSelect}
       style={{ minHeight: Math.max(128, titleLayout.height + 92) }}
     >
@@ -305,7 +420,7 @@ function ProblemCard({ problem, locale, active, onSelect }: { problem: ProblemLi
         <span>{mode.supportsFunction ? text.functionMode : text.acmMode}</span>
         {mode.isAiPractice ? <span>{text.aiAlgorithms}</span> : null}
       </span>
-      <span className="card-meta">{displayProblem.accepted_submissions}/{displayProblem.total_submissions} accepted · {Math.round(displayProblem.ac_rate * 100)}%</span>
+      <span className="card-meta">{displayProblem.accepted_submissions}/{displayProblem.total_submissions} accepted - {percent(displayProblem.ac_rate)}%</span>
     </button>
   );
 }
@@ -327,10 +442,11 @@ function Workspace({
   const { language, setLanguage, getDraft, setDraft, setRecentProblemId, getCachedExplain, setCachedExplain } = useAppStore();
   const [code, setCode] = useState("");
   const [judgeMode, setJudgeMode] = useState<JudgeMode>("acm");
+  const [aiModel, setAiModel] = useState<AIModelProfile>(() => (localStorage.getItem("fastoj.aiModel") as AIModelProfile | null) ?? "default");
   const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("fastoj.leftOpen") !== "false");
   const [rightOpen, setRightOpen] = useState(() => localStorage.getItem("fastoj.rightOpen") !== "false");
-  const [leftWidth, setLeftWidth] = useState(() => Number(localStorage.getItem("fastoj.leftWidth") ?? 360));
-  const [rightWidth, setRightWidth] = useState(() => Number(localStorage.getItem("fastoj.rightWidth") ?? 420));
+  const [leftWidth, setLeftWidth] = useState(() => Number(localStorage.getItem("fastoj.leftWidth") ?? 390));
+  const [rightWidth, setRightWidth] = useState(() => Number(localStorage.getItem("fastoj.rightWidth") ?? 430));
   const [resizing, setResizing] = useState<"left" | "right" | null>(null);
   const [submission, setSubmission] = useState<SubmissionDetail | null>(null);
   const [events, setEvents] = useState<JudgeEvent[]>([]);
@@ -340,48 +456,22 @@ function Workspace({
   const [aiError, setAiError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("cases");
 
-  const problemQuery = useQuery({
-    queryKey: ["problem", problemId],
-    queryFn: () => api.problem(problemId ?? ""),
-    enabled: Boolean(problemId),
-  });
-  const trailQuery = useQuery({
-    queryKey: ["submissions", problemId, submission?.id],
-    queryFn: () => api.submissions(problemId ?? ""),
-    enabled: Boolean(problemId && authenticated),
-  });
-  const solutionsQuery = useQuery({
-    queryKey: ["solutions", problemId, language],
-    queryFn: () => api.solutions(problemId ?? "", language),
-    enabled: Boolean(problemId),
-  });
+  const problemQuery = useQuery({ queryKey: ["problem", problemId], queryFn: () => api.problem(problemId ?? ""), enabled: Boolean(problemId) });
+  const trailQuery = useQuery({ queryKey: ["submissions", problemId, submission?.id], queryFn: () => api.submissions(problemId ?? ""), enabled: Boolean(problemId && authenticated) });
+  const solutionsQuery = useQuery({ queryKey: ["solutions", problemId, language, locale], queryFn: () => api.solutions(problemId ?? "", language, locale), enabled: Boolean(problemId) });
 
   const problem = problemQuery.data;
   const displayProblem = localizedProblem(problem, locale);
   const modeInfo = getProblemMode(problem);
   const draftKey = `${language}.${judgeMode}`;
-  const functionBlocked = judgeMode === "function" && language !== "python";
+  const functionBlocked = false;
 
-  useEffect(() => {
-    localStorage.setItem("fastoj.leftOpen", String(leftOpen));
-  }, [leftOpen]);
-
-  useEffect(() => {
-    localStorage.setItem("fastoj.rightOpen", String(rightOpen));
-  }, [rightOpen]);
-
-  useEffect(() => {
-    localStorage.setItem("fastoj.leftWidth", String(leftWidth));
-  }, [leftWidth]);
-
-  useEffect(() => {
-    localStorage.setItem("fastoj.rightWidth", String(rightWidth));
-  }, [rightWidth]);
-
-  useEffect(() => {
-    if (!problemId) return;
-    setRecentProblemId(problemId);
-  }, [problemId, setRecentProblemId]);
+  useEffect(() => { localStorage.setItem("fastoj.leftOpen", String(leftOpen)); }, [leftOpen]);
+  useEffect(() => { localStorage.setItem("fastoj.rightOpen", String(rightOpen)); }, [rightOpen]);
+  useEffect(() => { localStorage.setItem("fastoj.leftWidth", String(leftWidth)); }, [leftWidth]);
+  useEffect(() => { localStorage.setItem("fastoj.rightWidth", String(rightWidth)); }, [rightWidth]);
+  useEffect(() => { localStorage.setItem("fastoj.aiModel", aiModel); }, [aiModel]);
+  useEffect(() => { if (problemId) setRecentProblemId(problemId); }, [problemId, setRecentProblemId]);
 
   useEffect(() => {
     if (!problemId || !problem) return;
@@ -401,14 +491,9 @@ function Workspace({
     if (problemId) setDraft(problemId, draftKey, next);
   }
 
-  function switchMode(mode: JudgeMode) {
-    if (mode === "function" && !modeInfo.supportsFunction) return;
-    setJudgeMode(mode);
-  }
-
   function toggleJudgeMode() {
     if (!modeInfo.supportsFunction) return;
-    switchMode(judgeMode === "function" ? "acm" : "function");
+    setJudgeMode(judgeMode === "function" ? "acm" : "function");
   }
 
   function startResize(side: "left" | "right", event: React.PointerEvent<HTMLDivElement>) {
@@ -418,7 +503,7 @@ function Workspace({
     setResizing(side);
     const onMove = (moveEvent: PointerEvent) => {
       const delta = side === "left" ? moveEvent.clientX - startX : startX - moveEvent.clientX;
-      const next = clamp(startWidth + delta, side === "left" ? 240 : 300, side === "left" ? 620 : 660);
+      const next = clamp(startWidth + delta, side === "left" ? 260 : 320, side === "left" ? 680 : 700);
       if (side === "left") setLeftWidth(next);
       else setRightWidth(next);
     };
@@ -447,19 +532,12 @@ function Workspace({
     } catch (error) {
       if (isUnauthorized(error)) {
         localStorage.removeItem("fastoj.jwt");
-        setEvents([{ type: "error", status: "finished", result: "se", message: text.authMessage }]);
-        window.alert(locale === "zh" ? "登录已过期，请重新登录。" : "Your session has expired. Please log in again.");
+        setEvents([{ type: "error", status: "finished", result: "se", message: text.authExpired }]);
+        window.alert(text.authExpired);
         onRequireAuth();
         return;
       }
-      setEvents([
-        {
-          type: "error",
-          status: "finished",
-          result: "se",
-          message: error instanceof Error ? error.message : "Submit failed",
-        },
-      ]);
+      setEvents([{ type: "error", status: "finished", result: "se", message: error instanceof Error ? error.message : "Submit failed" }]);
     }
   }
 
@@ -492,16 +570,16 @@ function Workspace({
 
   async function explainSubmission() {
     if (!submission) return;
-    const cached = getCachedExplain(submission.id);
+    const cached = getCachedExplain(`${submission.id}.${aiModel}.${locale}`);
     if (cached) {
       setExplain(cached);
       return;
     }
     try {
       setAiError(null);
-      const result = await api.explain(submission.id);
+      const result = await api.explain(submission.id, aiModel, locale);
       setExplain(result);
-      setCachedExplain(submission.id, result);
+      setCachedExplain(`${submission.id}.${aiModel}.${locale}`, result);
     } catch (error) {
       setAiError(error instanceof Error ? error.message : "AI explain failed");
     }
@@ -511,7 +589,7 @@ function Workspace({
     if (!submission) return;
     try {
       setAiError(null);
-      setReview(await api.review(submission.id));
+      setReview(await api.review(submission.id, aiModel, locale));
     } catch (error) {
       setAiError(error instanceof Error ? error.message : "AI review failed");
     }
@@ -521,7 +599,7 @@ function Workspace({
     if (!problemId) return;
     try {
       setAiError(null);
-      setHint(await api.hint(problemId, level, language, code));
+      setHint(await api.hint(problemId, level, language, code, aiModel, locale));
     } catch (error) {
       setAiError(error instanceof Error ? error.message : "AI hint failed");
     }
@@ -540,17 +618,14 @@ function Workspace({
   }
 
   const gridStyle = {
-    "--left-panel": leftOpen ? `${leftWidth}px` : "48px",
-    "--right-panel": rightOpen ? `${rightWidth}px` : "48px",
+    "--left-panel": leftOpen ? `${leftWidth}px` : "18px",
+    "--right-panel": rightOpen ? `${rightWidth}px` : "18px",
   } as React.CSSProperties;
 
   return (
-    <main
-      className={`workbench-page ${leftOpen ? "" : "left-collapsed"} ${rightOpen ? "" : "right-collapsed"} ${resizing ? "is-resizing" : ""}`}
-      style={gridStyle}
-    >
+    <main className={`workbench-page ${leftOpen ? "" : "left-collapsed"} ${rightOpen ? "" : "right-collapsed"} ${resizing ? "is-resizing" : ""}`} style={gridStyle}>
       <section className="workbench-header">
-        <button title={text.backLibrary} onClick={onBackToLibrary}>{text.backLibrary}</button>
+        <button className="icon-button" title={text.backLibrary} onClick={onBackToLibrary}><IconGlyph>{"<"}</IconGlyph></button>
         <div>
           <p className="eyebrow">{text.workbench}</p>
           <h1>{displayProblem?.title ?? text.loadingProblem}</h1>
@@ -563,86 +638,69 @@ function Workspace({
         <StatusBadge submission={submission} locale={locale} />
       </section>
 
-      <section className="leetcode-grid">
-        <aside className="statement-sidebar">
-          <button className="drawer-toggle" title={leftOpen ? "收起左侧题面面板" : "展开左侧题面面板"} onClick={() => setLeftOpen((value) => !value)}>
-            {leftOpen ? text.statement : <MenuIcon />}
-          </button>
+      <section className="workbench-grid">
+        <aside className="statement-sidebar feature-frame statement-frame">
           {leftOpen ? (
             <>
               <ProblemStatement problem={problem} locale={locale} />
-              <ProblemVisual problem={problem} />
+              <ProblemVisual problem={problem} locale={locale} />
             </>
           ) : null}
         </aside>
+        <div className="panel-edge left-edge">
+          <button className="edge-toggle" title={leftOpen ? text.collapseLeft : text.expandLeft} onClick={() => setLeftOpen((value) => !value)}>
+            <PanelToggleIcon open={leftOpen} side="left" />
+          </button>
+          <div className="resize-handle" role="separator" aria-label={locale === "zh" ? "调整题面面板宽度" : "Resize statement panel"} title={locale === "zh" ? "拖动调整题面宽度" : "Drag to resize statement"} onPointerDown={(event) => leftOpen && startResize("left", event)} />
+        </div>
 
-        <div
-          className="resize-handle"
-          role="separator"
-          aria-label="调整题面面板宽度"
-          title="拖动调整题面面板宽度"
-          onPointerDown={(event) => leftOpen && startResize("left", event)}
-        />
-
-        <section className="coding-panel">
+        <section className="coding-panel feature-frame code-frame">
           <div className="editor-toolbar">
-            <button
-              className={`mode-toggle ${judgeMode === "function" ? "active function-mode" : "active acm-mode"}`}
-              title={!modeInfo.supportsFunction ? text.modeAcmOnlyTitle : judgeMode === "function" ? text.modeFunctionTitle : text.modeAcmTitle}
-              disabled={!modeInfo.supportsFunction}
-              onClick={toggleJudgeMode}
-            >
+            <button className={`mode-toggle ${judgeMode === "function" ? "active function-mode" : "active acm-mode"}`} title={!modeInfo.supportsFunction ? text.modeAcmOnlyTitle : judgeMode === "function" ? text.modeFunctionTitle : text.modeAcmTitle} disabled={!modeInfo.supportsFunction} onClick={toggleJudgeMode}>
               <span className="mode-dot" />
               {judgeMode === "function" ? text.functionMode : text.acmMode}
             </button>
-            <select title="选择提交语言" value={language} onChange={(event) => setLanguage(event.target.value)}>
+            <select title={text.pickLanguage} value={language} onChange={(event) => setLanguage(event.target.value)}>
               {LANGUAGES.map((item) => <option key={item}>{item}</option>)}
             </select>
-            <button onClick={() => setCode(buildStarter(problem, language, judgeMode))}>{text.resetTemplate}</button>
-            <button onClick={() => judge(true)} disabled={functionBlocked}>{text.runPublic}</button>
-            <button className="primary" onClick={() => judge(false)} disabled={functionBlocked}>{text.submitJudge}</button>
+            <select className="ai-model-select" title={locale === "zh" ? "选择 AI 模型" : "Choose AI model"} value={aiModel} onChange={(event) => setAiModel(event.target.value as AIModelProfile)}>
+              {AI_MODEL_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <button className="icon-button tip" data-tip={text.resetTemplate} onClick={() => setCode(buildStarter(problem, language, judgeMode))}><IconGlyph>R</IconGlyph></button>
+            <button className="icon-button run-action tip" data-tip={text.runTitle} onClick={() => judge(true)} disabled={functionBlocked}><IconGlyph>▶</IconGlyph></button>
+            <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)} disabled={functionBlocked}><IconGlyph>↑</IconGlyph></button>
           </div>
-          <FunctionFrame problem={problem} mode={judgeMode} blocked={functionBlocked} locale={locale} />
+          <FunctionFrame problem={problem} mode={judgeMode} language={language} blocked={functionBlocked} locale={locale} />
           <CodeEditor language={language} value={code} onChange={updateCode} />
         </section>
 
-        <div
-          className="resize-handle"
-          role="separator"
-          aria-label="调整结果面板宽度"
-          title="拖动调整结果面板宽度"
-          onPointerDown={(event) => rightOpen && startResize("right", event)}
-        />
-
-        <aside className="result-sidebar">
-          <button className="drawer-toggle" title={rightOpen ? "收起右侧 AI 和判题面板" : "展开右侧 AI 和判题面板"} onClick={() => setRightOpen((value) => !value)}>
-            {rightOpen ? text.result : <MenuIcon />}
+        <div className="panel-edge right-edge">
+          <div className="resize-handle" role="separator" aria-label={locale === "zh" ? "调整结果面板宽度" : "Resize result panel"} title={locale === "zh" ? "拖动调整结果宽度" : "Drag to resize result"} onPointerDown={(event) => rightOpen && startResize("right", event)} />
+          <button className="edge-toggle" title={rightOpen ? text.collapseRight : text.expandRight} onClick={() => setRightOpen((value) => !value)}>
+            <PanelToggleIcon open={rightOpen} side="right" />
           </button>
+        </div>
+
+        <aside className="result-sidebar feature-frame result-frame">
           {rightOpen ? (
             <>
-              <AICopilotPanel
-                submission={submission}
-                explain={explain}
-                review={review}
-                hint={hint}
-                error={aiError}
-                onExplain={explainSubmission}
-                onReview={reviewSubmission}
-                onHint={requestHint}
-                locale={locale}
-              />
-              <section className="detail-dock">
-                <div className="tabs" role="tablist" aria-label="工作台详情">
+              <div className="ai-region">
+                <AICopilotPanel submission={submission} explain={explain} review={review} hint={hint} error={aiError} onExplain={explainSubmission} onReview={reviewSubmission} onHint={requestHint} locale={locale} />
+              </div>
+              <section className="detail-dock judge-region">
+                <div className="tabs" role="tablist" aria-label={locale === "zh" ? "工作台详情" : "Workbench details"}>
                   <TabButton tab="cases" active={detailTab} onClick={setDetailTab}>{text.publicCases}</TabButton>
                   <TabButton tab="solution" active={detailTab} onClick={setDetailTab}>{text.solution}</TabButton>
                   <TabButton tab="judge" active={detailTab} onClick={setDetailTab}>{text.judge}</TabButton>
                   <TabButton tab="trail" active={detailTab} onClick={setDetailTab}>{text.trail}</TabButton>
+                  <TabButton tab="discussion" active={detailTab} onClick={setDetailTab}>{text.discussion}</TabButton>
                 </div>
                 <div className="detail-panel">
                   {detailTab === "cases" ? <SampleCases problem={problem} locale={locale} /> : null}
                   {detailTab === "solution" ? <OfficialSolution solution={solutionsQuery.data?.[0]} locale={locale} /> : null}
                   {detailTab === "judge" ? <JudgeTimeline events={events} submission={submission} /> : null}
                   {detailTab === "trail" ? <SubmissionTrail submissions={trailQuery.data ?? []} locale={locale} /> : null}
+                  {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} onRequireAuth={onRequireAuth} /> : null}
                 </div>
               </section>
             </>
@@ -659,22 +717,8 @@ function StatusBadge({ submission, locale }: { submission: SubmissionDetail | nu
   return <strong className={`status-badge ${label.toLowerCase()}`} title={verdict.description}>{verdict.label}</strong>;
 }
 
-function TabButton({
-  tab,
-  active,
-  onClick,
-  children,
-}: {
-  tab: DetailTab;
-  active: DetailTab;
-  onClick: (tab: DetailTab) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button title={`切换到${children}面板`} className={active === tab ? "active" : ""} role="tab" aria-selected={active === tab} onClick={() => onClick(tab)}>
-      {children}
-    </button>
-  );
+function TabButton({ tab, active, onClick, children }: { tab: DetailTab; active: DetailTab; onClick: (tab: DetailTab) => void; children: React.ReactNode }) {
+  return <button title={String(children)} className={active === tab ? "active" : ""} role="tab" aria-selected={active === tab} onClick={() => onClick(tab)}>{children}</button>;
 }
 
 function ProblemStatement({ problem, locale }: { problem?: ProblemDetail; locale: Locale }) {
@@ -684,20 +728,20 @@ function ProblemStatement({ problem, locale }: { problem?: ProblemDetail; locale
   return (
     <article className="prose-panel">
       <p>{displayProblem.description}</p>
-      <p className="muted">{text.acceptance} {Math.round(displayProblem.ac_rate * 100)}%，{text.submissions} {displayProblem.total_submissions}</p>
+      <p className="muted">{text.acceptance} {percent(displayProblem.ac_rate)}%, {text.submissions} {displayProblem.total_submissions}</p>
       <h3>{text.officialHint}</h3>
       <p>{displayProblem.hint ?? text.noHint}</p>
     </article>
   );
 }
 
-function ProblemVisual({ problem }: { problem?: ProblemDetail }) {
+function ProblemVisual({ problem, locale }: { problem?: ProblemDetail; locale: Locale }) {
   const visual = getVisualSpec(problem);
   return (
-    <section className="visual-panel" aria-label="图形化讲解">
-      <h3>{visual.title}</h3>
+    <section className="visual-panel" aria-label={locale === "zh" ? "图形化讲解" : "Visual explanation"}>
+      <h3>{visual.title[locale]}</h3>
       <div className="visual-flow">
-        {visual.steps.map((step, index) => (
+        {visual.steps[locale].map((step, index) => (
           <div className="visual-step" key={step}>
             <span>{index + 1}</span>
             <p>{step}</p>
@@ -708,17 +752,19 @@ function ProblemVisual({ problem }: { problem?: ProblemDetail }) {
   );
 }
 
-function FunctionFrame({ problem, mode, blocked, locale }: { problem?: ProblemDetail; mode: JudgeMode; blocked: boolean; locale: Locale }) {
+function FunctionFrame({ problem, mode, language, blocked, locale }: { problem?: ProblemDetail; mode: JudgeMode; language: string; blocked: boolean; locale: Locale }) {
   const text = UI[locale];
-  if (mode !== "function") {
-    return <div className="function-frame">{text.acmFrame}</div>;
-  }
+  if (mode !== "function") return <div className="function-frame">{text.acmFrame}</div>;
   const spec = getFunctionSpec(problem);
   if (!spec) return <div className="function-frame warning">{text.noFunctionFrame}</div>;
+  const starter = buildStarter(problem, language, "function");
+  const signature = language === "python"
+    ? spec.signature
+    : starter.split("\n").find((line) => /(function|vector<|double |int |String |func |class Solution)/.test(line.trim()))?.trim() ?? spec.signature;
   return (
     <div className={blocked ? "function-frame warning" : "function-frame"}>
-      <strong>{spec.signature}</strong>
-      <span>{blocked ? text.functionPythonOnly : spec.description}</span>
+      <strong>{signature}</strong>
+      <span>{blocked ? text.functionPythonOnly : getLocalizedFunctionDescription(problem, locale)}</span>
     </div>
   );
 }
@@ -729,16 +775,21 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
   return (
     <div className="case-grid">
       {problem.sample_testcases.map((testcase, index) => (
-        <pre className="sample" key={`${testcase.input}-${index}`}>Example {index + 1}
-
-{text.input}:
-{testcase.input}
-
-{text.output}:
-{testcase.output}
-
-{locale === "zh" ? "解释" : "Explanation"}:
-{sampleExplanation(problem.slug, index, locale)}</pre>
+        <article className="sample-card" key={`${testcase.input}-${index}`}>
+          <h3>Example {index + 1}</h3>
+          <div className="sample-row">
+            <span>{text.input}</span>
+            <pre>{testcase.input}</pre>
+          </div>
+          <div className="sample-row">
+            <span>{text.output}</span>
+            <pre>{testcase.output}</pre>
+          </div>
+          <div className="sample-row">
+            <span>{text.explanation}</span>
+            <p>{sampleExplanation(problem.slug, index, locale)}</p>
+          </div>
+        </article>
       ))}
     </div>
   );
@@ -755,10 +806,7 @@ function sampleExplanation(slug: string, index: number, locale: Locale): string 
     "softmax-cross-entropy": ["Apply stable softmax to logits, then take the negative log probability of the target class.", "Both logits are equal, so the target probability is 1/2 and the loss is ln 2."],
     "valid-parentheses": ["Every opening bracket is matched and popped in the correct order.", "The closing bracket type does not match the stack top, so the string is invalid."],
   };
-  const fallback =
-    locale === "zh"
-      ? "该输出是此输入下的标准答案；评测会按相同输入/输出格式比较。"
-      : "The output is the canonical expected answer for this input; judging compares the same I/O format.";
+  const fallback = locale === "zh" ? "该输出是此输入下的标准答案；评测会按相同输入/输出格式比较。" : "The output is the canonical expected answer for this input; judging compares the same I/O format.";
   return (locale === "zh" ? zh : en)[slug]?.[index] ?? fallback;
 }
 
@@ -772,6 +820,181 @@ function OfficialSolution({ solution, locale }: { solution?: { explanation: stri
   );
 }
 
+function DiscussionPanel({ problemId, locale, authenticated, onRequireAuth }: { problemId: string; locale: Locale; authenticated: boolean; onRequireAuth: () => void }) {
+  const text = UI[locale];
+  const key = `fastoj.discussion.${problemId}`;
+  const [body, setBody] = useState("");
+  const [posts, setPosts] = useState<DiscussionPost[]>(() => JSON.parse(localStorage.getItem(key) ?? "[]"));
+
+  function post() {
+    if (!authenticated) {
+      onRequireAuth();
+      return;
+    }
+    const trimmed = body.trim();
+    if (!trimmed) return;
+    const next = [
+      { id: crypto.randomUUID(), author: localStorage.getItem("fastoj.displayName") ?? "FastOJ User", body: trimmed, createdAt: new Date().toISOString() },
+      ...posts,
+    ];
+    setPosts(next);
+    localStorage.setItem(key, JSON.stringify(next));
+    setBody("");
+  }
+
+  return (
+    <section className="discussion-panel">
+      <h3>{text.discussionTitle}</h3>
+      <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder={text.discussionPlaceholder} />
+      <button className="primary" onClick={post}>{text.postDiscussion}</button>
+      {posts.length ? posts.map((item) => (
+        <article className="discussion-post" key={item.id}>
+          <strong>{item.author}</strong>
+          <small>{new Date(item.createdAt).toLocaleString()}</small>
+          <p>{item.body}</p>
+        </article>
+      )) : <p className="muted">{text.noDiscussion}</p>}
+    </section>
+  );
+}
+
+function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUser: CurrentUser | null; onBack: () => void }) {
+  const text = locale === "zh"
+    ? {
+      title: "管理后台",
+      copy: "管理题目、官方题解、测试用例和用户权限。隐藏用例只显示数量，不在页面暴露内容。",
+      users: "用户",
+      problems: "题目与内容",
+      noAccess: "当前账号没有管理权限。",
+      back: "返回题库",
+      active: "启用",
+      disabled: "停用",
+      admin: "管理员",
+      user: "用户",
+      cases: "用例",
+      hidden: "隐藏",
+      solutions: "题解",
+      public: "公开",
+      private: "隐藏",
+      saveSolution: "保存 Python 题解",
+    }
+    : {
+      title: "Admin",
+      copy: "Manage problems, official solutions, test cases, and user permissions. Hidden cases are shown as counts only.",
+      users: "Users",
+      problems: "Problems and content",
+      noAccess: "This account does not have admin access.",
+      back: "Back to problems",
+      active: "Active",
+      disabled: "Disabled",
+      admin: "Admin",
+      user: "User",
+      cases: "cases",
+      hidden: "hidden",
+      solutions: "solutions",
+      public: "Public",
+      private: "Private",
+      saveSolution: "Save Python solution",
+    };
+  const overviewQuery = useQuery({
+    queryKey: ["admin-overview", currentUser?.id],
+    queryFn: () => api.adminOverview(),
+    enabled: currentUser?.role === "admin",
+  });
+
+  if (currentUser?.role !== "admin") {
+    return (
+      <main className="settings-page">
+        <section className="settings-card">
+          <button className="icon-button close-button tip" data-tip={text.back} onClick={onBack}><IconGlyph>x</IconGlyph></button>
+          <p className="eyebrow">Admin</p>
+          <h1>{text.title}</h1>
+          <p className="muted">{text.noAccess}</p>
+        </section>
+      </main>
+    );
+  }
+
+  async function updateUser(userId: string, payload: Record<string, unknown>) {
+    await api.adminUpdateUser(userId, payload);
+    await overviewQuery.refetch();
+  }
+
+  async function updateProblem(problemId: string, payload: Record<string, unknown>) {
+    await api.adminUpdateProblem(problemId, payload);
+    await overviewQuery.refetch();
+  }
+
+  async function savePythonSolution(problemId: string) {
+    await api.adminUpsertSolution(problemId, {
+      language: "python",
+      explanation: locale === "zh" ? "请在数据库或后续编辑器中补充完整官方题解。" : "Fill in the full official explanation in the database or the next editor pass.",
+      code: "# TODO: add official solution\n",
+      time_complexity: null,
+      space_complexity: null,
+    });
+    await overviewQuery.refetch();
+  }
+
+  const users = overviewQuery.data?.users ?? [];
+  const problems = overviewQuery.data?.problems ?? [];
+
+  return (
+    <main className="admin-page">
+      <section className="admin-shell">
+        <button className="icon-button close-button tip" data-tip={text.back} onClick={onBack}><IconGlyph>x</IconGlyph></button>
+        <p className="eyebrow">Admin</p>
+        <h1>{text.title}</h1>
+        <p className="muted">{text.copy}</p>
+        <div className="admin-grid">
+          <section className="admin-panel">
+            <h2>{text.users}</h2>
+            {users.map((user: any) => (
+              <article className="admin-row" key={user.id}>
+                <div>
+                  <strong>{user.username}</strong>
+                  <span>{user.email}</span>
+                </div>
+                <select value={user.role} onChange={(event) => updateUser(user.id, { role: event.target.value })}>
+                  <option value="user">{text.user}</option>
+                  <option value="admin">{text.admin}</option>
+                </select>
+                <button onClick={() => updateUser(user.id, { is_active: !user.is_active })}>
+                  {user.is_active ? text.active : text.disabled}
+                </button>
+              </article>
+            ))}
+          </section>
+          <section className="admin-panel">
+            <h2>{text.problems}</h2>
+            {problems.map((problem: any) => (
+              <article className="admin-row problem-admin-row" key={problem.id}>
+                <div>
+                  <strong>{problem.title}</strong>
+                <span>{problem.slug} · {problem.difficulty} · {problem.tags.join(", ")}</span>
+              </div>
+                <select value={problem.difficulty} onChange={(event) => updateProblem(problem.id, { difficulty: event.target.value })}>
+                  <option value="easy">easy</option>
+                  <option value="medium">medium</option>
+                  <option value="hard">hard</option>
+                </select>
+                <button onClick={() => updateProblem(problem.id, { is_public: !problem.is_public })}>
+                  {problem.is_public ? text.public : text.private}
+                </button>
+                <span>{problem.testcase_count} {text.cases}</span>
+                <span>{problem.hidden_testcase_count} {text.hidden}</span>
+                <button onClick={() => savePythonSolution(problem.id)} disabled={problem.solution_count > 0}>
+                  {problem.solution_count} {text.solutions}
+                </button>
+              </article>
+            ))}
+          </section>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function App() {
   const recentProblemId = useAppStore((state) => state.recentProblemId);
   const [selectedId, setSelectedId] = useState<string | null>(recentProblemId);
@@ -779,9 +1002,26 @@ function App() {
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [locale, setLocale] = useState<Locale>(() => (localStorage.getItem("fastoj.locale") === "en" ? "en" : "zh"));
   const [authenticated, setAuthenticated] = useState(Boolean(localStorage.getItem("fastoj.jwt")));
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [graphTag, setGraphTag] = useState("");
   const problemsQuery = useQuery({ queryKey: ["problems", "graph"], queryFn: () => api.problems({}) });
   const problems = useMemo(() => problemsQuery.data ?? [], [problemsQuery.data]);
+
+  useEffect(() => {
+    if (!authenticated) {
+      setCurrentUser(null);
+      return;
+    }
+    api.me()
+      .then(setCurrentUser)
+      .catch((error) => {
+        if (isUnauthorized(error)) {
+          localStorage.removeItem("fastoj.jwt");
+          setAuthenticated(false);
+          setView("auth");
+        }
+      });
+  }, [authenticated]);
 
   function openProblem(id: string) {
     setSelectedId(id);
@@ -804,34 +1044,17 @@ function App() {
   function logout() {
     localStorage.removeItem("fastoj.jwt");
     setAuthenticated(false);
+    setCurrentUser(null);
     setView("library");
   }
 
   return (
     <div className="app-shell">
-      <AuthBar
-        view={view}
-        authenticated={authenticated}
-        locale={locale}
-        onView={setView}
-        onAuth={openAuth}
-        onLogout={logout}
-        onLocale={toggleLocale}
-      />
-      {view === "auth" ? (
-        <AuthPage
-          mode={authMode}
-          locale={locale}
-          onMode={setAuthMode}
-          onDone={() => {
-            setAuthenticated(true);
-            setView("library");
-          }}
-        />
-      ) : null}
-      {view === "library" ? (
-        <LibraryPage selectedId={selectedId} selectedTag={graphTag} locale={locale} onSelect={openProblem} onGraph={() => setView("graph")} />
-      ) : null}
+      <AuthBar view={view} authenticated={authenticated} currentUser={currentUser} locale={locale} onView={setView} onAuth={openAuth} onLogout={logout} onLocale={toggleLocale} />
+      {view === "auth" ? <AuthPage mode={authMode} locale={locale} onMode={setAuthMode} onDone={() => { setAuthenticated(true); setView("library"); }} /> : null}
+      {view === "settings" ? <SettingsPage locale={locale} currentUser={currentUser} onClose={() => setView("library")} onProfileSaved={setCurrentUser} /> : null}
+      {view === "admin" ? <AdminPage locale={locale} currentUser={currentUser} onBack={() => setView("library")} /> : null}
+      {view === "library" ? <LibraryPage selectedId={selectedId} selectedTag={graphTag} locale={locale} onSelect={openProblem} onGraph={() => setView("graph")} /> : null}
       {view === "workbench" ? (
         <Workspace
           problemId={selectedId}
@@ -848,6 +1071,7 @@ function App() {
       {view === "graph" ? (
         <TrainingGraph
           problems={problems}
+          locale={locale}
           onTag={(tag) => {
             setGraphTag(tag);
             setView("library");

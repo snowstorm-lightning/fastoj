@@ -49,7 +49,13 @@ def test_docker_execution_copies_code_and_input_by_archive(monkeypatch):
                 assert workdir == "/tmp"
                 assert user == "root"
                 return 0, b""
+            if command.startswith("sh -lc 'chmod"):
+                assert workdir == "/tmp"
+                assert user == "root"
+                return 0, b""
             assert "cd /tmp/work" in command
+            assert "cat input.txt |" not in command
+            assert "< input.txt" in command
             assert workdir == "/tmp/work"
             assert user == "nobody"
             return 0, b"ok\n"

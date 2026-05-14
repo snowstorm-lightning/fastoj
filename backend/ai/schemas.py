@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 Verdict = Literal[
     "accepted",
@@ -12,6 +12,8 @@ Verdict = Literal[
     "system_error",
     "unknown",
 ]
+AIModelProfile = Literal["default", "deepseek", "qwen-local"]
+AILocale = Literal["zh", "en"]
 
 
 class SuspiciousCodeRegion(BaseModel):
@@ -50,9 +52,20 @@ class AIReviewResponse(BaseModel):
 
 
 class AIHintRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     level: Literal[1, 2, 3]
     language: str | None = None
     current_code: str | None = None
+    model_profile: AIModelProfile = "default"
+    locale: AILocale = "en"
+
+
+class AIActionRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_profile: AIModelProfile = "default"
+    locale: AILocale = "en"
 
 
 class AIHintResponse(BaseModel):

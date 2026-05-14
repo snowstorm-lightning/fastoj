@@ -79,7 +79,7 @@
 - [x] Problem library, focused workbench, and training graph split into separate views.
 - [x] Workbench detail dock tabs for statement, public cases, solution, judge terminal, and submission trail.
 - [x] AI Copilot dense details collapsed into expandable sections.
-- [x] LeetCode-style workbench with collapsible statement and result sidebars.
+- [x] Core function-mode workbench with collapsible statement and result sidebars.
 - [x] Smooth resizable statement/result sidebars with narrower collapsed state.
 - [x] Dedicated login/register page instead of header-embedded auth fields.
 - [x] Redirect unauthenticated run/submit attempts to the login page.
@@ -121,9 +121,19 @@
 - [x] README updated for simplified frontend architecture and Pretext adapter usage.
 - [x] README updated for function/ACM modes, AI algorithm seed problems, and latest verification.
 - [x] README updated for dedicated auth page and resizable sidebars.
-- [x] README updated for i18n, single mode-toggle, expanded Hot100/AI seed problems, and latest Docker verification.
+- [x] README updated for i18n, single mode-toggle, expanded interview-list/AI seed problems, and latest Docker verification.
 - [x] README updated for DeepSeek/local AI configuration, API key storage, judge NumPy/PyTorch dependencies, and latest real-run verification.
 - [x] README updated for token-expiry alert, AI response normalization, expanded testcase counts, Softmax verification, and latest 71-test backend result.
+- [x] README/Chinese README updated for AI model selector, local Qwen profile status, structured sample cards, and acceptance-rate clamping.
+- [x] AGENTS.md refreshed with current stack, commands, constraints, and documentation expectations.
+- [x] Added account profile editing UI with close control, avatar preview, username/email/avatar/password fields, and persisted compact/display preferences.
+- [x] Added admin-only backend router and frontend admin console for user role/active state and basic problem visibility/difficulty management.
+- [x] AI explain/review/hint requests now carry active locale, and explain cache keys include locale to avoid English responses on Chinese pages.
+- [x] Official solution endpoint can return Chinese explanations for seeded problems when `locale=zh`.
+- [x] Added language-specific function starters for Python, C++, Java, JavaScript, TypeScript, Go, and selected C signatures.
+- [x] Added custom hover tooltip styling for icon controls and reduced the knowledge-graph intro panel footprint.
+- [x] Fixed Docker sandbox compiled-language execution so stdin is redirected to the final program instead of the compiler.
+- [x] Fixed Docker sandbox workspace permissions so `nobody` can create compiled binaries inside `/tmp/work` without adding capabilities.
 - [ ] Final summary.
 
 ## Verification
@@ -140,7 +150,7 @@
 - [x] Function mode unit tests.
 - [x] Frontend mode metadata tests.
 - [x] Remove legacy prototype testcase compatibility; standardize function mode on JSON-line testcase input only.
-- [x] Add Hot100-style seed problems and extra AI algorithm seed problems.
+- [x] Add interview-list seed problems and extra AI algorithm seed problems.
 - [x] JSON-equivalent judge output comparison to avoid false WA on formatting.
 - [x] Docker rebuild passed after auth/resizable sidebar work.
 - [x] API health check returned HTTP 200 after latest rebuild.
@@ -148,6 +158,17 @@
 - [x] API and worker health checks reported healthy after latest rebuild.
 - [x] `uv run pytest` passed after latest WIP, 68 tests passed with 3 datetime deprecation warnings.
 - [x] `requests<2.32` lock update verified locally and in Docker build to restore Docker SDK socket access.
+- [x] `uv run pytest` passed after model selector and acceptance-rate clamping, 71 tests passed with 3 datetime deprecation warnings.
+- [x] `cd frontend && npm run build` passed after model selector, graph localization, discussion/settings, and sample-card UI.
+- [x] `cd frontend && npm test` passed after model selector and graph test update, 6 test files and 8 tests passed.
+- [x] `uv run pytest` passed after account/admin/AI-locale/function-starter edits, 72 tests passed with 3 datetime deprecation warnings.
+- [x] `cd frontend && npm run build` passed after account/admin/AI-locale/function-starter edits, with existing Monaco/Shiki chunk-size warnings.
+- [x] `cd frontend && npm test` passed after account/admin/AI-locale/function-starter edits, 6 test files and 8 tests passed.
+- [x] `docker compose up --build -d api worker` passed after the latest sandbox/function-mode edits; API and worker are healthy.
+- [x] HTTP health and rebuilt frontend checks passed at `http://127.0.0.1:8000`.
+- [x] Real Docker-backed public run for Two Sum C++ function mode passed with `result=ac`.
+- [x] `docker compose up --build -d api` passed; API container rebuilt with the latest frontend bundle.
+- [x] `Get-Command llama-server` returned no installed command; local Qwen profile is wired but the actual local server is not started.
 - [x] Real Docker-backed public run no longer fails for Two Sum function mode.
 - [x] Final Docker health check passed after Docker Desktop restart on 2026-05-14.
 - [x] Worker-in-container Docker SDK access verified with requests 2.31.0 and Docker ping returning `True`.

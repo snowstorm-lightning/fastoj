@@ -22,25 +22,27 @@ RESULT_TO_VERDICT = {
 
 
 class AIService:
-    def __init__(self, db: Session, provider: BaseAIProvider | None = None):
+    def __init__(self, db: Session, provider: BaseAIProvider | None = None, model_profile: str | None = None):
         self.db = db
-        self.config = AIConfig.from_settings()
+        self.config = AIConfig.from_settings(model_profile)
         self.provider = provider or build_provider(self.config)
 
-    def explain_submission(self, submission_id: str, current_user: User) -> AIExplainResponse:
+    def explain_submission(self, submission_id: str, current_user: User, locale: str = "en") -> AIExplainResponse:
         submission = self._get_allowed_submission(submission_id, current_user)
         context = self._submission_context(submission)
+        context["response_language"] = self._response_language(locale)
         raw = self.provider.complete_json(
-            explain_submission.SYSTEM_PROMPT,
+            self._localized_system_prompt(explain_submission.SYSTEM_PROMPT, locale),
             explain_submission.build_prompt(context),
         )
         return self._parse_explain(raw, context)
 
-    def review_submission(self, submission_id: str, current_user: User) -> AIReviewResponse:
+    def review_submission(self, submission_id: str, current_user: User, locale: str = "en") -> AIReviewResponse:
         submission = self._get_allowed_submission(submission_id, current_user)
         context = self._submission_context(submission, include_results=False)
+        context["response_language"] = self._response_language(locale)
         raw = self.provider.complete_json(
-            review_code.SYSTEM_PROMPT,
+            self._localized_system_prompt(review_code.SYSTEM_PROMPT, locale),
             review_code.build_prompt(context),
         )
         return self._parse_review(raw)
@@ -51,6 +53,7 @@ class AIService:
         level: int,
         language: str | None,
         current_code: str | None,
+        locale: str = "en",
     ) -> AIHintResponse:
         problem = self.db.query(Problem).filter(Problem.id == problem_id, Problem.is_public.is_(True)).first()
         if not problem:
@@ -59,13 +62,14 @@ class AIService:
             "problem": self._problem_context(problem),
             "level": level,
             "language": language,
+            "response_language": self._response_language(locale),
             "current_code": self._redact_secrets(current_code or ""),
             "rules": [
                 "Do not use hidden testcases.",
                 "Do not return complete accepted code.",
             ],
         }
-        raw = self.provider.complete_json(hint.SYSTEM_PROMPT, hint.build_prompt(context))
+        raw = self.provider.complete_json(self._localized_system_prompt(hint.SYSTEM_PROMPT, locale), hint.build_prompt(context))
         data = self._extract_json(raw)
         data.setdefault("level", level)
         data.setdefault("hint", self._fallback_hint(level, problem))
@@ -257,6 +261,14 @@ class AIService:
         if level == 2:
             return "Identify the invariant that lets you avoid checking every possible answer."
         return "Write pseudocode first: parse input, maintain the needed state, update the answer, then print exactly the required output."
+
+    def _response_language(self, locale: str) -> str:
+        return "Simplified Chinese" if locale == "zh" else "English"
+
+    def _localized_system_prompt(self, prompt: str, locale: str) -> str:
+        if locale == "zh":
+            return f"{prompt}\nRespond in Simplified Chinese for every user-facing string inside the JSON values."
+        return f"{prompt}\nRespond in English for every user-facing string inside the JSON values."
 
 
 __all__ = ["AIProviderUnavailableError", "AIService"]

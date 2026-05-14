@@ -1,5 +1,7 @@
 # FastOJ
 
+English | [简体中文](README.zh-CN.md)
+
 FastOJ is an AI-explainable interview training OJ platform. It keeps traditional OJ judging strictness while making judge explanations, code review, progressive hints, judge timelines, training graphs, and submission trails first-class user experiences.
 
 AI explanations are grounded in the real submission verdict and public testcase information. Hidden testcase input, expected output, and actual output are never returned to normal users and are never sent to the AI provider.
@@ -10,7 +12,7 @@ AI explanations are grounded in the real submission verdict and public testcase 
 - Queue: Redis Streams with consumer groups, ack, retry, dead-letter, and pending reclaim.
 - Judge: Docker sandbox worker. Production does not fall back to host subprocess execution.
 - Realtime: Worker publishes status events to Redis pub/sub; API relays events to WebSocket clients.
-- Frontend: Vite, React, TypeScript, Tailwind CSS, Monaco Editor, TanStack Query, Zustand, Zod, xterm, Shiki, @xyflow/react, @chenglou/pretext. The UI is organized as a three-view training flow: problem library, LeetCode-style workbench, and training graph.
+- Frontend: Vite, React, TypeScript, Tailwind CSS, Monaco Editor, TanStack Query, Zustand, Zod, xterm, Shiki, @xyflow/react, @chenglou/pretext. The UI is organized as a three-view training flow: problem library, core function-mode workbench, and training graph.
 - AI: OpenAI-compatible chat completions provider, disabled by default.
 
 ## Dependency Audit
@@ -52,14 +54,17 @@ The React frontend is intentionally split into focused views instead of one dens
 
 - Problem library: keyword, tag, difficulty, pagination, training summary, AI-practice count, function-mode count, and recommendation entry.
 - Auth flow: login and registration live on a dedicated page instead of being embedded in the global header.
-- Workbench: a LeetCode-style three-column layout with collapsible and resizable problem/result sidebars, central Monaco editor, and a right-side AI/judge drawer.
-- Mode switch: supported problems can run in `function` mode, where the editor shows the required Python function signature and the backend wraps it in a stdin/stdout harness before judging. All problems can still use `acm` mode, where the submission owns standard input and output. The workbench uses one compact toggle button with localized text and mode-colored status dots.
+- Workbench: a focused three-column layout with collapsible and resizable problem/result sidebars, central Monaco editor, and a right-side AI/judge drawer.
+- Mode switch: supported problems can run in `function` mode, where the editor shows a language-specific function signature and the backend wraps it in a stdin/stdout harness before judging. All problems can still use `acm` mode, where the submission owns standard input and output. The workbench uses one compact toggle button with localized text and mode-colored status dots.
 - Language switch: the current UI ships a frontend-side Chinese/English catalog for navigation, auth, verdict labels, hover explanations, mode labels, and seeded problem display text. Longer term, user-authored domain content such as problem statements and official solutions should move to backend-managed localized fields while stable UI chrome stays in the frontend i18n bundle.
-- Detail dock: public cases, official solution, judge terminal, and submission trail are available as tabs.
+- Detail dock: public cases, official solution, judge terminal, submission trail, and local discussion are available as tabs.
 - Training graph: @xyflow/react renders knowledge nodes; clicking a node returns to the library and applies the tag filter.
 - Static visual guide: supported problems render a prebuilt visual step flow in the statement sidebar, avoiding runtime AI calls for basic conceptual explanation.
-- Button clarity: primary workflow buttons include explicit visible labels, hover titles, and 3D normal/hover/pressed states. Collapsed sidebars use compact three-bar controls.
+- Button clarity: primary workflow buttons use icon-first controls, custom hover popovers, and 3D normal/hover/pressed states. Collapsed sidebars use compact edge controls.
 - Token expiry: if a submit action discovers an expired session, the frontend shows a localized expiry alert before redirecting to the dedicated auth page.
+- AI model selection: the workbench can choose a controlled AI profile (`default`, `deepseek`, or `qwen-local`) without exposing arbitrary model names or base URLs to the browser.
+- Account settings: signed-in users can edit display name, username, email, avatar URL, compact mode, and password.
+- Admin console: server-side admin role checks protect user and problem management. The UI can change user role/active state, problem difficulty/public state, and create a missing Python official-solution placeholder without exposing hidden testcase content.
 
 AI Copilot defaults to the current verdict and next action. Longer information such as suspicious code regions, public-case comparison, boundary checks, and complexity notes is placed in expandable sections to reduce cognitive load.
 
@@ -174,6 +179,7 @@ Rules:
 - Hidden testcase input, expected output, and actual output are never included in AI prompts.
 - If a hidden testcase fails, the AI context only says hidden data cannot be shown and suggests boundary categories.
 - The AI is instructed not to reveal complete accepted solutions.
+- AI responses receive the active UI locale (`zh` or `en`) and should render in the same language as the page.
 - Provider JSON is normalized before schema validation, so common OpenAI-compatible variations such as scalar `focus`, `risks`, or verdict strings do not break hint, explanation, or review rendering.
 
 FastOJ uses one OpenAI-compatible provider path for both hosted API models and local models. Store secrets in the repository-root `.env` file or in deployment environment variables. The root `.env` and `.env.*` files are ignored by git; `.env.example` is safe to commit and documents the expected variable names.
@@ -197,13 +203,13 @@ Seed data can be applied to a new or existing database. Existing seeded problems
 uv run python -m backend.scripts.seed_data
 ```
 
-The seed set includes traditional interview tasks, selected Hot100-style practice tasks, and AI algorithm tasks:
+The seed set includes traditional interview tasks, selected interview-list practice tasks, and AI algorithm tasks:
 
 - Traditional/function tasks: Two Sum, Add Two Numbers, Longest Substring Without Repeating Characters.
-- Hot100-style ACM tasks: Valid Parentheses, Maximum Subarray, Group Anagrams, Merge Intervals, Climbing Stairs, Container With Most Water.
+- Interview-list ACM tasks: Valid Parentheses, Maximum Subarray, Group Anagrams, Merge Intervals, Climbing Stairs, Container With Most Water.
 - AI algorithm tasks: Logistic Regression Sigmoid, KNN Majority Vote, KMeans One Iteration, Scaled Dot-Product Attention, Softmax Cross Entropy, Attention Mask Apply.
 
-Function mode currently supports Python wrappers for the seeded function tasks. Unsupported languages can still solve the same problems through ACM mode.
+Function mode supports Python, C++, Java, JavaScript, TypeScript, Go, and selected C wrappers for seeded function tasks. ACM mode remains available for every problem and language.
 
 Function-mode testcase data uses the current JSON-line format only. Incompatible prototype testcase rows are normalized by the seed script instead of being supported by extra parser compatibility.
 
@@ -243,6 +249,22 @@ In Docker Compose on Docker Desktop, use:
 AI_BASE_URL=http://host.docker.internal:8080/v1
 ```
 
+For the in-page `Qwen local` selector, keep `AI_PROVIDER=openai_compatible` and set the named profile:
+
+```bash
+AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
+AI_QWEN_API_KEY=sk-no-key-required
+AI_QWEN_MODEL=qwen2.5-coder-3b-instruct
+```
+
+The `DeepSeek` selector uses:
+
+```bash
+AI_DEEPSEEK_BASE_URL=https://api.deepseek.com
+AI_DEEPSEEK_API_KEY=your-deepseek-api-key
+AI_DEEPSEEK_MODEL=deepseek-v4-flash
+```
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -258,6 +280,12 @@ AI_BASE_URL=http://host.docker.internal:8080/v1
 | `AI_BASE_URL` | `http://localhost:8080/v1` | OpenAI-compatible base URL |
 | `AI_API_KEY` | `sk-no-key-required` | Provider API key |
 | `AI_MODEL` | `qwen2.5-coder-3b-instruct` | Chat model |
+| `AI_DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Named DeepSeek profile base URL |
+| `AI_DEEPSEEK_API_KEY` | empty | Named DeepSeek profile API key |
+| `AI_DEEPSEEK_MODEL` | `deepseek-v4-flash` | Named DeepSeek profile model |
+| `AI_QWEN_BASE_URL` | `http://host.docker.internal:8080/v1` | Named local Qwen profile base URL for Docker Desktop |
+| `AI_QWEN_API_KEY` | `sk-no-key-required` | Named local Qwen profile API key |
+| `AI_QWEN_MODEL` | `qwen2.5-coder-3b-instruct` | Named local Qwen profile model |
 | `AI_TIMEOUT_SECONDS` | `60` | AI request timeout |
 | `AI_MAX_OUTPUT_TOKENS` | `1200` | AI response token cap |
 
@@ -289,14 +317,18 @@ docker compose up --build
 Latest verification from this workspace:
 
 - `uv run ruff check .`: passed.
-- `uv run pytest`: passed, 71 tests passed with 3 datetime deprecation warnings.
-- `cd frontend && npm run build`: passed after the token-expiry alert, AI response normalization, fixed-viewport workbench, sample explanation, and expanded testcase work, with existing Monaco/Shiki chunk-size warnings.
-- `cd frontend && npm test`: passed after the i18n and problem-set work, 6 test files and 8 tests passed; jsdom printed expected canvas `getContext` warnings.
+- `uv run pytest`: passed, 72 tests passed with 3 datetime deprecation warnings.
+- `cd frontend && npm run build`: passed after account/admin pages, localized AI requests, custom tooltips, graph layout polish, and multi-language function starters, with existing Monaco/Shiki chunk-size warnings.
+- `cd frontend && npm test`: passed after the multi-language function starter test update, 6 test files and 8 tests passed; jsdom printed expected canvas `getContext` warnings.
 - `docker compose build judge-runtime`: passed after adding NumPy and CPU PyTorch to the judge image.
 - `docker compose up --build -d api`: passed and rebuilt/recreated the API container with the latest frontend bundle.
 - `docker compose ps`: API and worker healthy; PostgreSQL and Redis healthy; judge runtime running.
 - `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/v1/health`: passed with HTTP 200 and `{"status":"healthy","app":"FastOJ"}`. In this PowerShell session, `localhost` can time out even while Docker reports the API healthy, so use `127.0.0.1` for manual checks if needed.
 - `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000`: passed with HTTP 200 and returned rebuilt frontend HTML.
+- `docker compose up --build -d api worker`: passed after the latest account/admin/function-mode work; API and worker are healthy.
+- Docker-backed public run for Two Sum C++ function mode passed with `result=ac` after fixing compiled-language stdin redirection and sandbox workspace permissions.
+- Frontend build/test and backend tests passed after the model selector, localized graph, structured sample cards, discussion/settings views, and acceptance-rate clamping work.
+- `Get-Command llama-server`: not found in the current PATH. The `qwen-local` UI/backend profile is wired, but a local OpenAI-compatible Qwen server still needs to be installed and started before that selector can return real model responses.
 - `docker compose exec -T api uv run python -m backend.scripts.seed_data`: passed and normalized 15 existing problems in the current database; all bundled problems now have at least 10 testcase rows and at least two public samples.
 - `docker compose exec -T worker ... SandboxExecutor`: passed for a Python submission importing both NumPy and PyTorch.
 - Real API public run and full submit for Two Sum function mode passed with `result=ac`; the old `Runtime error (exit code 2)` path is fixed.
@@ -326,7 +358,7 @@ Latest verification from this workspace:
 ## Known Limits
 
 - The bundled frontend currently uses Monaco and Shiki directly, so production chunks are large.
-- Function mode wrappers currently target Python; use ACM mode for C/C++/Java/JavaScript/TypeScript/Go until language-specific wrappers are added.
+- C function-mode wrappers currently cover only the simpler seeded signatures; use ACM mode for C on AI tasks that require matrices or strings until those C harnesses are expanded.
 - MLE classification depends on Docker runtime exit behavior.
 - AI quality depends on the configured OpenAI-compatible model.
 - The AI review UI is submission-oriented; reviewing unsaved code is implemented through the latest run/submission flow.

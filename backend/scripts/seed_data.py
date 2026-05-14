@@ -18,7 +18,7 @@ PROBLEMS_DATA = [
             "memory_limit": 256,
             "tags": ["Array", "Hash Table", "Function"],
             "hint": "Use a hash table to remember values already scanned.",
-            "source": "LeetCode-style",
+            "source": "Core function practice",
         },
         "testcases": [
             {"input": "[2,7,11,15]\n9", "output": "[0,1]", "is_sample": True, "is_hidden": False, "score": 10},
@@ -43,7 +43,7 @@ PROBLEMS_DATA = [
             "memory_limit": 256,
             "tags": ["Linked List", "Math", "Function"],
             "hint": "Walk both arrays and carry one digit at a time.",
-            "source": "LeetCode-style",
+            "source": "Core function practice",
         },
         "testcases": [
             {"input": "[2,4,3]\n[5,6,4]", "output": "[7,0,8]", "is_sample": True, "is_hidden": False, "score": 10},
@@ -61,7 +61,7 @@ PROBLEMS_DATA = [
             "memory_limit": 256,
             "tags": ["String", "Hash Table", "Sliding Window", "Function"],
             "hint": "Keep a moving left boundary and last-seen positions.",
-            "source": "LeetCode-style",
+            "source": "Core function practice",
         },
         "testcases": [
             {"input": "abcabcbb", "output": "3", "is_sample": True, "is_hidden": False, "score": 10},
@@ -77,9 +77,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.EASY,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Hot 100", "Stack", "String"],
+            "tags": ["Interview", "Stack", "String"],
             "hint": "Use a stack of expected closing brackets.",
-            "source": "LeetCode Hot 100-style",
+            "source": "Interview list practice",
         },
         "testcases": [
             {"input": "()[]{}", "output": "true", "is_sample": True, "is_hidden": False, "score": 10},
@@ -95,9 +95,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Hot 100", "Array", "Dynamic Programming"],
+            "tags": ["Interview", "Array", "Dynamic Programming"],
             "hint": "Track the best subarray ending at the current position.",
-            "source": "LeetCode Hot 100-style",
+            "source": "Interview list practice",
         },
         "testcases": [
             {"input": "[-2,1,-3,4,-1,2,1,-5,4]", "output": "6", "is_sample": True, "is_hidden": False, "score": 10},
@@ -113,9 +113,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 2000,
             "memory_limit": 256,
-            "tags": ["Hot 100", "Array", "Hash Table", "String"],
+            "tags": ["Interview", "Array", "Hash Table", "String"],
             "hint": "Use the sorted characters of each word as the hash key.",
-            "source": "LeetCode Hot 100-style",
+            "source": "Interview list practice",
         },
         "testcases": [
             {"input": "[\"eat\",\"tea\",\"tan\",\"ate\",\"nat\",\"bat\"]", "output": "[[\"ate\",\"eat\",\"tea\"],[\"bat\"],[\"nat\",\"tan\"]]", "is_sample": True, "is_hidden": False, "score": 10},
@@ -131,9 +131,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Hot 100", "Array", "Sorting"],
+            "tags": ["Interview", "Array", "Sorting"],
             "hint": "Sort by left endpoint, then extend or start a new interval.",
-            "source": "LeetCode Hot 100-style",
+            "source": "Interview list practice",
         },
         "testcases": [
             {"input": "[[1,3],[2,6],[8,10],[15,18]]", "output": "[[1,6],[8,10],[15,18]]", "is_sample": True, "is_hidden": False, "score": 10},
@@ -149,9 +149,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.EASY,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Hot 100", "Dynamic Programming", "Math"],
+            "tags": ["Interview", "Dynamic Programming", "Math"],
             "hint": "This is Fibonacci with small shifted base cases.",
-            "source": "LeetCode Hot 100-style",
+            "source": "Interview list practice",
         },
         "testcases": [
             {"input": "2", "output": "2", "is_sample": True, "is_hidden": False, "score": 10},
@@ -167,9 +167,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Hot 100", "Array", "Two Pointers"],
+            "tags": ["Interview", "Array", "Two Pointers"],
             "hint": "Move the pointer at the shorter line inward.",
-            "source": "LeetCode Hot 100-style",
+            "source": "Interview list practice",
         },
         "testcases": [
             {"input": "[1,8,6,2,5,4,8,3,7]", "output": "49", "is_sample": True, "is_hidden": False, "score": 10},
@@ -288,6 +288,63 @@ PROBLEMS_DATA = [
 ]
 
 
+DEFAULT_SOLUTIONS = {
+    "add-two-numbers": {
+        "code": "def add_two_numbers(l1, l2):\n    ans, carry, i = [], 0, 0\n    while i < len(l1) or i < len(l2) or carry:\n        total = carry\n        if i < len(l1): total += l1[i]\n        if i < len(l2): total += l2[i]\n        ans.append(total % 10)\n        carry = total // 10\n        i += 1\n    return ans\n",
+        "explanation": "Walk both reversed digit arrays from low to high digits. Keep a carry and append total % 10 each step.",
+    },
+    "longest-substring-without-repeating": {
+        "code": "def length_of_longest_substring(s):\n    left = 0\n    last = {}\n    best = 0\n    for right, ch in enumerate(s):\n        if ch in last and last[ch] >= left:\n            left = last[ch] + 1\n        last[ch] = right\n        best = max(best, right - left + 1)\n    return best\n",
+        "explanation": "Use a sliding window. When a repeated character appears inside the window, move the left boundary after its previous position.",
+    },
+    "valid-parentheses": {
+        "code": "import sys\ns = sys.stdin.read().strip()\nstack = []\npairs = {'(': ')', '[': ']', '{': '}'}\nok = True\nfor ch in s:\n    if ch in pairs:\n        stack.append(pairs[ch])\n    elif not stack or stack.pop() != ch:\n        ok = False\n        break\nprint('true' if ok and not stack else 'false')\n",
+        "explanation": "Push the expected closing bracket for every opening bracket. Each closing bracket must match the current stack top.",
+    },
+    "maximum-subarray": {
+        "code": "import json, sys\nnums = json.loads(sys.stdin.read())\nbest = cur = nums[0]\nfor x in nums[1:]:\n    cur = max(x, cur + x)\n    best = max(best, cur)\nprint(best)\n",
+        "explanation": "Kadane's algorithm keeps the best subarray ending at the current index and the global best answer.",
+    },
+    "group-anagrams": {
+        "code": "import json, sys\nwords = json.loads(sys.stdin.read())\ngroups = {}\nfor word in words:\n    groups.setdefault(''.join(sorted(word)), []).append(word)\nans = [sorted(group) for group in groups.values()]\nans.sort(key=lambda group: group[0] if group else '')\nprint(json.dumps(ans, separators=(',', ':')))\n",
+        "explanation": "Anagrams have the same sorted-character key. Group by that key, then sort groups deterministically for judging.",
+    },
+    "merge-intervals": {
+        "code": "import json, sys\nintervals = json.loads(sys.stdin.read())\nintervals.sort()\nans = []\nfor left, right in intervals:\n    if not ans or left > ans[-1][1]:\n        ans.append([left, right])\n    else:\n        ans[-1][1] = max(ans[-1][1], right)\nprint(json.dumps(ans, separators=(',', ':')))\n",
+        "explanation": "Sort intervals by start. Merge into the last interval when ranges overlap; otherwise start a new interval.",
+    },
+    "climbing-stairs": {
+        "code": "import sys\nn = int(sys.stdin.read())\na, b = 1, 1\nfor _ in range(n):\n    a, b = b, a + b\nprint(a)\n",
+        "explanation": "The number of ways follows Fibonacci-style recurrence: ways[n] = ways[n-1] + ways[n-2].",
+    },
+    "container-with-most-water": {
+        "code": "import json, sys\nh = json.loads(sys.stdin.read())\nleft, right = 0, len(h) - 1\nbest = 0\nwhile left < right:\n    best = max(best, min(h[left], h[right]) * (right - left))\n    if h[left] < h[right]: left += 1\n    else: right -= 1\nprint(best)\n",
+        "explanation": "Use two pointers. The area is limited by the shorter side, so move the shorter side inward.",
+    },
+}
+
+
+def _default_solution(item: dict) -> dict:
+    slug = item["problem"]["slug"]
+    if item.get("solution"):
+        return item["solution"]
+    data = DEFAULT_SOLUTIONS.get(slug)
+    if data:
+        return {
+            "language": "python",
+            "time_complexity": "O(n)",
+            "space_complexity": "O(n)",
+            **data,
+        }
+    return {
+        "language": "python",
+        "code": "# Reference solution is intentionally concise.\n",
+        "explanation": item["problem"]["hint"] or "Follow the main pattern described in the statement.",
+        "time_complexity": "See explanation",
+        "space_complexity": "See explanation",
+    }
+
+
 def _expanded_testcases(item: dict) -> list[dict]:
     """Return at least ten normalized cases; first two are public samples."""
     base_cases = [dict(testcase) for testcase in item["testcases"]]
@@ -377,7 +434,7 @@ def seed_problems():
                     testcase.is_hidden = True
                     testcase.score = 0
 
-            solution_data = item.get("solution")
+            solution_data = _default_solution(item)
             if solution_data:
                 solution = (
                     db.query(Solution)

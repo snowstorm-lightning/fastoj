@@ -27,9 +27,20 @@ class UserResponse(BaseModel):
     id: str
     username: str
     email: str
+    avatar_url: str | None = None
+    role: str = "user"
+    is_active: bool = True
     created_at: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserUpdate(BaseModel):
+    username: str | None = None
+    email: EmailStr | None = None
+    avatar_url: str | None = None
+    current_password: str | None = None
+    new_password: str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -64,6 +75,9 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         id=str(user.id),
         username=user.username,  # type: ignore[arg-type]
         email=user.email,  # type: ignore[arg-type]
+        avatar_url=user.avatar_url,  # type: ignore[arg-type]
+        role=user.role or "user",  # type: ignore[arg-type]
+        is_active=True if user.is_active is None else bool(user.is_active),
         created_at=user.created_at.isoformat(),
     )
 
@@ -145,3 +159,47 @@ def get_current_user(
         )
 
     return user
+
+
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=str(user.id),
+        username=user.username,  # type: ignore[arg-type]
+        email=user.email,  # type: ignore[arg-type]
+        avatar_url=user.avatar_url,  # type: ignore[arg-type]
+        role=user.role or "user",  # type: ignore[arg-type]
+        is_active=True if user.is_active is None else bool(user.is_active),
+        created_at=user.created_at.isoformat(),
+    )
+
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_user)):
+    return _user_response(current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_me(
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if payload.username and payload.username != current_user.username:
+        existing = db.query(User).filter(User.username == payload.username, User.id != current_user.id).first()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
+        current_user.username = payload.username
+    if payload.email and payload.email != current_user.email:
+        existing = db.query(User).filter(User.email == payload.email, User.id != current_user.id).first()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists")
+        current_user.email = payload.email
+    if payload.avatar_url is not None:
+        current_user.avatar_url = payload.avatar_url
+    if payload.new_password:
+        if not payload.current_password or not verify_password(payload.current_password, current_user.password_hash):  # type: ignore[arg-type]
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        current_user.password_hash = get_password_hash(payload.new_password)
+    db.commit()
+    db.refresh(current_user)
+    return _user_response(current_user)

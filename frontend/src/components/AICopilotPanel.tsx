@@ -18,9 +18,7 @@ function List({ items, locale }: { items: string[]; locale: Locale }) {
   if (!items.length) return <p className="muted">{locale === "zh" ? "暂无具体备注。" : "No specific notes yet."}</p>;
   return (
     <ul className="compact-list">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
+      {items.map((item) => <li key={item}>{item}</li>)}
     </ul>
   );
 }
@@ -54,7 +52,7 @@ export function AICopilotPanel({
       </section>
       <details className="copilot-details" open={Boolean(explain?.summary || review?.summary)}>
         <summary>{locale === "zh" ? "错误原因" : "Error Cause"}</summary>
-        <p>{explain?.summary ?? submission?.error_message ?? (locale === "zh" ? "运行或提交代码后会显示基于结果的建议。" : "Run or submit code to unlock result-aware guidance.")}</p>
+        <p>{explain?.summary ?? submission?.error_message ?? (locale === "zh" ? "运行或提交代码后，会显示基于结果的建议。" : "Run or submit code to unlock result-aware guidance.")}</p>
         {submission?.error_message ? <CodeBlock code={submission.error_message} language="text" /> : null}
       </details>
       <details className="copilot-details">
@@ -68,24 +66,18 @@ export function AICopilotPanel({
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="muted">{locale === "zh" ? "暂无行级可疑区域。" : "No line-level suspicion yet."}</p>
-        )}
+        ) : <p className="muted">{locale === "zh" ? "暂无行级可疑区域。" : "No line-level suspicion yet."}</p>}
       </details>
       <details className="copilot-details">
         <summary>{locale === "zh" ? "公开用例对比" : "Public Case Comparison"}</summary>
-        {explain?.public_case_analysis.length ? (
-          explain.public_case_analysis.map((item) => (
-            <div className="case-card" key={item.case_index}>
-              <strong>{locale === "zh" ? "用例" : "Case"} {item.case_index}</strong>
-              <p>{item.observation}</p>
-              <code>{locale === "zh" ? "期望" : "expected"}: {item.expected_summary}</code>
-              <code>{locale === "zh" ? "实际" : "actual"}: {item.actual_summary}</code>
-            </div>
-          ))
-        ) : (
-          <p className="muted">{locale === "zh" ? "这里只展示公开用例细节。" : "Only public testcase details will appear here."}</p>
-        )}
+        {explain?.public_case_analysis.length ? explain.public_case_analysis.map((item) => (
+          <div className="case-card" key={item.case_index}>
+            <strong>{locale === "zh" ? "用例" : "Case"} {item.case_index}</strong>
+            <p>{item.observation}</p>
+            <code>{locale === "zh" ? "期望" : "expected"}: {item.expected_summary}</code>
+            <code>{locale === "zh" ? "实际" : "actual"}: {item.actual_summary}</code>
+          </div>
+        )) : <p className="muted">{locale === "zh" ? "这里只展示公开用例细节。" : "Only public testcase details will appear here."}</p>}
       </details>
       <details className="copilot-details">
         <summary>{locale === "zh" ? "边界检查" : "Boundary Checks"}</summary>
@@ -96,11 +88,11 @@ export function AICopilotPanel({
         <p>{explain?.complexity_comment ?? review?.complexity_comment ?? (locale === "zh" ? "暂无复杂度分析。" : "No complexity review yet.")}</p>
       </details>
       <div className="copilot-actions">
-        <button onClick={onExplain} disabled={!submission}>{locale === "zh" ? "解释结果" : "Explain"}</button>
-        <button onClick={onReview} disabled={!submission}>{locale === "zh" ? "审查代码" : "Review Code"}</button>
-        <button onClick={() => onHint(1)}>{locale === "zh" ? "提示 1" : "Hint 1"}</button>
-        <button onClick={() => onHint(2)}>{locale === "zh" ? "提示 2" : "Hint 2"}</button>
-        <button onClick={() => onHint(3)}>{locale === "zh" ? "提示 3" : "Hint 3"}</button>
+        <button title={locale === "zh" ? "解释最近一次判题结果" : "Explain latest judge result"} onClick={onExplain} disabled={!submission}>{locale === "zh" ? "解释" : "Explain"}</button>
+        <button title={locale === "zh" ? "审查最近一次提交代码" : "Review latest submitted code"} onClick={onReview} disabled={!submission}>{locale === "zh" ? "审查" : "Review"}</button>
+        <button title={locale === "zh" ? "轻提示" : "Light hint"} onClick={() => onHint(1)}>{locale === "zh" ? "提示 1" : "Hint 1"}</button>
+        <button title={locale === "zh" ? "方向提示" : "Directional hint"} onClick={() => onHint(2)}>{locale === "zh" ? "提示 2" : "Hint 2"}</button>
+        <button title={locale === "zh" ? "强提示" : "Strong hint"} onClick={() => onHint(3)}>{locale === "zh" ? "提示 3" : "Hint 3"}</button>
       </div>
     </aside>
   );
