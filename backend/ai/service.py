@@ -5,9 +5,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from backend.ai.config import AIConfig
-from backend.ai.prompts import explain_submission, hint, review_code
+from backend.ai.prompts import chat, explain_submission, hint, review_code
 from backend.ai.providers import AIProviderUnavailableError, BaseAIProvider, build_provider
-from backend.ai.schemas import AIExplainResponse, AIHintResponse, AIReviewResponse
+from backend.ai.schemas import AIChatResponse, AIExplainResponse, AIHintResponse, AIReviewResponse
 from backend.models import Problem, Submission, SubmissionResult, TestCaseResult, User
 
 RESULT_TO_VERDICT = {
@@ -46,6 +46,28 @@ class AIService:
             review_code.build_prompt(context),
         )
         return self._parse_review(raw)
+
+    def chat_submission(
+        self,
+        submission_id: str,
+        message: str,
+        current_user: User,
+        locale: str = "en",
+    ) -> AIChatResponse:
+        submission = self._get_allowed_submission(submission_id, current_user)
+        context = self._submission_context(submission)
+        context["response_language"] = self._response_language(locale)
+        context["user_question"] = self._redact_secrets(message)
+        context["rules"] = [
+            "Use only supplied public testcase details.",
+            "Do not reveal hidden testcase details.",
+            "Do not return a complete accepted solution.",
+        ]
+        raw = self.provider.complete_json(
+            self._localized_system_prompt(chat.SYSTEM_PROMPT, locale),
+            chat.build_prompt(context),
+        )
+        return self._parse_chat(raw)
 
     def hint_problem(
         self,
@@ -136,28 +158,47 @@ class AIService:
 
     def _parse_explain(self, raw: str, context: dict[str, Any]) -> AIExplainResponse:
         data = self._extract_json(raw)
-        data.setdefault("summary", raw.strip()[:500] or "AI returned an empty explanation.")
-        data.setdefault("verdict", context.get("verdict") or "unknown")
+        data["summary"] = self._coerce_text(data.get("summary"), raw.strip()[:500] or "AI returned an empty explanation.")
+        data["verdict"] = self._coerce_text(data.get("verdict"), context.get("verdict") or "unknown")
         data["verdict"] = self._coerce_verdict(data.get("verdict"), context.get("verdict") or "unknown")
         data["likely_causes"] = self._coerce_string_list(data.get("likely_causes"))
         data["suspicious_code_regions"] = self._coerce_regions(data.get("suspicious_code_regions"))
         data["public_case_analysis"] = self._coerce_public_case_analysis(data.get("public_case_analysis"))
-        data.setdefault("minimal_fix_hint", "Focus on the first failing public case or likely boundary categories.")
+        data["minimal_fix_hint"] = self._coerce_text(
+            data.get("minimal_fix_hint"),
+            "Focus on the first failing public case or likely boundary categories.",
+        )
         data["edge_cases_to_check"] = self._coerce_string_list(data.get("edge_cases_to_check"))
-        data.setdefault("complexity_comment", "No reliable complexity comment was returned.")
-        data.setdefault("next_action", "Revise the code and run public cases again.")
+        data["complexity_comment"] = self._coerce_text(
+            data.get("complexity_comment"),
+            "No reliable complexity comment was returned.",
+        )
+        data["next_action"] = self._coerce_text(data.get("next_action"), "Revise the code and run public cases again.")
         data["full_solution_revealed"] = False
         return AIExplainResponse.model_validate(data)
 
     def _parse_review(self, raw: str) -> AIReviewResponse:
         data = self._extract_json(raw)
-        data.setdefault("summary", raw.strip()[:500] or "AI returned an empty review.")
+        data["summary"] = self._coerce_text(data.get("summary"), raw.strip()[:500] or "AI returned an empty review.")
         data["risks"] = self._coerce_string_list(data.get("risks"))
         data["io_format_notes"] = self._coerce_string_list(data.get("io_format_notes"))
         data["edge_cases_to_check"] = self._coerce_string_list(data.get("edge_cases_to_check"))
-        data.setdefault("complexity_comment", "No reliable complexity comment was returned.")
-        data.setdefault("suggested_next_action", "Run public cases, then submit when the behavior matches.")
+        data["complexity_comment"] = self._coerce_text(
+            data.get("complexity_comment"),
+            "No reliable complexity comment was returned.",
+        )
+        data["suggested_next_action"] = self._coerce_text(
+            data.get("suggested_next_action"),
+            "Run public cases, then submit when the behavior matches.",
+        )
         return AIReviewResponse.model_validate(data)
+
+    def _parse_chat(self, raw: str) -> AIChatResponse:
+        data = self._extract_json(raw)
+        data["message"] = self._coerce_text(data.get("message"), raw.strip()[:800] or "AI returned an empty response.")
+        data["suggested_actions"] = self._coerce_string_list(data.get("suggested_actions"))
+        data["full_solution_revealed"] = False
+        return AIChatResponse.model_validate(data)
 
     def _extract_json(self, raw: str) -> dict[str, Any]:
         try:
@@ -260,7 +301,13 @@ class AIService:
             return f"Start from the main pattern suggested by the tags: {', '.join(problem.tags or [])}."
         if level == 2:
             return "Identify the invariant that lets you avoid checking every possible answer."
-        return "Write pseudocode first: parse input, maintain the needed state, update the answer, then print exactly the required output."
+            return "Write pseudocode first: parse input, maintain the needed state, update the answer, then print exactly the required output."
+
+    def _coerce_text(self, value: Any, fallback: str) -> str:
+        if value is None:
+            return fallback
+        text = str(value).strip()
+        return text or fallback
 
     def _response_language(self, locale: str) -> str:
         return "Simplified Chinese" if locale == "zh" else "English"

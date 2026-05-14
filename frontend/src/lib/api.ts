@@ -1,11 +1,13 @@
 import {
   aiExplainSchema,
+  aiChatSchema,
   aiHintSchema,
   aiReviewSchema,
   problemDetailSchema,
   problemListItemSchema,
   submissionDetailSchema,
   type AIExplain,
+  type AIChat,
   type AIHint,
   type AIReview,
   type ProblemDetail,
@@ -170,6 +172,12 @@ export const api = {
     }, (data) =>
       aiReviewSchema.parse(data),
     );
+  },
+  async chat(submissionId: string, message: string, model_profile: AIModelProfile = "default", locale = "en"): Promise<AIChat> {
+    return request(`/api/v1/ai/submissions/${submissionId}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ message, model_profile, locale }),
+    }, (data) => aiChatSchema.parse(data));
   },
   async hint(
     problemId: string,

@@ -110,9 +110,16 @@ export const aiHintSchema = z.object({
   full_solution_revealed: z.literal(false),
 });
 
+export const aiChatSchema = z.object({
+  message: z.string(),
+  suggested_actions: z.array(z.string()),
+  full_solution_revealed: z.literal(false),
+});
+
 export type ProblemListItem = z.infer<typeof problemListItemSchema>;
 export type ProblemDetail = z.infer<typeof problemDetailSchema>;
 export type SubmissionDetail = z.infer<typeof submissionDetailSchema>;
 export type AIExplain = z.infer<typeof aiExplainSchema>;
 export type AIReview = z.infer<typeof aiReviewSchema>;
 export type AIHint = z.infer<typeof aiHintSchema>;
+export type AIChat = z.infer<typeof aiChatSchema>;

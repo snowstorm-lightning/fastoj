@@ -6,6 +6,7 @@ import "./styles.css";
 import { api, isUnauthorized, makeJudgeSocket, type AIModelProfile, type CurrentUser, type ProblemFilters } from "./lib/api";
 import {
   type AIExplain,
+  type AIChat,
   type AIHint,
   type AIReview,
   type ProblemDetail,
@@ -36,11 +37,12 @@ type View = "library" | "workbench" | "graph" | "auth" | "settings" | "admin";
 type DetailTab = "cases" | "solution" | "judge" | "trail" | "discussion";
 type AuthMode = "login" | "register";
 type DiscussionPost = { id: string; author: string; body: string; createdAt: string };
+type AIChatLine = { id: string; role: "user" | "assistant"; message: string; suggestions?: string[] };
 
-const AI_MODEL_OPTIONS: Array<{ value: AIModelProfile; label: string }> = [
-  { value: "default", label: "Default" },
-  { value: "deepseek", label: "DeepSeek" },
-  { value: "qwen-local", label: "Qwen local" },
+const AI_MODEL_OPTIONS: Array<{ value: AIModelProfile; zh: string; en: string; detailZh: string; detailEn: string }> = [
+  { value: "default", zh: "自动选择", en: "Auto route", detailZh: "使用服务器默认 AI 配置", detailEn: "Use the server default AI profile" },
+  { value: "deepseek", zh: "DeepSeek 云端", en: "DeepSeek Cloud", detailZh: "调用 DeepSeek 兼容接口", detailEn: "Use the DeepSeek-compatible API" },
+  { value: "qwen-local", zh: "Qwen 本地", en: "Local Qwen", detailZh: "连接本机 OpenAI-compatible 服务", detailEn: "Use a local OpenAI-compatible Qwen server" },
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -309,6 +311,60 @@ function DifficultyDropdown({
   );
 }
 
+function AIModelDropdown({
+  value,
+  locale,
+  onChange,
+}: {
+  value: AIModelProfile;
+  locale: Locale;
+  onChange: (value: AIModelProfile) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = AI_MODEL_OPTIONS.find((item) => item.value === value) ?? AI_MODEL_OPTIONS[0];
+  const label = locale === "zh" ? selected.zh : selected.en;
+  const detail = locale === "zh" ? selected.detailZh : selected.detailEn;
+  return (
+    <div
+      className={`custom-select ai-model-picker ${open ? "open" : ""}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button type="button" className="custom-select-button model-select-button" title={detail} onClick={() => setOpen((current) => !current)}>
+        <span className="model-spark" aria-hidden="true">✦</span>
+        <span className="model-copy">
+          <strong>{label}</strong>
+          <small>{detail}</small>
+        </span>
+        <span aria-hidden="true">⌄</span>
+      </button>
+      <div className="custom-select-menu model-select-menu" role="listbox">
+        {AI_MODEL_OPTIONS.map((item) => {
+          const itemLabel = locale === "zh" ? item.zh : item.en;
+          const itemDetail = locale === "zh" ? item.detailZh : item.detailEn;
+          return (
+            <button
+              type="button"
+              role="option"
+              aria-selected={item.value === value}
+              className={item.value === value ? "selected" : ""}
+              key={item.value}
+              onClick={() => {
+                onChange(item.value);
+                setOpen(false);
+              }}
+            >
+              <span>{itemLabel}</span>
+              <small>{itemDetail}</small>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function LibraryPage({
   selectedId,
   selectedTag,
@@ -417,7 +473,8 @@ function ProblemCard({ problem, locale, active, onSelect }: { problem: ProblemLi
       <strong>{displayProblem.title}</strong>
       <span className="tag-line">{displayProblem.tags.join(" / ") || "General"}</span>
       <span className="mode-line">
-        <span>{mode.supportsFunction ? text.functionMode : text.acmMode}</span>
+        {mode.supportsFunction ? <span>{text.functionMode}</span> : null}
+        {mode.supportsAcm ? <span>{text.acmMode}</span> : null}
         {mode.isAiPractice ? <span>{text.aiAlgorithms}</span> : null}
       </span>
       <span className="card-meta">{displayProblem.accepted_submissions}/{displayProblem.total_submissions} accepted - {percent(displayProblem.ac_rate)}%</span>
@@ -453,6 +510,7 @@ function Workspace({
   const [explain, setExplain] = useState<AIExplain | null>(null);
   const [review, setReview] = useState<AIReview | null>(null);
   const [hint, setHint] = useState<AIHint | null>(null);
+  const [chatLines, setChatLines] = useState<AIChatLine[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("cases");
 
@@ -605,6 +663,25 @@ function Workspace({
     }
   }
 
+  async function sendChat(message: string) {
+    if (!submission) {
+      setAiError(locale === "zh" ? "请先运行或提交一次代码，再开始对话。" : "Run or submit once before starting a chat.");
+      return;
+    }
+    const userLine: AIChatLine = { id: `${Date.now()}.user`, role: "user", message };
+    setChatLines((items) => [...items, userLine]);
+    try {
+      setAiError(null);
+      const result: AIChat = await api.chat(submission.id, message, aiModel, locale);
+      setChatLines((items) => [
+        ...items,
+        { id: `${Date.now()}.assistant`, role: "assistant", message: result.message, suggestions: result.suggested_actions },
+      ]);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "AI chat failed");
+    }
+  }
+
   if (!problemId) {
     return (
       <main className="empty-workspace">
@@ -663,9 +740,7 @@ function Workspace({
             <select title={text.pickLanguage} value={language} onChange={(event) => setLanguage(event.target.value)}>
               {LANGUAGES.map((item) => <option key={item}>{item}</option>)}
             </select>
-            <select className="ai-model-select" title={locale === "zh" ? "选择 AI 模型" : "Choose AI model"} value={aiModel} onChange={(event) => setAiModel(event.target.value as AIModelProfile)}>
-              {AI_MODEL_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
+            <AIModelDropdown value={aiModel} locale={locale} onChange={setAiModel} />
             <button className="icon-button tip" data-tip={text.resetTemplate} onClick={() => setCode(buildStarter(problem, language, judgeMode))}><IconGlyph>R</IconGlyph></button>
             <button className="icon-button run-action tip" data-tip={text.runTitle} onClick={() => judge(true)} disabled={functionBlocked}><IconGlyph>▶</IconGlyph></button>
             <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)} disabled={functionBlocked}><IconGlyph>↑</IconGlyph></button>
@@ -685,7 +760,7 @@ function Workspace({
           {rightOpen ? (
             <>
               <div className="ai-region">
-                <AICopilotPanel submission={submission} explain={explain} review={review} hint={hint} error={aiError} onExplain={explainSubmission} onReview={reviewSubmission} onHint={requestHint} locale={locale} />
+                <AICopilotPanel submission={submission} explain={explain} review={review} hint={hint} chatLines={chatLines} error={aiError} onExplain={explainSubmission} onReview={reviewSubmission} onHint={requestHint} onChat={sendChat} locale={locale} />
               </div>
               <section className="detail-dock judge-region">
                 <div className="tabs" role="tablist" aria-label={locale === "zh" ? "工作台详情" : "Workbench details"}>

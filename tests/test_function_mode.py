@@ -70,6 +70,27 @@ function twoSum(nums, target) {
     assert "fn(nums, target)" in wrapped
 
 
+def test_wrap_valid_parentheses_python_function_mode():
+    code = """
+def is_valid_parentheses(s):
+    stack = []
+    pairs = {')': '(', ']': '[', '}': '{'}
+    for ch in s:
+        if ch in pairs.values():
+            stack.append(ch)
+        elif not stack or stack.pop() != pairs[ch]:
+            return False
+    return not stack
+"""
+    wrapped = wrap_function_submission(code, "python", "valid-parentheses")
+
+    namespace: dict[str, object] = {"__name__": "not_main"}
+    exec(wrapped, namespace)
+
+    assert callable(namespace["is_valid_parentheses"])
+    assert "str(result).lower()" in wrapped
+
+
 def test_function_mode_rejects_unavailable_problem():
     with pytest.raises(ValueError, match="Function mode is not available"):
         wrap_function_submission("def solve(): pass", "python", "unknown")

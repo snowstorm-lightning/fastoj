@@ -257,6 +257,8 @@ AI_QWEN_API_KEY=sk-no-key-required
 AI_QWEN_MODEL=qwen2.5-coder-3b-instruct
 ```
 
+If the local Qwen server is not running or the port is wrong, AI actions return HTTP 503 with a clear provider-unreachable message instead of a generic server error.
+
 The `DeepSeek` selector uses:
 
 ```bash
@@ -335,6 +337,8 @@ Latest verification from this workspace:
 - Real API public run and full submit for Valid Parentheses ACM mode passed with `result=ac`.
 - Real API public run for Softmax Cross Entropy passed with `result=ac`; an incorrect seeded expected output was corrected without exposing hidden testcase contents.
 - DeepSeek-compatible AI hint, failed-submission explanation, and code review calls returned schema-valid responses after scalar/list normalization. Hidden testcase contents were not sent.
+- AI explain/review now tolerates provider `null` text fields, local Qwen connection failures return HTTP 503 with a readable provider-unreachable message, and the workbench includes an AI chat endpoint that uses only public submission context.
+- Problem cards now show both supported modes; `Valid Parentheses` has function-mode starters and backend wrapper coverage in addition to ACM mode.
 
 ## Manual Acceptance Path
 

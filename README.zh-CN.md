@@ -1,5 +1,11 @@
 # FastOJ
 
+## 本轮补充
+
+- AI explain/review 已兼容 provider 返回 `null` 文本字段；本地 Qwen 服务不可达时返回 HTTP 503 和明确提示，不再显示泛化的内部服务器错误。
+- 新增 AI 对话接口，只使用题目、代码、判题状态和公开用例结果，不发送隐藏用例内容。
+- 题库卡片现在会同时显示支持的函数模式和 ACM 模式；有效的括号已补充函数模式模板和后端 wrapper。
+
 [English](README.md) | 简体中文
 
 FastOJ 是一个面向面试训练的 AI 可解释 OJ 平台。它保留传统 OJ 的严格评测，同时把判题解释、代码审查、渐进提示、判题时间线、知识图谱和提交轨迹做成核心体验。
@@ -84,6 +90,8 @@ AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
 AI_QWEN_API_KEY=sk-no-key-required
 AI_QWEN_MODEL=qwen2.5-coder-3b-instruct
 ```
+
+如果本地 Qwen 服务没有启动，或端口配置不对，AI 操作会返回 HTTP 503，并显示明确的 provider unreachable 提示，不再显示泛化的内部服务器错误。
 
 真实密钥放在仓库根目录 `.env` 或部署环境变量中。`.env` 和 `.env.*` 已被 git 忽略；`.env.example` 只保留变量名和占位值。
 

@@ -55,6 +55,17 @@ ${TODO}    return []
 ${TODO}    return 0
 `,
   },
+  "valid-parentheses": {
+    functionName: "is_valid_parentheses",
+    signature: "def is_valid_parentheses(s: str) -> bool",
+    description: {
+      zh: "判断括号串是否有效，提交区只需要补全函数体。",
+      en: "Return whether the bracket string is valid. Only complete the function body.",
+    },
+    starter: `def is_valid_parentheses(s: str) -> bool:
+${TODO}    return False
+`,
+  },
   "logistic-regression-sigmoid": {
     functionName: "predict_probability",
     signature: "def predict_probability(weights: list[float], bias: float, features: list[float]) -> float",
@@ -169,6 +180,14 @@ const FUNCTION_STARTERS: Record<string, Partial<Record<string, string>>> = {
     typescript: "function lengthOfLongestSubstring(s: string): number {\n  // TODO\n  return 0;\n}\n",
     golang: "package main\n\nfunc lengthOfLongestSubstring(s string) int {\n\t// TODO\n\treturn 0\n}\n",
     c: "int length_of_longest_substring(const char* s) {\n    // TODO\n    return 0;\n}\n",
+  },
+  "valid-parentheses": {
+    cpp: "#include <bits/stdc++.h>\nusing namespace std;\n\nbool is_valid_parentheses(string s) {\n    // TODO\n    return false;\n}\n",
+    java: "class Solution {\n    public boolean isValidParentheses(String s) {\n        // TODO\n        return false;\n    }\n}\n",
+    javascript: "function isValidParentheses(s) {\n  // TODO\n  return false;\n}\n",
+    typescript: "function isValidParentheses(s: string): boolean {\n  // TODO\n  return false;\n}\n",
+    golang: "package main\n\nfunc isValidParentheses(s string) bool {\n\t// TODO\n\treturn false\n}\n",
+    c: "int is_valid_parentheses(const char* s) {\n    // TODO\n    return 0;\n}\n",
   },
   "logistic-regression-sigmoid": {
     cpp: "#include <bits/stdc++.h>\nusing namespace std;\n\ndouble predict_probability(vector<double> weights, double bias, vector<double> features) {\n    // TODO\n    return 0.0;\n}\n",
@@ -286,6 +305,7 @@ export function getProblemMode(problem?: AnyProblem | null) {
   return {
     defaultMode: functionSpec ? "function" as JudgeMode : "acm" as JudgeMode,
     supportsFunction: Boolean(functionSpec),
+    supportsAcm: true,
     isAiPractice,
     functionSpec,
   };

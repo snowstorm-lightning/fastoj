@@ -10,10 +10,12 @@ test("renders AI copilot controls", () => {
       explain={null}
       review={null}
       hint={null}
+      chatLines={[]}
       error={null}
       onExplain={vi.fn()}
       onReview={vi.fn()}
       onHint={vi.fn()}
+      onChat={vi.fn()}
       locale="en"
     />,
   );

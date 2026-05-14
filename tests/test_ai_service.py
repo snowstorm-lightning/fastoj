@@ -1,9 +1,12 @@
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
+from backend.ai.config import AIConfig
 from backend.ai.providers.base import AIProviderUnavailableError
 from backend.ai.providers.disabled import DisabledAIProvider
+from backend.ai.providers.openai_compatible import OpenAICompatibleProvider
 from backend.ai.schemas import AIHintResponse
 from backend.ai.service import AIService
 from backend.models import Difficulty, SubmissionResult, SubmissionStatus
@@ -23,6 +26,27 @@ def _problem():
 def test_disabled_provider_raises_clear_error():
     with pytest.raises(AIProviderUnavailableError):
         DisabledAIProvider().complete_json("", "")
+
+
+def test_openai_provider_wraps_connection_errors(monkeypatch):
+    def raise_connect_error(*args, **kwargs):
+        request = httpx.Request("POST", "http://host.docker.internal:8080/v1/chat/completions")
+        raise httpx.ConnectError("[Errno 111] Connection refused", request=request)
+
+    monkeypatch.setattr(httpx, "post", raise_connect_error)
+    provider = OpenAICompatibleProvider(
+        AIConfig(
+            provider="openai_compatible",
+            base_url="http://host.docker.internal:8080/v1",
+            api_key="sk-no-key-required",
+            model="qwen2.5-coder-3b-instruct",
+            timeout_seconds=1,
+            max_output_tokens=128,
+        )
+    )
+
+    with pytest.raises(AIProviderUnavailableError, match="AI provider is unreachable"):
+        provider.complete_json("system", "user")
 
 
 def test_explain_context_does_not_include_hidden_case_details():
@@ -88,6 +112,37 @@ def test_ai_response_parser_accepts_scalar_fields_from_provider():
     assert explain.suspicious_code_regions[0].reason == "line 2"
     assert explain.public_case_analysis[0].observation == "output mismatch"
     assert explain.edge_cases_to_check == ["duplicates"]
+
+
+def test_ai_response_parser_accepts_null_text_fields_from_provider():
+    service = AIService(SimpleNamespace())
+
+    explain = service._parse_explain(
+        '{"summary":null,"verdict":null,"minimal_fix_hint":null,"complexity_comment":null,"next_action":null}',
+        {"verdict": "accepted"},
+    )
+    assert explain.verdict == "accepted"
+    assert explain.summary
+    assert explain.minimal_fix_hint
+    assert explain.complexity_comment
+    assert explain.next_action
+
+    review = service._parse_review(
+        '{"summary":null,"risks":null,"io_format_notes":null,"edge_cases_to_check":null,"complexity_comment":null,"suggested_next_action":null}'
+    )
+    assert review.summary
+    assert review.complexity_comment
+    assert review.suggested_next_action
+
+
+def test_chat_parser_never_marks_full_solution_revealed():
+    service = AIService(SimpleNamespace())
+    response = service._parse_chat(
+        '{"message":null,"suggested_actions":"run public cases","full_solution_revealed":true}'
+    )
+    assert response.message
+    assert response.suggested_actions == ["run public cases"]
+    assert response.full_solution_revealed is False
 
 
 def test_hint_parser_accepts_scalar_focus():

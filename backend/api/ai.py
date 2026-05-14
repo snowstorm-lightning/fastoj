@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from backend.ai.providers import AIProviderUnavailableError
 from backend.ai.schemas import (
     AIActionRequest,
+    AIChatRequest,
+    AIChatResponse,
     AIExplainResponse,
     AIHintRequest,
     AIHintResponse,
@@ -45,6 +47,26 @@ def review_submission(
         model_profile = payload.model_profile if payload else "default"
         locale = payload.locale if payload else "en"
         return AIService(db, model_profile=model_profile).review_submission(submission_id, current_user, locale)
+    except AIProviderUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post("/submissions/{submission_id}/chat", response_model=AIChatResponse)
+def chat_submission(
+    submission_id: str,
+    payload: AIChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return AIService(db, model_profile=payload.model_profile).chat_submission(
+            submission_id,
+            payload.message,
+            current_user,
+            payload.locale,
+        )
     except AIProviderUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
     except ValueError as exc:

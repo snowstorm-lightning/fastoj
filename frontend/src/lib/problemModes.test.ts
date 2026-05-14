@@ -15,6 +15,14 @@ const twoSum = {
   created_at: "2026-01-01T00:00:00",
 };
 
+const validParentheses = {
+  ...twoSum,
+  id: "2",
+  title: "Valid Parentheses",
+  slug: "valid-parentheses",
+  tags: ["Stack", "String"],
+};
+
 describe("problem mode metadata", () => {
   it("detects function-mode problems", () => {
     expect(getProblemMode(twoSum).supportsFunction).toBe(true);
@@ -26,5 +34,12 @@ describe("problem mode metadata", () => {
 
   it("builds a C++ function starter", () => {
     expect(buildStarter(twoSum, "cpp", "function")).toContain("vector<int> two_sum");
+  });
+
+  it("detects valid parentheses as both function and ACM capable", () => {
+    const mode = getProblemMode(validParentheses);
+    expect(mode.supportsFunction).toBe(true);
+    expect(mode.supportsAcm).toBe(true);
+    expect(buildStarter(validParentheses, "python", "function")).toContain("def is_valid_parentheses");
   });
 });

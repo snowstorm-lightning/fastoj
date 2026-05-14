@@ -869,6 +869,72 @@ p {
   width: 140px;
 }
 
+.editor-toolbar .tip::after {
+  top: calc(100% + 10px);
+  bottom: auto;
+}
+
+.editor-toolbar .tip::before {
+  top: calc(100% + 4px);
+  bottom: auto;
+  border: 0;
+  border-left: 1px solid #d9dee7;
+  border-top: 1px solid #d9dee7;
+}
+
+.ai-model-picker {
+  width: 250px;
+  z-index: 30;
+}
+
+.model-select-button {
+  min-height: 52px;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.model-spark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.16);
+  font-weight: 900;
+}
+
+.model-copy {
+  display: grid;
+  min-width: 0;
+  text-align: left;
+  line-height: 1.15;
+}
+
+.model-copy strong,
+.model-select-menu button span {
+  color: #f8fafc;
+  font-weight: 800;
+}
+
+.model-copy small,
+.model-select-menu button small {
+  color: #aab3c2;
+  font-size: 12px;
+  white-space: normal;
+}
+
+.model-select-menu {
+  width: 310px;
+  right: auto;
+}
+
+.model-select-menu button {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+}
+
 .segmented button,
 .mode-toggle {
   display: inline-flex;
@@ -1011,6 +1077,47 @@ p {
 .copilot-actions {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-chat-box {
+  display: grid;
+  gap: 10px;
+  border-color: rgba(139, 92, 246, 0.42) !important;
+  background: rgba(16, 18, 28, 0.74) !important;
+}
+
+.ai-chat-log {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.chat-line {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  background: #11161c;
+}
+
+.chat-line.user {
+  border-color: rgba(34, 197, 94, 0.38);
+}
+
+.chat-line.assistant {
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.chat-line p {
+  margin: 0;
+}
+
+.ai-chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
 }
 

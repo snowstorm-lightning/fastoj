@@ -68,6 +68,20 @@ class AIActionRequest(BaseModel):
     locale: AILocale = "en"
 
 
+class AIChatRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    message: str = Field(min_length=1, max_length=2000)
+    model_profile: AIModelProfile = "default"
+    locale: AILocale = "en"
+
+
+class AIChatResponse(BaseModel):
+    message: str
+    suggested_actions: list[str] = Field(default_factory=list)
+    full_solution_revealed: bool = False
+
+
 class AIHintResponse(BaseModel):
     level: Literal[1, 2, 3]
     hint: str
