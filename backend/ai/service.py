@@ -69,7 +69,7 @@ class AIService:
         data = self._extract_json(raw)
         data.setdefault("level", level)
         data.setdefault("hint", self._fallback_hint(level, problem))
-        data.setdefault("focus", [])
+        data["focus"] = self._coerce_string_list(data.get("focus"))
         data["full_solution_revealed"] = False
         return AIHintResponse.model_validate(data)
 
@@ -134,11 +134,12 @@ class AIService:
         data = self._extract_json(raw)
         data.setdefault("summary", raw.strip()[:500] or "AI returned an empty explanation.")
         data.setdefault("verdict", context.get("verdict") or "unknown")
-        data.setdefault("likely_causes", [])
-        data.setdefault("suspicious_code_regions", [])
-        data.setdefault("public_case_analysis", [])
+        data["verdict"] = self._coerce_verdict(data.get("verdict"), context.get("verdict") or "unknown")
+        data["likely_causes"] = self._coerce_string_list(data.get("likely_causes"))
+        data["suspicious_code_regions"] = self._coerce_regions(data.get("suspicious_code_regions"))
+        data["public_case_analysis"] = self._coerce_public_case_analysis(data.get("public_case_analysis"))
         data.setdefault("minimal_fix_hint", "Focus on the first failing public case or likely boundary categories.")
-        data.setdefault("edge_cases_to_check", [])
+        data["edge_cases_to_check"] = self._coerce_string_list(data.get("edge_cases_to_check"))
         data.setdefault("complexity_comment", "No reliable complexity comment was returned.")
         data.setdefault("next_action", "Revise the code and run public cases again.")
         data["full_solution_revealed"] = False
@@ -147,9 +148,9 @@ class AIService:
     def _parse_review(self, raw: str) -> AIReviewResponse:
         data = self._extract_json(raw)
         data.setdefault("summary", raw.strip()[:500] or "AI returned an empty review.")
-        data.setdefault("risks", [])
-        data.setdefault("io_format_notes", [])
-        data.setdefault("edge_cases_to_check", [])
+        data["risks"] = self._coerce_string_list(data.get("risks"))
+        data["io_format_notes"] = self._coerce_string_list(data.get("io_format_notes"))
+        data["edge_cases_to_check"] = self._coerce_string_list(data.get("edge_cases_to_check"))
         data.setdefault("complexity_comment", "No reliable complexity comment was returned.")
         data.setdefault("suggested_next_action", "Run public cases, then submit when the behavior matches.")
         return AIReviewResponse.model_validate(data)
@@ -167,6 +168,75 @@ class AIService:
                 except json.JSONDecodeError:
                     return {}
         return {}
+
+    def _coerce_string_list(self, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [str(item) for item in value if item is not None]
+        return [str(value)]
+
+    def _coerce_regions(self, value: Any) -> list[dict[str, Any]]:
+        if value is None:
+            return []
+        raw_items = value if isinstance(value, list) else [value]
+        regions: list[dict[str, Any]] = []
+        for item in raw_items:
+            if isinstance(item, str):
+                regions.append({"reason": item})
+            elif isinstance(item, dict):
+                regions.append(
+                    {
+                        "line_start": item.get("line_start"),
+                        "line_end": item.get("line_end"),
+                        "reason": str(item.get("reason") or item.get("description") or item),
+                    }
+                )
+            elif item is not None:
+                regions.append({"reason": str(item)})
+        return regions
+
+    def _coerce_public_case_analysis(self, value: Any) -> list[dict[str, Any]]:
+        if value is None:
+            return []
+        raw_items = value if isinstance(value, list) else [value]
+        cases: list[dict[str, Any]] = []
+        for index, item in enumerate(raw_items, start=1):
+            if isinstance(item, str):
+                cases.append(
+                    {
+                        "case_index": index,
+                        "observation": item,
+                        "expected_summary": "See the public expected output.",
+                        "actual_summary": "See the public actual output.",
+                    }
+                )
+            elif isinstance(item, dict):
+                cases.append(
+                    {
+                        "case_index": int(item.get("case_index") or index),
+                        "observation": str(item.get("observation") or item.get("summary") or item),
+                        "expected_summary": str(item.get("expected_summary") or item.get("expected") or ""),
+                        "actual_summary": str(item.get("actual_summary") or item.get("actual") or ""),
+                    }
+                )
+        return cases
+
+    def _coerce_verdict(self, value: Any, fallback: str) -> str:
+        allowed = {
+            "accepted",
+            "wrong_answer",
+            "time_limit",
+            "memory_limit",
+            "compile_error",
+            "runtime_error",
+            "system_error",
+            "unknown",
+        }
+        verdict = str(value or fallback)
+        return verdict if verdict in allowed else fallback
 
     def _redact_secrets(self, text: str) -> str:
         patterns = [

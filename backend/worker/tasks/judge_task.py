@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from typing import Any
@@ -99,7 +100,7 @@ class JudgeTask:
                 if result.get("status") == "ac":
                     actual_output = (result.get("output") or "").strip()
                     expected_output = (testcase.output or "").strip()  # type: ignore[arg-type]
-                    if actual_output != expected_output:
+                    if not _outputs_match(actual_output, expected_output):
                         result["status"] = "wa"
 
                 # Store testcase result
@@ -168,6 +169,10 @@ class JudgeTask:
                     final_result = SubmissionResult.MLE
                     first_error_message = r.get("error_message")
                     break
+                elif status == "se":
+                    final_result = SubmissionResult.SE
+                    first_error_message = r.get("error_message")
+                    break
                 elif status != "ac":
                     final_result = SubmissionResult.WA
 
@@ -206,3 +211,12 @@ class JudgeTask:
             time_limit=time_limit,
             memory_limit=memory_limit,
         )
+
+
+def _outputs_match(actual_output: str, expected_output: str) -> bool:
+    if actual_output == expected_output:
+        return True
+    try:
+        return json.loads(actual_output) == json.loads(expected_output)
+    except json.JSONDecodeError:
+        return False

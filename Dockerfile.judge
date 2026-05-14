@@ -1,14 +1,23 @@
+FROM python:3.11-slim-bookworm AS python-runtime
+
 FROM node:24-slim
+
+COPY --from=python-runtime /usr/local /usr/local
+ENV PATH="/usr/local/bin:${PATH}"
 
 RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --fix-missing --no-install-recommends \
     ca-certificates \
     gcc \
     g++ \
     golang-go \
-    python3 \
-    python-is-python3 \
     default-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
+
+RUN python -m pip install --break-system-packages --no-cache-dir \
+    numpy==2.2.6 \
+    && python -m pip install --break-system-packages --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch==2.7.1+cpu
 
 RUN npm install -g typescript ts-node
 

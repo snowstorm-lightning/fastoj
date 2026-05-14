@@ -57,7 +57,7 @@ class JudgeTaskConsumer:
             result = self.judge_task.execute(
                 submission_id=submission_id,
                 problem_id=str(submission.problem_id),
-                code=submission.code,
+                code=task.get("code") or submission.code,
                 language=submission.language,
                 use_hidden=task.get("use_hidden", True),
                 db=db,

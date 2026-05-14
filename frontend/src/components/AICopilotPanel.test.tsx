@@ -14,6 +14,7 @@ test("renders AI copilot controls", () => {
       onExplain={vi.fn()}
       onReview={vi.fn()}
       onHint={vi.fn()}
+      locale="en"
     />,
   );
   expect(screen.getByLabelText("AI Judge Copilot")).toBeInTheDocument();

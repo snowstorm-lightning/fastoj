@@ -58,11 +58,12 @@
 - [x] Added pids limit.
 - [x] Added cap drop.
 - [x] Added no-new-privileges.
-- [x] Added read-only root filesystem and tmpfs work dirs.
+- [x] Finish Docker source/stdin injection for worker-in-container execution.
 - [x] Added non-root user.
 - [x] Added output truncation.
 - [x] Added CE/TLE/MLE/RE/SE mapping improvements.
 - [x] Built Docker judge image successfully.
+- [x] Added NumPy and CPU PyTorch to the Docker judge image.
 - [x] Add sandbox hidden-output isolation test.
 - [ ] Manually run representative judge submissions in browser.
 
@@ -78,6 +79,19 @@
 - [x] Problem library, focused workbench, and training graph split into separate views.
 - [x] Workbench detail dock tabs for statement, public cases, solution, judge terminal, and submission trail.
 - [x] AI Copilot dense details collapsed into expandable sections.
+- [x] LeetCode-style workbench with collapsible statement and result sidebars.
+- [x] Smooth resizable statement/result sidebars with narrower collapsed state.
+- [x] Dedicated login/register page instead of header-embedded auth fields.
+- [x] Redirect unauthenticated run/submit attempts to the login page.
+- [x] Show a localized token-expiry alert before redirecting to login when submit detects an expired session.
+- [x] Added clearer hover titles to main workflow buttons.
+- [x] Added 3D button states and compact three-bar collapsed sidebar controls.
+- [x] Added single-button function/ACM mode toggle in the workbench.
+- [x] Added frontend-side Chinese/English i18n for UI chrome, verdict labels, hover explanations, auth, tabs, problem display text, AI Copilot, and submission trail.
+- [x] Added static visual step panels for supported problem types.
+- [x] Fixed workbench outer viewport locking with internal panel scroll.
+- [x] Added sample input/output/explanation rendering in the public cases panel.
+- [x] Added frontend mode metadata and starter-template tests.
 - [x] Monaco editor component.
 - [x] AI Copilot panel.
 - [x] xterm judge timeline.
@@ -105,6 +119,11 @@
 - [x] Recovery prompt doc.
 - [x] README full rewrite.
 - [x] README updated for simplified frontend architecture and Pretext adapter usage.
+- [x] README updated for function/ACM modes, AI algorithm seed problems, and latest verification.
+- [x] README updated for dedicated auth page and resizable sidebars.
+- [x] README updated for i18n, single mode-toggle, expanded Hot100/AI seed problems, and latest Docker verification.
+- [x] README updated for DeepSeek/local AI configuration, API key storage, judge NumPy/PyTorch dependencies, and latest real-run verification.
+- [x] README updated for token-expiry alert, AI response normalization, expanded testcase counts, Softmax verification, and latest 71-test backend result.
 - [ ] Final summary.
 
 ## Verification
@@ -118,6 +137,39 @@
 - [x] `docker compose up --build -d`.
 - [x] API health check returned HTTP 200.
 - [x] Docker API serves rebuilt frontend HTML at `http://localhost:8000`.
+- [x] Function mode unit tests.
+- [x] Frontend mode metadata tests.
+- [x] Remove legacy prototype testcase compatibility; standardize function mode on JSON-line testcase input only.
+- [x] Add Hot100-style seed problems and extra AI algorithm seed problems.
+- [x] JSON-equivalent judge output comparison to avoid false WA on formatting.
+- [x] Docker rebuild passed after auth/resizable sidebar work.
+- [x] API health check returned HTTP 200 after latest rebuild.
+- [x] Docker rebuild passed after latest sidebar button and WA compatibility fixes.
+- [x] API and worker health checks reported healthy after latest rebuild.
+- [x] `uv run pytest` passed after latest WIP, 68 tests passed with 3 datetime deprecation warnings.
+- [x] `requests<2.32` lock update verified locally and in Docker build to restore Docker SDK socket access.
+- [x] Real Docker-backed public run no longer fails for Two Sum function mode.
+- [x] Final Docker health check passed after Docker Desktop restart on 2026-05-14.
+- [x] Worker-in-container Docker SDK access verified with requests 2.31.0 and Docker ping returning `True`.
+- [x] Fixed missing `/tmp/work/solution.py` and `/tmp/work/input.txt` by removing tmpfs from Docker archive injection.
+- [x] Fixed async worker to execute task `judge_code` instead of raw stored user code.
+- [x] Docker rebuild passed after i18n/single mode-toggle/problem-set work.
+- [x] API health and rebuilt frontend HTTP checks passed after latest Docker rebuild.
+- [x] Seed data was run in Docker and created 12 missing problems in the current database.
+- [x] Seed data normalized existing local DB testcase rows to JSON-line input without deleting referenced testcase records.
+- [x] Judge runtime import test passed for both NumPy and PyTorch.
+- [x] Real API public run and full submit passed for function mode.
+- [x] Real API public run and full submit passed for ACM mode.
+- [x] Seed data now guarantees at least 10 testcase rows and at least two public samples for every bundled problem.
+- [x] Real API public run passed for Softmax Cross Entropy.
+- [x] DeepSeek-compatible AI hint/explain/review responses passed backend schema validation after scalar/list normalization.
+- [x] `uv run ruff check .` passed after latest AI/parser/frontend/testcase edits.
+- [x] `uv run pytest` passed after latest AI/parser/frontend/testcase edits, 71 tests passed with 3 datetime deprecation warnings.
+- [x] `cd frontend && npm run build` passed after latest token-expiry alert and fixed-viewport workbench edits.
+- [x] `cd frontend && npm test` passed after latest frontend edits, 6 test files and 8 tests passed.
+- [x] `docker compose up --build -d api` passed and rebuilt/recreated API with the latest frontend bundle.
+- [x] `docker compose ps` reports API and worker healthy; PostgreSQL and Redis healthy; judge runtime running.
+- [x] HTTP health and rebuilt frontend checks passed at `http://127.0.0.1:8000`; `localhost` may time out in the current PowerShell session.
 - [ ] Browser manual acceptance path.
 
 ## Checkpoint

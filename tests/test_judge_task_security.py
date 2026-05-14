@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from backend.models import Difficulty, SubmissionResult
-from backend.worker.tasks.judge_task import JudgeTask
+from backend.worker.tasks.judge_task import JudgeTask, _outputs_match
 
 
 def test_judge_task_does_not_store_hidden_actual_output(monkeypatch):
@@ -48,3 +48,11 @@ def test_judge_task_does_not_store_hidden_actual_output(monkeypatch):
     assert stored_result.input is None
     assert stored_result.expected_output is None
     assert stored_result.actual_output is None
+
+
+def test_outputs_match_json_equivalent_lists():
+    assert _outputs_match("[0,1]", "[0, 1]")
+
+
+def test_outputs_match_rejects_different_values():
+    assert not _outputs_match("[1,0]", "[0, 1]")

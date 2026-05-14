@@ -37,7 +37,12 @@ export function TrainingGraph({
       position: { x: (index % 3) * 260, y: Math.floor(index / 3) * 150 },
       data: {
         label: (
-          <button className="graph-node" style={{ minWidth: metrics.width }} onClick={() => onTag(tag)}>
+          <button
+            className="graph-node"
+            title={`筛选 ${tag} 标签题目`}
+            style={{ minWidth: metrics.width }}
+            onClick={() => onTag(tag)}
+          >
             <strong>{tag}</strong>
             <span>{count} problems</span>
             <span>{accepted}/{Math.max(count, 1)} progress</span>

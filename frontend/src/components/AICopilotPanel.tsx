@@ -1,4 +1,5 @@
 import type { AIExplain, AIHint, AIReview, SubmissionDetail } from "../lib/schemas";
+import { type Locale, verdictInfo } from "../lib/i18n";
 import { CodeBlock } from "./CodeBlock";
 
 type Props = {
@@ -10,10 +11,11 @@ type Props = {
   onExplain: () => void;
   onReview: () => void;
   onHint: (level: 1 | 2 | 3) => void;
+  locale: Locale;
 };
 
-function List({ items }: { items: string[] }) {
-  if (!items.length) return <p className="muted">No specific notes yet.</p>;
+function List({ items, locale }: { items: string[]; locale: Locale }) {
+  if (!items.length) return <p className="muted">{locale === "zh" ? "暂无具体备注。" : "No specific notes yet."}</p>;
   return (
     <ul className="compact-list">
       {items.map((item) => (
@@ -32,29 +34,31 @@ export function AICopilotPanel({
   onExplain,
   onReview,
   onHint,
+  locale,
 }: Props) {
+  const current = verdictInfo(submission?.result ?? submission?.status ?? "idle", locale);
   return (
     <aside className="copilot-panel" aria-label="AI Judge Copilot">
       <div className="panel-heading">
-        <span>AI Judge Copilot</span>
-        <strong>{submission?.result ?? submission?.status ?? "idle"}</strong>
+        <span>{locale === "zh" ? "AI 判题助手" : "AI Judge Copilot"}</span>
+        <strong title={current.description}>{current.label}</strong>
       </div>
       {error ? <div className="recoverable-error">{error}</div> : null}
       <section>
-        <h3>Current Verdict</h3>
-        <p className="verdict">{explain?.verdict ?? submission?.result ?? "No submission selected"}</p>
+        <h3>{locale === "zh" ? "当前结果" : "Current Verdict"}</h3>
+        <p className="verdict" title={current.description}>{explain?.verdict ?? current.label}</p>
       </section>
       <section>
-        <h3>Next Action</h3>
-        <p>{explain?.next_action ?? review?.suggested_next_action ?? hint?.hint ?? "Choose an AI action below."}</p>
+        <h3>{locale === "zh" ? "下一步" : "Next Action"}</h3>
+        <p>{explain?.next_action ?? review?.suggested_next_action ?? hint?.hint ?? (locale === "zh" ? "选择下面的 AI 操作。" : "Choose an AI action below.")}</p>
       </section>
       <details className="copilot-details" open={Boolean(explain?.summary || review?.summary)}>
-        <summary>Error Cause</summary>
-        <p>{explain?.summary ?? submission?.error_message ?? "Run or submit code to unlock result-aware guidance."}</p>
+        <summary>{locale === "zh" ? "错误原因" : "Error Cause"}</summary>
+        <p>{explain?.summary ?? submission?.error_message ?? (locale === "zh" ? "运行或提交代码后会显示基于结果的建议。" : "Run or submit code to unlock result-aware guidance.")}</p>
         {submission?.error_message ? <CodeBlock code={submission.error_message} language="text" /> : null}
       </details>
       <details className="copilot-details">
-        <summary>Suspicious Regions</summary>
+        <summary>{locale === "zh" ? "可疑代码区域" : "Suspicious Regions"}</summary>
         {explain?.suspicious_code_regions.length ? (
           <ul className="compact-list">
             {explain.suspicious_code_regions.map((region) => (
@@ -65,38 +69,38 @@ export function AICopilotPanel({
             ))}
           </ul>
         ) : (
-          <p className="muted">No line-level suspicion yet.</p>
+          <p className="muted">{locale === "zh" ? "暂无行级可疑区域。" : "No line-level suspicion yet."}</p>
         )}
       </details>
       <details className="copilot-details">
-        <summary>Public Case Comparison</summary>
+        <summary>{locale === "zh" ? "公开用例对比" : "Public Case Comparison"}</summary>
         {explain?.public_case_analysis.length ? (
           explain.public_case_analysis.map((item) => (
             <div className="case-card" key={item.case_index}>
-              <strong>Case {item.case_index}</strong>
+              <strong>{locale === "zh" ? "用例" : "Case"} {item.case_index}</strong>
               <p>{item.observation}</p>
-              <code>expected: {item.expected_summary}</code>
-              <code>actual: {item.actual_summary}</code>
+              <code>{locale === "zh" ? "期望" : "expected"}: {item.expected_summary}</code>
+              <code>{locale === "zh" ? "实际" : "actual"}: {item.actual_summary}</code>
             </div>
           ))
         ) : (
-          <p className="muted">Only public testcase details will appear here.</p>
+          <p className="muted">{locale === "zh" ? "这里只展示公开用例细节。" : "Only public testcase details will appear here."}</p>
         )}
       </details>
       <details className="copilot-details">
-        <summary>Boundary Checks</summary>
-        <List items={explain?.edge_cases_to_check ?? review?.edge_cases_to_check ?? []} />
+        <summary>{locale === "zh" ? "边界检查" : "Boundary Checks"}</summary>
+        <List items={explain?.edge_cases_to_check ?? review?.edge_cases_to_check ?? []} locale={locale} />
       </details>
       <details className="copilot-details">
-        <summary>Complexity</summary>
-        <p>{explain?.complexity_comment ?? review?.complexity_comment ?? "No complexity review yet."}</p>
+        <summary>{locale === "zh" ? "复杂度" : "Complexity"}</summary>
+        <p>{explain?.complexity_comment ?? review?.complexity_comment ?? (locale === "zh" ? "暂无复杂度分析。" : "No complexity review yet.")}</p>
       </details>
       <div className="copilot-actions">
-        <button onClick={onExplain} disabled={!submission}>Explain</button>
-        <button onClick={onReview} disabled={!submission}>Review Code</button>
-        <button onClick={() => onHint(1)}>Hint 1</button>
-        <button onClick={() => onHint(2)}>Hint 2</button>
-        <button onClick={() => onHint(3)}>Hint 3</button>
+        <button onClick={onExplain} disabled={!submission}>{locale === "zh" ? "解释结果" : "Explain"}</button>
+        <button onClick={onReview} disabled={!submission}>{locale === "zh" ? "审查代码" : "Review Code"}</button>
+        <button onClick={() => onHint(1)}>{locale === "zh" ? "提示 1" : "Hint 1"}</button>
+        <button onClick={() => onHint(2)}>{locale === "zh" ? "提示 2" : "Hint 2"}</button>
+        <button onClick={() => onHint(3)}>{locale === "zh" ? "提示 3" : "Hint 3"}</button>
       </div>
     </aside>
   );

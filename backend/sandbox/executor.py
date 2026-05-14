@@ -1,6 +1,8 @@
+import io
 import logging
 import os
 import subprocess
+import tarfile
 import tempfile
 from typing import Any
 
@@ -25,7 +27,7 @@ def get_docker_client() -> docker.DockerClient:
 
 
 class SandboxExecutor:
-    """Executes code using subprocess or Docker based on configuration."""
+    """Executes code in Docker, with an explicit local-only subprocess escape hatch."""
 
     def __init__(self):
         self.container_name_prefix = "fastoj_judge_"
@@ -63,7 +65,6 @@ class SandboxExecutor:
         input_data: str,
         time_limit: int = 1000,
         memory_limit: int = 256,
-        function_name: str = None,
     ) -> dict[str, Any]:
         """
         Execute code and return result.
@@ -71,10 +72,9 @@ class SandboxExecutor:
         Args:
             code: Source code to execute
             language: Programming language
-            input_data: Input to pass to the code (function call format for LeetCode style)
+            input_data: Input to pass to the code
             time_limit: Time limit in milliseconds
             memory_limit: Memory limit in MB
-            function_name: Function name to call (for LeetCode style)
 
         Returns:
             Dict with keys: status, output, error_message, execute_time, memory_used
@@ -88,26 +88,7 @@ class SandboxExecutor:
                 "memory_used": 0,
             }
 
-        # For LeetCode style (function call input), use function execution only in unsafe local mode.
-        if function_name or self._is_function_call(input_data):
-            if not settings.FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION:
-                return {
-                    "status": "se",
-                    "output": None,
-                    "error_message": "Function-call harness requires FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true in local development.",
-                    "execute_time": 0,
-                    "memory_used": 0,
-                }
-            return self._execute_function_test(
-                code=code,
-                language=language,
-                input_data=input_data,
-                time_limit=time_limit,
-                memory_limit=memory_limit,
-                function_name=function_name,
-            )
-
-        # Try Docker first if enabled
+        # Try Docker first if enabled.
         if self._use_docker and self.docker_client:
             return self._execute_in_docker(
                 code=code,
@@ -134,116 +115,6 @@ class SandboxExecutor:
             memory_limit=memory_limit,
         )
 
-    def _is_function_call(self, input_data: str) -> bool:
-        """Check if input looks like a function call."""
-        if not input_data:
-            return False
-        return '(' in input_data and ')' in input_data
-
-    def _execute_function_test(
-        self,
-        code: str,
-        language: str,
-        input_data: str,
-        time_limit: int,
-        memory_limit: int,
-        function_name: str = None,
-    ) -> dict[str, Any]:
-        """Execute a function call (LeetCode style)."""
-        if language != "python":
-            return self._execute_in_subprocess_fallback(
-                code=code,
-                language=language,
-                input_data=input_data,
-                time_limit=time_limit,
-                memory_limit=memory_limit,
-            )
-
-        # For Python, wrap the code with a test harness
-        return self._execute_python_function(code, input_data, time_limit, memory_limit)
-
-    def _execute_python_function(
-        self,
-        code: str,
-        input_data: str,
-        time_limit: int,
-        memory_limit: int,
-    ) -> dict[str, Any]:
-        """Execute Python function call."""
-        import re
-        import time as time_module
-
-        # Parse function call: "function_name(arg1, arg2, ...)"
-        match = re.match(r'(\w+)\((.*)\)\s*$', input_data.strip(), re.DOTALL)
-        if not match:
-            return {
-                "status": "re",
-                "output": None,
-                "error_message": f"Invalid function call format: {input_data}",
-                "execute_time": 0,
-                "memory_used": 0,
-            }
-
-        func_name = match.group(1)
-        args_str = match.group(2)
-
-        # Create wrapper code that executes the function call
-        wrapper_code = f'''
-{code}
-
-# Test execution
-import sys
-try:
-    result = {func_name}({args_str})
-    # Convert result to string representation
-    if isinstance(result, (list, tuple)):
-        print(repr(result), file=sys.stdout)
-    else:
-        print(result, file=sys.stdout)
-except Exception as e:
-    print(f"Error: {{e}}", file=sys.stderr)
-    sys.exit(1)
-'''
-
-        start_time = time_module.time()
-
-        try:
-            result = subprocess.run(
-                ["python", "-c", wrapper_code],
-                capture_output=True,
-                timeout=time_limit / 1000,
-            )
-        except subprocess.TimeoutExpired:
-            return {
-                "status": "tle",
-                "output": None,
-                "error_message": f"Time limit exceeded ({time_limit}ms)",
-                "execute_time": time_limit,
-                "memory_used": 0,
-            }
-
-        execute_time = int((time_module.time() - start_time) * 1000)
-
-        stderr = result.stderr.decode("utf-8", errors="replace")
-        stdout = result.stdout.decode("utf-8", errors="replace")
-
-        if result.returncode != 0:
-            return {
-                "status": "re",
-                "output": None,
-                "error_message": f"Runtime error:\n{stderr}",
-                "execute_time": execute_time,
-                "memory_used": 0,
-            }
-
-        return {
-            "status": "ac",
-            "output": stdout.strip(),
-            "error_message": None,
-            "execute_time": execute_time,
-            "memory_used": memory_limit,
-        }
-
     def _execute_in_docker(
         self,
         code: str,
@@ -256,101 +127,124 @@ except Exception as e:
         container = None
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
-                # Write code to file
                 code_file = self._write_code_file(temp_dir, code, language)
+                with open(os.path.join(temp_dir, code_file), encoding="utf-8") as f:
+                    code_content = f.read()
 
-                # Write input to file
-                input_file = os.path.join(temp_dir, "input.txt")
-                with open(input_file, "w", encoding="utf-8") as f:
-                    f.write(input_data)
+            image = settings.JUDGE_CONTAINER_IMAGE
+            run_cmd = self._get_run_command_docker(code_file, language)
+            timeout_seconds = max(1, int(time_limit / 1000) + 2)
 
-                # Get image and run command
-                image = settings.JUDGE_CONTAINER_IMAGE
-                run_cmd = self._get_run_command_docker(code_file, language)
+            container = self.docker_client.containers.run(
+                image,
+                "sh -lc 'sleep 600'",
+                detach=True,
+                mem_limit=f"{memory_limit}m",
+                memswap_limit=f"{memory_limit}m",
+                cpu_period=100000,
+                cpu_quota=int(time_limit * 1000),
+                network_disabled=True,
+                pids_limit=128,
+                cap_drop=["ALL"],
+                security_opt=["no-new-privileges"],
+                read_only=False,
+                working_dir="/tmp",
+                user="nobody",
+                stdout=True,
+                stderr=True,
+                remove=False,
+            )
 
-                # Create and run container
-                container = self.docker_client.containers.run(
-                    image,
-                    f"sh -lc 'mkdir -p /tmp/work && cp /code/* /tmp/work/ && cd /tmp/work && cat /input.txt | {run_cmd}'",
-                    detach=True,
-                    mem_limit=f"{memory_limit}m",
-                    memswap_limit=f"{memory_limit}m",
-                    cpu_period=100000,
-                    cpu_quota=int(time_limit * 1000),
-                    network_disabled=True,
-                    pids_limit=128,
-                    cap_drop=["ALL"],
-                    security_opt=["no-new-privileges"],
-                    read_only=True,
-                    tmpfs={"/tmp": "rw,noexec,nosuid,size=64m", "/tmp/work": "rw,nosuid,size=128m"},
-                    volumes={
-                        temp_dir: {"bind": "/code", "mode": "ro"},
-                        input_file: {"bind": "/input.txt", "mode": "ro"},
-                    },
-                    working_dir="/tmp/work",
-                    user="nobody",
-                    stdout=True,
-                    stderr=True,
-                    remove=False,
-                )
+            setup_exit_code, setup_logs = container.exec_run(
+                "mkdir -p /tmp/work",
+                stdout=True,
+                stderr=True,
+                workdir="/tmp",
+                user="root",
+            )
+            if setup_exit_code != 0:
+                setup_output = setup_logs.decode("utf-8", errors="replace")
+                return {
+                    "status": "se",
+                    "output": None,
+                    "error_message": f"Failed to prepare judge workspace: {setup_output}",
+                    "execute_time": 0,
+                    "memory_used": 0,
+                }
 
-                import time
-                start_time = time.time()
-
-                try:
-                    result = container.wait(timeout=time_limit / 1000 + 5)
-                    exit_code = result.get("StatusCode", 1)
-                except docker.errors.Timeout:
-                    try:
-                        container.kill()
-                    except Exception:
-                        pass
-                    return {
-                        "status": "tle",
-                        "output": None,
-                        "error_message": f"Time limit exceeded ({time_limit}ms)",
-                        "execute_time": time_limit,
-                        "memory_used": 0,
+            archive_ok = container.put_archive(
+                "/tmp/work",
+                self._build_judge_archive(
+                    {
+                        code_file: code_content,
+                        "input.txt": input_data,
                     }
+                ),
+            )
+            if not archive_ok:
+                return {
+                    "status": "se",
+                    "output": None,
+                    "error_message": "Failed to copy source into judge workspace.",
+                    "execute_time": 0,
+                    "memory_used": 0,
+                }
 
-                raw_logs = container.logs(stdout=True, stderr=True)
-                output_truncated = len(raw_logs) > settings.JUDGE_MAX_OUTPUT_BYTES
-                logs = raw_logs[: settings.JUDGE_MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
-                execute_time = int((time.time() - start_time) * 1000)
-                error_suffix = "\nOutput truncated." if output_truncated else None
+            import time
 
-                if exit_code == 0:
-                    return {
-                        "status": "ac",
-                        "output": logs,
-                        "error_message": error_suffix,
-                        "execute_time": execute_time,
-                        "memory_used": memory_limit,
-                    }
-                if exit_code == 42:
-                    return {
-                        "status": "ce",
-                        "output": None,
-                        "error_message": f"Compilation error:\n{logs}",
-                        "execute_time": execute_time,
-                        "memory_used": 0,
-                    }
-                if exit_code in {137, 139}:
-                    return {
-                        "status": "mle" if exit_code == 137 else "re",
-                        "output": logs if logs else None,
-                        "error_message": "Memory limit exceeded" if exit_code == 137 else "Runtime error",
-                        "execute_time": execute_time,
-                        "memory_used": memory_limit,
-                    }
-                else:
-                    return {
-                        "status": "re",
-                        "output": logs if logs else None,
-                        "error_message": f"Runtime error (exit code {exit_code}){error_suffix or ''}",
-                        "execute_time": execute_time,
-                        "memory_used": 0,
-                    }
+            start_time = time.time()
+            exit_code, raw_logs = container.exec_run(
+                f"timeout {timeout_seconds}s sh -lc 'cd /tmp/work && cat input.txt | {run_cmd}'",
+                stdout=True,
+                stderr=True,
+                workdir="/tmp/work",
+                user="nobody",
+            )
+
+            output_truncated = len(raw_logs) > settings.JUDGE_MAX_OUTPUT_BYTES
+            logs = raw_logs[: settings.JUDGE_MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
+            execute_time = int((time.time() - start_time) * 1000)
+            error_suffix = "\nOutput truncated." if output_truncated else None
+
+            if exit_code == 0:
+                return {
+                    "status": "ac",
+                    "output": logs,
+                    "error_message": error_suffix,
+                    "execute_time": execute_time,
+                    "memory_used": memory_limit,
+                }
+            if exit_code == 124:
+                return {
+                    "status": "tle",
+                    "output": logs if logs else None,
+                    "error_message": f"Time limit exceeded ({time_limit}ms)",
+                    "execute_time": time_limit,
+                    "memory_used": 0,
+                }
+            if exit_code == 42:
+                return {
+                    "status": "ce",
+                    "output": None,
+                    "error_message": f"Compilation error:\n{logs}",
+                    "execute_time": execute_time,
+                    "memory_used": 0,
+                }
+            if exit_code in {137, 139}:
+                return {
+                    "status": "mle" if exit_code == 137 else "re",
+                    "output": logs if logs else None,
+                    "error_message": "Memory limit exceeded" if exit_code == 137 else "Runtime error",
+                    "execute_time": execute_time,
+                    "memory_used": memory_limit,
+                }
+            return {
+                "status": "re",
+                "output": logs if logs else None,
+                "error_message": f"Runtime error (exit code {exit_code}){error_suffix or ''}",
+                "execute_time": execute_time,
+                "memory_used": 0,
+            }
 
         except docker.errors.DockerException as e:
             logger.warning("Docker execution failed: %s", e)
@@ -385,6 +279,28 @@ except Exception as e:
                 except Exception:
                     pass
 
+    def _build_judge_archive(self, files: dict[str, str]) -> bytes:
+        """Build a small tar archive for copying source/input into a judge container."""
+        stream = io.BytesIO()
+        added_dirs: set[str] = set()
+        with tarfile.open(fileobj=stream, mode="w") as archive:
+            for path, content in files.items():
+                directory = os.path.dirname(path)
+                if directory and directory not in added_dirs:
+                    dir_info = tarfile.TarInfo(directory)
+                    dir_info.type = tarfile.DIRTYPE
+                    dir_info.mode = 0o755
+                    archive.addfile(dir_info)
+                    added_dirs.add(directory)
+
+                data = content.encode("utf-8")
+                file_info = tarfile.TarInfo(path)
+                file_info.size = len(data)
+                file_info.mode = 0o644
+                archive.addfile(file_info, io.BytesIO(data))
+        stream.seek(0)
+        return stream.getvalue()
+
     def _get_run_command_docker(self, code_file: str, language: str) -> str:
         """Get the command to run the code in Docker."""
         commands = {
@@ -406,7 +322,7 @@ except Exception as e:
         time_limit: int,
         memory_limit: int,
     ) -> dict[str, Any]:
-        """Execute code using subprocess (fallback when Docker unavailable)."""
+        """Execute code using subprocess only when the local unsafe fallback is enabled."""
         with tempfile.TemporaryDirectory() as temp_dir:
             try:
                 # Write code to file

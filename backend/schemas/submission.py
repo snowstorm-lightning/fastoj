@@ -1,4 +1,6 @@
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -6,6 +8,7 @@ class SubmissionCreate(BaseModel):
     problem_id: str
     code: str = Field(..., max_length=65536)
     language: str
+    judge_mode: Literal["acm", "function"] = "acm"
 
 
 class SubmissionRun(BaseModel):

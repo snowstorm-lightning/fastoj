@@ -17,9 +17,9 @@ SANDBOX_CONFIG = {
     "cpu_period": 100000,
     "cpu_quota": 50000,
 
-    # Read-only filesystem with tmpfs for /tmp
-    "read_only": True,
-    "tmpfs": ["/tmp"],
+    # Writable ephemeral container workspace; code is injected through the Docker API.
+    # Docker Desktop worker-in-container mode does not reliably extract archives into tmpfs.
+    "read_only": False,
 
     # Security options
     "security_opt": ["no-new-privileges:true"],

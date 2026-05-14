@@ -12,6 +12,7 @@ import {
   type ProblemListItem,
   type SubmissionDetail,
 } from "./schemas";
+import type { JudgeMode } from "./problemModes";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -21,6 +22,20 @@ export type ProblemFilters = {
   tags?: string;
   page?: number;
 };
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function isUnauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
 
 function token() {
   return localStorage.getItem("fastoj.jwt") ?? "";
@@ -37,7 +52,7 @@ async function request<T>(path: string, options: RequestInit, parse: (data: unkn
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.detail ?? data.error?.message ?? `HTTP ${response.status}`);
+    throw new ApiError(data.detail ?? data.error?.message ?? `HTTP ${response.status}`, response.status);
   }
   return parse(data);
 }
@@ -76,10 +91,10 @@ export const api = {
       problemDetailSchema.parse(data.data),
     );
   },
-  async submit(problem_id: string, language: string, code: string, runOnly = false) {
+  async submit(problem_id: string, language: string, code: string, runOnly = false, judge_mode: JudgeMode = "acm") {
     return request(runOnly ? "/api/v1/submissions/run" : "/api/v1/submissions", {
       method: "POST",
-      body: JSON.stringify({ problem_id, language, code }),
+      body: JSON.stringify({ problem_id, language, code, judge_mode }),
     }, (data) => submissionDetailSchema.partial({ testcase_results: true }).parse(data));
   },
   async submission(id: string): Promise<SubmissionDetail> {

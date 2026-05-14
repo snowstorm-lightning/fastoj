@@ -13,6 +13,7 @@ from backend.schemas.submission import (
     SubmissionListItem,
     TestCaseResultResponse,
 )
+from backend.services.function_mode import wrap_function_submission
 from backend.services.queue_service import queue_service
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class SubmissionService:
         problem = self.db.query(Problem).filter(Problem.id == submission_data.problem_id).first()
         if not problem:
             raise ValueError("Problem not found")
+        judge_code = self._prepare_judge_code(submission_data, problem)
 
         # Create submission
         submission = Submission(
@@ -51,7 +53,7 @@ class SubmissionService:
         problem.total_submissions = problem.total_submissions + 1  # type: ignore[assignment]
         self.db.commit()
 
-        self._queue_or_judge_now(submission, use_hidden=True)
+        self._queue_or_judge_now(submission, use_hidden=True, judge_code=judge_code)
 
         return submission
 
@@ -65,6 +67,7 @@ class SubmissionService:
         problem = self.db.query(Problem).filter(Problem.id == submission_data.problem_id).first()
         if not problem:
             raise ValueError("Problem not found")
+        judge_code = self._prepare_judge_code(submission_data, problem)
 
         # Create submission
         submission = Submission(
@@ -80,16 +83,25 @@ class SubmissionService:
         self.db.commit()
         self.db.refresh(submission)
 
-        self._queue_or_judge_now(submission, use_hidden=False)
+        self._queue_or_judge_now(submission, use_hidden=False, judge_code=judge_code)
 
         return submission
 
-    def _queue_or_judge_now(self, submission: Submission, use_hidden: bool) -> None:
+    def _prepare_judge_code(self, submission_data: SubmissionCreate, problem: Problem) -> str:
+        if submission_data.judge_mode == "function":
+            return wrap_function_submission(
+                submission_data.code,
+                submission_data.language,
+                problem.slug,  # type: ignore[arg-type]
+            )
+        return submission_data.code
+
+    def _queue_or_judge_now(self, submission: Submission, use_hidden: bool, judge_code: str | None = None) -> None:
         """Queue a judge task, or execute it inline when Redis/worker is unavailable."""
         task = {
             "submission_id": str(submission.id),
             "problem_id": str(submission.problem_id),
-            "code": submission.code,
+            "code": judge_code or submission.code,
             "language": submission.language,
             "use_hidden": use_hidden,
         }
@@ -112,7 +124,7 @@ class SubmissionService:
         result = JudgeTask().execute(
             submission_id=str(submission.id),
             problem_id=str(submission.problem_id),
-            code=submission.code,
+            code=judge_code or submission.code,
             language=submission.language,
             use_hidden=use_hidden,
             db=self.db,

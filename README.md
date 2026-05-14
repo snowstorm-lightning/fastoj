@@ -10,7 +10,7 @@ AI explanations are grounded in the real submission verdict and public testcase 
 - Queue: Redis Streams with consumer groups, ack, retry, dead-letter, and pending reclaim.
 - Judge: Docker sandbox worker. Production does not fall back to host subprocess execution.
 - Realtime: Worker publishes status events to Redis pub/sub; API relays events to WebSocket clients.
-- Frontend: Vite, React, TypeScript, Tailwind CSS, Monaco Editor, TanStack Query, Zustand, Zod, xterm, Shiki, @xyflow/react, @chenglou/pretext. The UI is organized as a three-view training flow: problem library, focused workbench, and training graph.
+- Frontend: Vite, React, TypeScript, Tailwind CSS, Monaco Editor, TanStack Query, Zustand, Zod, xterm, Shiki, @xyflow/react, @chenglou/pretext. The UI is organized as a three-view training flow: problem library, LeetCode-style workbench, and training graph.
 - AI: OpenAI-compatible chat completions provider, disabled by default.
 
 ## Dependency Audit
@@ -50,10 +50,16 @@ The Vite dev server proxies API calls by using the same origin unless `VITE_API_
 
 The React frontend is intentionally split into focused views instead of one dense all-in-one page:
 
-- Problem library: keyword, tag, difficulty, pagination, training summary, and recommendation entry.
-- Workbench: code editor and AI Copilot are the primary focus.
-- Detail dock: problem statement, public cases, official solution, judge terminal, and submission trail are available as tabs.
+- Problem library: keyword, tag, difficulty, pagination, training summary, AI-practice count, function-mode count, and recommendation entry.
+- Auth flow: login and registration live on a dedicated page instead of being embedded in the global header.
+- Workbench: a LeetCode-style three-column layout with collapsible and resizable problem/result sidebars, central Monaco editor, and a right-side AI/judge drawer.
+- Mode switch: supported problems can run in `function` mode, where the editor shows the required Python function signature and the backend wraps it in a stdin/stdout harness before judging. All problems can still use `acm` mode, where the submission owns standard input and output. The workbench uses one compact toggle button with localized text and mode-colored status dots.
+- Language switch: the current UI ships a frontend-side Chinese/English catalog for navigation, auth, verdict labels, hover explanations, mode labels, and seeded problem display text. Longer term, user-authored domain content such as problem statements and official solutions should move to backend-managed localized fields while stable UI chrome stays in the frontend i18n bundle.
+- Detail dock: public cases, official solution, judge terminal, and submission trail are available as tabs.
 - Training graph: @xyflow/react renders knowledge nodes; clicking a node returns to the library and applies the tag filter.
+- Static visual guide: supported problems render a prebuilt visual step flow in the statement sidebar, avoiding runtime AI calls for basic conceptual explanation.
+- Button clarity: primary workflow buttons include explicit visible labels, hover titles, and 3D normal/hover/pressed states. Collapsed sidebars use compact three-bar controls.
+- Token expiry: if a submit action discovers an expired session, the frontend shows a localized expiry alert before redirecting to the dedicated auth page.
 
 AI Copilot defaults to the current verdict and next action. Longer information such as suspicious code regions, public-case comparison, boundary checks, and complexity notes is placed in expandable sections to reduce cognitive load.
 
@@ -122,9 +128,7 @@ Sandbox containers are configured with:
 - pids limit
 - `cap_drop=["ALL"]`
 - `no-new-privileges`
-- read-only root filesystem
-- read-only source mount
-- tmpfs working directories
+- code and stdin copied into an isolated ephemeral container working directory through the Docker API
 - non-root user
 - output truncation
 - timeout kill and cleanup
@@ -170,6 +174,42 @@ Rules:
 - Hidden testcase input, expected output, and actual output are never included in AI prompts.
 - If a hidden testcase fails, the AI context only says hidden data cannot be shown and suggests boundary categories.
 - The AI is instructed not to reveal complete accepted solutions.
+- Provider JSON is normalized before schema validation, so common OpenAI-compatible variations such as scalar `focus`, `risks`, or verdict strings do not break hint, explanation, or review rendering.
+
+FastOJ uses one OpenAI-compatible provider path for both hosted API models and local models. Store secrets in the repository-root `.env` file or in deployment environment variables. The root `.env` and `.env.*` files are ignored by git; `.env.example` is safe to commit and documents the expected variable names.
+
+DeepSeek API mode:
+
+```bash
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=https://api.deepseek.com
+AI_API_KEY=your-deepseek-api-key
+AI_MODEL=deepseek-v4-flash
+```
+
+DeepSeek's official docs list `https://api.deepseek.com` as the OpenAI-format base URL and current models such as `deepseek-v4-flash` and `deepseek-v4-pro`. The legacy names `deepseek-chat` and `deepseek-reasoner` are documented as compatibility aliases that will be deprecated later.
+
+## Practice Modes And Seed Problems
+
+Seed data can be applied to a new or existing database. Existing seeded problems are normalized by slug so old prototype testcase rows are updated to the current JSON-line format without deleting historical submission records:
+
+```bash
+uv run python -m backend.scripts.seed_data
+```
+
+The seed set includes traditional interview tasks, selected Hot100-style practice tasks, and AI algorithm tasks:
+
+- Traditional/function tasks: Two Sum, Add Two Numbers, Longest Substring Without Repeating Characters.
+- Hot100-style ACM tasks: Valid Parentheses, Maximum Subarray, Group Anagrams, Merge Intervals, Climbing Stairs, Container With Most Water.
+- AI algorithm tasks: Logistic Regression Sigmoid, KNN Majority Vote, KMeans One Iteration, Scaled Dot-Product Attention, Softmax Cross Entropy, Attention Mask Apply.
+
+Function mode currently supports Python wrappers for the seeded function tasks. Unsupported languages can still solve the same problems through ACM mode.
+
+Function-mode testcase data uses the current JSON-line format only. Incompatible prototype testcase rows are normalized by the seed script instead of being supported by extra parser compatibility.
+
+The seed script now expands every bundled problem to at least 10 testcase rows and keeps at least two public sample cases where available. Hidden testcase contents remain server-side only.
+
+The Docker judge runtime includes Python `numpy==2.2.6` and CPU `torch==2.7.1+cpu`, so AI algorithm submissions may use either standard Python, NumPy, or PyTorch. These packages live in the judge image rather than the API/worker Python environment because they are needed for submitted code execution, not for request handling.
 
 ## llama.cpp Local Model
 
@@ -246,6 +286,24 @@ Docker:
 docker compose up --build
 ```
 
+Latest verification from this workspace:
+
+- `uv run ruff check .`: passed.
+- `uv run pytest`: passed, 71 tests passed with 3 datetime deprecation warnings.
+- `cd frontend && npm run build`: passed after the token-expiry alert, AI response normalization, fixed-viewport workbench, sample explanation, and expanded testcase work, with existing Monaco/Shiki chunk-size warnings.
+- `cd frontend && npm test`: passed after the i18n and problem-set work, 6 test files and 8 tests passed; jsdom printed expected canvas `getContext` warnings.
+- `docker compose build judge-runtime`: passed after adding NumPy and CPU PyTorch to the judge image.
+- `docker compose up --build -d api`: passed and rebuilt/recreated the API container with the latest frontend bundle.
+- `docker compose ps`: API and worker healthy; PostgreSQL and Redis healthy; judge runtime running.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/v1/health`: passed with HTTP 200 and `{"status":"healthy","app":"FastOJ"}`. In this PowerShell session, `localhost` can time out even while Docker reports the API healthy, so use `127.0.0.1` for manual checks if needed.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000`: passed with HTTP 200 and returned rebuilt frontend HTML.
+- `docker compose exec -T api uv run python -m backend.scripts.seed_data`: passed and normalized 15 existing problems in the current database; all bundled problems now have at least 10 testcase rows and at least two public samples.
+- `docker compose exec -T worker ... SandboxExecutor`: passed for a Python submission importing both NumPy and PyTorch.
+- Real API public run and full submit for Two Sum function mode passed with `result=ac`; the old `Runtime error (exit code 2)` path is fixed.
+- Real API public run and full submit for Valid Parentheses ACM mode passed with `result=ac`.
+- Real API public run for Softmax Cross Entropy passed with `result=ac`; an incorrect seeded expected output was corrected without exposing hidden testcase contents.
+- DeepSeek-compatible AI hint, failed-submission explanation, and code review calls returned schema-valid responses after scalar/list normalization. Hidden testcase contents were not sent.
+
 ## Manual Acceptance Path
 
 1. Open the frontend.
@@ -268,6 +326,7 @@ docker compose up --build
 ## Known Limits
 
 - The bundled frontend currently uses Monaco and Shiki directly, so production chunks are large.
+- Function mode wrappers currently target Python; use ACM mode for C/C++/Java/JavaScript/TypeScript/Go until language-specific wrappers are added.
 - MLE classification depends on Docker runtime exit behavior.
 - AI quality depends on the configured OpenAI-compatible model.
 - The AI review UI is submission-oriented; reviewing unsaved code is implemented through the latest run/submission flow.
