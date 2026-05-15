@@ -45,8 +45,6 @@ repo_root = Path(__file__).resolve().parents[1]
 candidate_static_dirs = [
     Path("/app/frontend/dist"),
     repo_root / "frontend" / "dist",
-    Path("/app/frontend/src"),
-    repo_root / "frontend" / "src",
 ]
 static_dir = next((path for path in candidate_static_dirs if path.exists()), None)
 if static_dir:

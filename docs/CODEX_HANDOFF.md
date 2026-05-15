@@ -47,6 +47,8 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Current WIP adds a controlled AI model selector (`default`, `deepseek`, `qwen-local`), backend named AI profiles, localized graph labels, structured sample cards, local discussion/settings views, removal of visible old-site wording, and backend/frontend acceptance-rate clamping so invalid historical counts cannot show rates above 100%.
 - Admin Problem Authoring Agent MVP added: admin-only draft creation, run/step tracing, draft list/detail, approve, and reject endpoints; `ProblemDraft`, `AgentRun`, and `AgentStep` persistence; sandbox-backed validation; and explicit approval before formal `Problem`, `TestCase`, and official `Solution` rows are created.
 - Admin Console now includes a minimal Problem Agent panel for topic/difficulty/tags/mode/model input, AgentRun step timeline, draft preview, validation report, approve, and reject. It explicitly states that generated content remains a draft until approval.
+- Admin bootstrap script added at `backend/scripts/create_admin.py`; it creates or promotes the first administrator from a trusted server shell, uses existing password hashing, requires exact username/email matches for promotion, and does not allow public self-service role assignment.
+- Obsolete static frontend prototype files and stale Codex checkpoint artifacts were removed after their useful context was consolidated into committed code and handoff/progress docs.
 - The Qwen local profile expects an OpenAI-compatible local server such as `llama-server` on `http://host.docker.internal:8080/v1`. `llama-server` is not installed in the current PATH, so the local Qwen server has not been started.
 
 ## Not Completed Yet
@@ -64,7 +66,7 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 
 ## Current Modified File List
 
-Modified and new files after the latest UI/mode/i18n/problem-set work include `AGENTS.md`, frontend `main.tsx`, `styles.css`, `lib/api.ts`, `lib/i18n.ts`, `lib/problemModes.ts`, backend AI/auth/admin/solution/function-mode code, seed data, tests, README files, and Codex docs.
+Modified and new files after the latest admin-agent and cleanup work include backend admin-agent models/schemas/services/routes/prompts, the admin bootstrap script, frontend Admin Console/API/i18n updates, backend tests, README files, and Codex docs. Removed files include obsolete static frontend prototype files and stale checkpoint/recovery artifacts.
 
 ## Executed Commands And Results
 

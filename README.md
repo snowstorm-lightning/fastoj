@@ -38,6 +38,20 @@ uv run uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 For local development only, you may initialize tables by running the API with `DEBUG=true`; production should use Alembic migrations instead of unconditional `Base.metadata.create_all()`.
 
+Create the first administrator from a trusted server shell after migrations:
+
+```bash
+uv run python -m backend.scripts.create_admin --username admin --email admin@example.com
+```
+
+For the Docker Compose stack, run the same bootstrap inside the API container so it uses the container database settings:
+
+```bash
+docker compose exec api uv run python -m backend.scripts.create_admin --username admin --email admin@example.com
+```
+
+The script prompts for the password without echoing it. For non-interactive environments, set `FASTOJ_ADMIN_PASSWORD` in the trusted execution environment instead of passing secrets through shell history. Existing users can be promoted only when both username and email match; use `--reset-password` explicitly if an existing admin password should be rotated.
+
 ## Frontend Startup
 
 ```bash
@@ -65,6 +79,7 @@ The React frontend is intentionally split into focused views instead of one dens
 - AI model selection: the workbench can choose a controlled AI profile (`default`, `deepseek`, or `qwen-local`) without exposing arbitrary model names or base URLs to the browser.
 - Account settings: signed-in users can edit display name, username, email, avatar URL, compact mode, and password.
 - Admin console: server-side admin role checks protect user and problem management. The UI can change user role/active state, problem difficulty/public state, and create a missing Python official-solution placeholder without exposing hidden testcase content.
+- Admin provisioning: public registration always creates a normal `user`; administrator accounts are bootstrapped with `backend.scripts.create_admin` or managed by an existing admin from the console.
 
 AI Copilot defaults to the current verdict and next action. Longer information such as suspicious code regions, public-case comparison, boundary checks, and complexity notes is placed in expandable sections to reduce cognitive load.
 
@@ -194,6 +209,15 @@ Rules:
 - Provider JSON is normalized before schema validation, so common OpenAI-compatible variations such as scalar `focus`, `risks`, or verdict strings do not break hint, explanation, or review rendering.
 
 FastOJ uses one OpenAI-compatible provider path for both hosted API models and local models. Store secrets in the repository-root `.env` file or in deployment environment variables. The root `.env` and `.env.*` files are ignored by git; `.env.example` is safe to commit and documents the expected variable names.
+
+## Admin Account Security
+
+- Public registration never accepts a role field and stores new accounts as `user`.
+- Admin-only APIs use server-side `require_admin` checks under `/api/v1/admin`; hiding links in the frontend is not the security boundary.
+- Passwords are stored as salted PBKDF2-HMAC-SHA256 hashes through `backend.core.security.get_password_hash`; plaintext admin passwords are not stored.
+- Login issues short-lived access JWTs plus refresh tokens signed with `SECRET_KEY`; disabled users cannot log in.
+- The first admin is created from a trusted shell with `uv run python -m backend.scripts.create_admin --username admin --email admin@example.com`, or with `docker compose exec api uv run python -m backend.scripts.create_admin --username admin --email admin@example.com` when using the Compose stack. The script enforces a minimum 12-character password, promotes only an exact username/email match, and requires `--reset-password` before replacing an existing password.
+- Existing admins can change user roles and active state from the admin console. Removing the last usable admin is an operational risk, so keep at least one break-glass admin account or retain server shell access for the bootstrap script.
 
 DeepSeek API mode:
 
@@ -330,15 +354,16 @@ docker compose up --build
 Latest verification from this workspace:
 
 - `uv run ruff check .`: passed.
-- `uv run pytest`: passed, 72 tests passed with 3 datetime deprecation warnings.
-- `cd frontend && npm run build`: passed after account/admin pages, localized AI requests, custom tooltips, graph layout polish, and multi-language function starters, with existing Monaco/Shiki chunk-size warnings.
-- `cd frontend && npm test`: passed after the multi-language function starter test update, 6 test files and 8 tests passed; jsdom printed expected canvas `getContext` warnings.
+- `uv run pytest`: passed, 86 tests passed; existing timezone deprecation warnings remain in older tests and service timestamp code.
+- `cd frontend && npm run build`: passed after admin-agent cleanup and admin bootstrap docs, with existing Monaco/Shiki chunk-size warnings.
+- `cd frontend && npm test`: passed, 6 test files and 10 tests passed; jsdom printed expected canvas `getContext` warnings.
 - `docker compose build judge-runtime`: passed after adding NumPy and CPU PyTorch to the judge image.
 - `docker compose up --build -d api`: passed and rebuilt/recreated the API container with the latest frontend bundle.
 - `docker compose ps`: API and worker healthy; PostgreSQL and Redis healthy; judge runtime running.
 - `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/v1/health`: passed with HTTP 200 and `{"status":"healthy","app":"FastOJ"}`. In this PowerShell session, `localhost` can time out even while Docker reports the API healthy, so use `127.0.0.1` for manual checks if needed.
 - `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000`: passed with HTTP 200 and returned rebuilt frontend HTML.
-- `docker compose up --build -d api worker`: passed after the latest account/admin/function-mode work; API and worker are healthy.
+- `docker compose config`: passed.
+- `docker compose up --build -d api worker`: passed after admin bootstrap and cleanup work; API and worker are healthy.
 - Docker-backed public run for Two Sum C++ function mode passed with `result=ac` after fixing compiled-language stdin redirection and sandbox workspace permissions.
 - Frontend build/test and backend tests passed after the model selector, localized graph, structured sample cards, discussion/settings views, and acceptance-rate clamping work.
 - `Get-Command llama-server`: not found in the current PATH. The `qwen-local` UI/backend profile is wired, but a local OpenAI-compatible Qwen server still needs to be installed and started before that selector can return real model responses.

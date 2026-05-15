@@ -37,6 +37,7 @@
 - [x] Added backend tests for admin-only access, AI disabled behavior, persistence, approval, idempotency, hidden cases, and validation failure.
 - [x] Added minimal Admin Console UI for generating drafts, viewing run steps, previewing validation, approving, and rejecting.
 - [x] Added dynamic Python function-mode metadata for approved Agent drafts, including workbench starter generation and submission wrapping.
+- [x] Added a trusted-shell admin bootstrap script so the first administrator can be created without opening public role assignment.
 - [ ] Add non-Python dynamic function-mode harness metadata for arbitrary approved function drafts.
 
 ## Judge Queue And Worker
@@ -128,7 +129,7 @@
 - [x] Dependency audit doc.
 - [x] Checkpoint handoff doc.
 - [x] Progress checklist doc.
-- [x] Recovery prompt doc.
+- [x] Recovery context consolidated into handoff/progress docs; obsolete standalone recovery prompt removed.
 - [x] README full rewrite.
 - [x] README updated for simplified frontend architecture and Pretext adapter usage.
 - [x] README updated for function/ACM modes, AI algorithm seed problems, and latest verification.
@@ -146,6 +147,8 @@
 - [x] Added custom hover tooltip styling for icon controls and reduced the knowledge-graph intro panel footprint.
 - [x] Fixed Docker sandbox compiled-language execution so stdin is redirected to the final program instead of the compiler.
 - [x] Fixed Docker sandbox workspace permissions so `nobody` can create compiled binaries inside `/tmp/work` without adding capabilities.
+- [x] Removed obsolete static frontend prototype files and stale Codex checkpoint artifacts.
+- [x] README updated with first-admin bootstrap and admin-account security notes.
 - [ ] Final summary.
 
 ## Verification
@@ -209,8 +212,8 @@
 
 - [x] Ran `git status`.
 - [x] Ran `git diff --stat`.
-- [x] Created handoff/progress/recovery files.
-- [x] Generated `docs/codex-checkpoint.patch`.
+- [x] Created handoff/progress files.
+- [x] Removed obsolete checkpoint patch and recovery prompt after their useful context was consolidated into handoff/progress docs.
 - [x] Created checkpoint commit `74f7c68 chore: checkpoint codex progress`.
 - [x] Commit latest Docker/migration compatibility fixes.
 - [x] Commit frontend training workspace simplification.
