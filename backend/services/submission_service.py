@@ -93,6 +93,7 @@ class SubmissionService:
                 submission_data.code,
                 submission_data.language,
                 problem.slug,  # type: ignore[arg-type]
+                problem.function_signature,  # type: ignore[arg-type]
             )
         return submission_data.code
 

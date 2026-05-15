@@ -172,6 +172,17 @@ Endpoints:
 - `POST /api/v1/ai/submissions/{submission_id}/review`
 - `POST /api/v1/ai/problems/{problem_id}/hint`
 
+Admin Problem Authoring Agent endpoints are also available under `/api/v1/admin` for administrators only:
+
+- `POST /api/v1/admin/agent/problem-drafts`
+- `GET /api/v1/admin/agent/runs/{run_id}`
+- `GET /api/v1/admin/problem-drafts`
+- `GET /api/v1/admin/problem-drafts/{draft_id}`
+- `POST /api/v1/admin/problem-drafts/{draft_id}/approve`
+- `POST /api/v1/admin/problem-drafts/{draft_id}/reject`
+
+The agent stores generated content as `ProblemDraft` rows with `AgentRun` and `AgentStep` traces. Draft approval is a separate admin action that creates the public `Problem`, `TestCase`, and official `Solution` rows. AI-generated problems are never published automatically. Draft validation checks required fields, slug uniqueness, testcase counts, non-empty expected outputs, and runs the official solution through the sandbox validation adapter. ACM drafts use the existing sandbox executor directly. Python function-mode drafts store their function signature on the approved problem, render a dynamic starter in the workbench, and run through the same JSON-line dynamic harness during submission.
+
 Rules:
 
 - AI explain/review require login.

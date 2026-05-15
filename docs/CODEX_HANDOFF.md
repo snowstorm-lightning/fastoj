@@ -45,6 +45,8 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Docker Compose now builds and starts successfully after Dockerfile fixes.
 - Latest WIP adds token-expiry alert before auth redirect, AI provider response normalization for hint/explain/review, fixed-viewport workbench scrolling, sample explanations, expanded seeded testcase counts, and the Softmax expected-output correction without exposing hidden testcase contents.
 - Current WIP adds a controlled AI model selector (`default`, `deepseek`, `qwen-local`), backend named AI profiles, localized graph labels, structured sample cards, local discussion/settings views, removal of visible old-site wording, and backend/frontend acceptance-rate clamping so invalid historical counts cannot show rates above 100%.
+- Admin Problem Authoring Agent MVP added: admin-only draft creation, run/step tracing, draft list/detail, approve, and reject endpoints; `ProblemDraft`, `AgentRun`, and `AgentStep` persistence; sandbox-backed validation; and explicit approval before formal `Problem`, `TestCase`, and official `Solution` rows are created.
+- Admin Console now includes a minimal Problem Agent panel for topic/difficulty/tags/mode/model input, AgentRun step timeline, draft preview, validation report, approve, and reject. It explicitly states that generated content remains a draft until approval.
 - The Qwen local profile expects an OpenAI-compatible local server such as `llama-server` on `http://host.docker.internal:8080/v1`. `llama-server` is not installed in the current PATH, so the local Qwen server has not been started.
 
 ## Not Completed Yet
@@ -54,6 +56,7 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Real Redis dead-letter behavior is covered by unit-level tests but not manually exercised end to end.
 - Frontend bundle size is large because Monaco and Shiki are loaded directly.
 - Function mode wrappers now support Python, C++, Java, JavaScript, TypeScript, Go, and selected simpler C signatures. C still needs expanded matrix/string harnesses for some AI tasks.
+- Approved Python function-mode Agent drafts now carry dynamic function metadata into the public problem API, workbench starter generation, and submission wrapper. Non-Python arbitrary function-mode harness metadata is still not implemented; those drafts fail validation instead of being published as runnable function tasks.
 - Docker sandbox compiled-language execution now redirects `input.txt` into the final program instead of piping it into the compiler, and `/tmp/work` permissions are relaxed with `chmod` so `nobody` can create compiled binaries without adding Linux capabilities.
 - Docker Compose rebuild passed after the latest worker/dependency edits. After Docker Desktop was restarted on 2026-05-14, API and worker reported healthy, HTTP health and frontend returned 200, and worker-in-container Docker SDK access returned `True`.
 - Browser manual acceptance still needs to be run end to end.

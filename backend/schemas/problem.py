@@ -50,6 +50,8 @@ class ProblemListItem(BaseModel):
     accepted_submissions: int
     ac_rate: float
     is_public: bool
+    mode: str = "acm"
+    function_signature: str | None = None
     created_at: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -65,6 +67,10 @@ class ProblemDetail(BaseModel):
     time_limit: int
     memory_limit: int
     hint: str | None
+    mode: str = "acm"
+    input_format: str | None = None
+    output_format: str | None = None
+    function_signature: str | None = None
     total_submissions: int
     accepted_submissions: int
     ac_rate: float

@@ -17,6 +17,7 @@ test("renders training graph nodes", () => {
           accepted_submissions: 5,
           ac_rate: 0.5,
           is_public: true,
+          mode: "acm",
           created_at: "2026-05-12T00:00:00",
         },
       ]}

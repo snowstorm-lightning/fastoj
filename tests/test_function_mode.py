@@ -94,3 +94,19 @@ def is_valid_parentheses(s):
 def test_function_mode_rejects_unavailable_problem():
     with pytest.raises(ValueError, match="Function mode is not available"):
         wrap_function_submission("def solve(): pass", "python", "unknown")
+
+
+def test_wrap_dynamic_python_function_mode_from_signature():
+    wrapped = wrap_function_submission(
+        """
+def echo_value(value):
+    return value
+""",
+        "python",
+        "agent-echo",
+        "def echo_value(value: int) -> int",
+    )
+
+    assert "json.loads(line)" in wrapped
+    assert "Expected function echo_value" in wrapped
+    assert "result = func(*args)" in wrapped

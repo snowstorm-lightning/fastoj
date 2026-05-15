@@ -27,6 +27,18 @@
 - [x] Added tests for disabled provider, mock provider, hidden-test redaction, and ownership-sensitive paths.
 - [ ] Validate OpenAPI output in a running browser session.
 
+## Admin Problem Authoring Agent
+
+- [x] Added `ProblemDraft`, `AgentRun`, and `AgentStep` models plus Alembic migration.
+- [x] Added admin-only draft creation, run detail, draft list/detail, approve, and reject endpoints.
+- [x] Added structured problem-authoring prompt and Pydantic validation for model JSON.
+- [x] Added sandbox-backed validation adapter for ACM drafts and Python function-mode JSON-line drafts.
+- [x] Approval creates formal `Problem`, `TestCase`, and official `Solution` rows only after admin action.
+- [x] Added backend tests for admin-only access, AI disabled behavior, persistence, approval, idempotency, hidden cases, and validation failure.
+- [x] Added minimal Admin Console UI for generating drafts, viewing run steps, previewing validation, approving, and rejecting.
+- [x] Added dynamic Python function-mode metadata for approved Agent drafts, including workbench starter generation and submission wrapping.
+- [ ] Add non-Python dynamic function-mode harness metadata for arbitrary approved function drafts.
+
 ## Judge Queue And Worker
 
 - [x] Added Redis Streams enqueue.

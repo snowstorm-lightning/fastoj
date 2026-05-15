@@ -485,6 +485,72 @@ p {
   grid-template-columns: minmax(0, 1fr) 120px auto auto auto auto;
 }
 
+.problem-agent-panel {
+  gap: 14px;
+}
+
+.agent-form {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.agent-form label {
+  display: grid;
+  gap: 6px;
+  color: #a3aab7;
+  font-size: 12px;
+}
+
+.agent-workspace {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.55fr) minmax(0, 0.75fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.agent-drafts,
+.agent-preview {
+  border: 1px solid #2f343b;
+  border-radius: 8px;
+  background: #171b20;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+
+.agent-drafts button {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+
+.agent-drafts button.active {
+  border-color: #6ee7b7;
+}
+
+.agent-step {
+  border-left: 2px solid #6ee7b7;
+  padding-left: 10px;
+  display: grid;
+  gap: 2px;
+}
+
+.agent-preview pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .toggle-row {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;

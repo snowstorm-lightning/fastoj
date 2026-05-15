@@ -57,6 +57,7 @@ docker compose up --build
 - 静态图形化讲解：部分题目展示预生成步骤图，不为基础概念解释消耗 AI token。
 - 账户设置：登录用户可以修改显示名、用户名、邮箱、头像 URL、紧凑模式和密码。
 - 管理后台：只有管理员角色可以进入。后台支持管理用户角色/启用状态、题目难度/公开状态，并显示测试用例和题解数量；隐藏用例只显示数量，不暴露内容。
+- 管理端出题 Agent：管理员可以生成题目草稿、查看 AgentRun/AgentStep 执行轨迹、查看验证报告，并手动 approve/reject。AI 生成内容只会保存为 `ProblemDraft`，不会自动发布；approve 后才会创建正式 `Problem`、`TestCase` 和官方 `Solution`。
 
 ## AI 配置
 
@@ -94,6 +95,19 @@ AI_QWEN_MODEL=qwen2.5-coder-3b-instruct
 如果本地 Qwen 服务没有启动，或端口配置不对，AI 操作会返回 HTTP 503，并显示明确的 provider unreachable 提示，不再显示泛化的内部服务器错误。
 
 真实密钥放在仓库根目录 `.env` 或部署环境变量中。`.env` 和 `.env.*` 已被 git 忽略；`.env.example` 只保留变量名和占位值。
+
+## 管理端出题 Agent
+
+管理员接口位于 `/api/v1/admin`：
+
+- `POST /api/v1/admin/agent/problem-drafts`
+- `GET /api/v1/admin/agent/runs/{run_id}`
+- `GET /api/v1/admin/problem-drafts`
+- `GET /api/v1/admin/problem-drafts/{draft_id}`
+- `POST /api/v1/admin/problem-drafts/{draft_id}/approve`
+- `POST /api/v1/admin/problem-drafts/{draft_id}/reject`
+
+出题 Agent 会校验必填字段、slug 唯一性、公开/隐藏测试用例数量、非空期望输出，并通过沙箱验证适配器运行官方解法。ACM 草稿直接复用现有 sandbox executor；Python function 草稿会把函数签名保存到正式题目，在工作台生成动态 starter，并在提交时使用 JSON-line 动态 harness 评测。其他 function 语言暂时会明确验证失败，不会伪造通过。
 
 ## 安全规则
 

@@ -5,6 +5,8 @@ export type JudgeMode = "function" | "acm";
 
 type AnyProblem = Pick<ProblemDetail | ProblemListItem, "slug" | "title" | "tags"> & {
   sample_testcases?: Array<{ input: string; output: string }>;
+  mode?: string;
+  function_signature?: string | null;
 };
 
 type FunctionSpec = {
@@ -12,6 +14,7 @@ type FunctionSpec = {
   signature: string;
   description: Record<Locale, string>;
   starter: string;
+  dynamic?: boolean;
 };
 
 type VisualSpec = {
@@ -295,7 +298,24 @@ const VISUALS: Record<string, VisualSpec> = {
 
 export function getFunctionSpec(problem?: AnyProblem | null): FunctionSpec | null {
   if (!problem) return null;
-  return FUNCTION_SPECS[problem.slug] ?? null;
+  const fixed = FUNCTION_SPECS[problem.slug];
+  if (fixed) return fixed;
+  if (problem.mode === "function" && problem.function_signature) {
+    const signature = problem.function_signature.replace(/:\s*$/, "");
+    const match = signature.match(/def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+    const functionName = match?.[1] ?? "solve";
+    return {
+      functionName,
+      signature,
+      description: {
+        zh: "按函数签名补全函数体；测试数据使用 JSON-line 参数输入。",
+        en: "Complete the function body. Test data is provided as JSON-line arguments.",
+      },
+      starter: `${signature}:\n${TODO}    return None\n`,
+      dynamic: true,
+    };
+  }
+  return null;
 }
 
 export function getProblemMode(problem?: AnyProblem | null) {

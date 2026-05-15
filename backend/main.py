@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Import routers
 from backend.api.admin import router as admin_router
+from backend.api.admin_agent import router as admin_agent_router
 from backend.api.ai import router as ai_router
 from backend.api.auth import router as auth_router
 from backend.api.problems import router as problems_router
@@ -100,6 +101,7 @@ app.include_router(submissions_router, prefix="/api/v1")
 app.include_router(run_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+app.include_router(admin_agent_router, prefix="/api/v1")
 app.include_router(judge_ws_router)
 
 

@@ -39,6 +39,8 @@ export const problemListItemSchema = z.object({
   accepted_submissions: z.number(),
   ac_rate: z.number(),
   is_public: z.boolean(),
+  mode: z.string().default("acm"),
+  function_signature: z.string().nullable().optional(),
   created_at: z.string(),
 });
 
@@ -52,6 +54,10 @@ export const problemDetailSchema = z.object({
   time_limit: z.number(),
   memory_limit: z.number(),
   hint: z.string().nullable().optional(),
+  mode: z.string().default("acm"),
+  input_format: z.string().nullable().optional(),
+  output_format: z.string().nullable().optional(),
+  function_signature: z.string().nullable().optional(),
   total_submissions: z.number(),
   accepted_submissions: z.number(),
   ac_rate: z.number(),

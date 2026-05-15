@@ -1,3 +1,4 @@
+import re
 import textwrap
 
 FUNCTION_ENTRYPOINTS = {
@@ -583,10 +584,51 @@ int main(void) {{
 """
 
 
-def wrap_function_submission(code: str, language: str, problem_slug: str) -> str:
+def _function_name_from_signature(function_signature: str) -> str:
+    match = re.search(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", function_signature)
+    if not match:
+        raise ValueError("Function mode requires a Python def function signature")
+    return match.group(1)
+
+
+def _wrap_dynamic_python(code: str, function_signature: str) -> str:
+    function_name = _function_name_from_signature(function_signature)
+    return f"""{code.rstrip()}
+
+if __name__ == "__main__":
+    import json
+    import sys
+
+    raw = sys.stdin.read().strip()
+    args = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    func = globals().get("{function_name}")
+    if not callable(func) and "Solution" in globals():
+        candidate = getattr(Solution(), "{function_name}", None)
+        if callable(candidate):
+            func = candidate
+    if not callable(func):
+        raise NameError("Expected function {function_name}")
+    result = func(*args)
+    if isinstance(result, bool):
+        print(str(result).lower())
+    elif isinstance(result, (list, dict)):
+        print(json.dumps(result, separators=(",", ":")))
+    else:
+        print(result)
+"""
+
+
+def wrap_function_submission(
+    code: str,
+    language: str,
+    problem_slug: str,
+    function_signature: str | None = None,
+) -> str:
     """Wrap a user function body in a stdin/stdout harness for judge execution."""
     spec = FUNCTION_ENTRYPOINTS.get(problem_slug)
     if not spec:
+        if language == "python" and function_signature:
+            return _wrap_dynamic_python(code, function_signature)
         raise ValueError("Function mode is not available for this problem")
 
     if language == "python":

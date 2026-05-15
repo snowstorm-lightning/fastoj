@@ -42,4 +42,17 @@ describe("problem mode metadata", () => {
     expect(mode.supportsAcm).toBe(true);
     expect(buildStarter(validParentheses, "python", "function")).toContain("def is_valid_parentheses");
   });
+
+  it("builds a dynamic Python starter from approved agent metadata", () => {
+    const generated = {
+      ...twoSum,
+      slug: "agent-echo-number",
+      mode: "function",
+      function_signature: "def echo_value(value: int) -> int",
+    };
+    const mode = getProblemMode(generated);
+    expect(mode.supportsFunction).toBe(true);
+    expect(mode.functionSpec?.dynamic).toBe(true);
+    expect(buildStarter(generated, "python", "function")).toContain("def echo_value");
+  });
 });

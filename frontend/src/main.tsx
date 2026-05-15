@@ -3,7 +3,16 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 
 import "./styles.css";
-import { api, isUnauthorized, makeJudgeSocket, type AIModelProfile, type CurrentUser, type ProblemFilters } from "./lib/api";
+import {
+  api,
+  isUnauthorized,
+  makeJudgeSocket,
+  type AgentStep,
+  type AIModelProfile,
+  type CurrentUser,
+  type ProblemDraft,
+  type ProblemFilters,
+} from "./lib/api";
 import {
   type AIExplain,
   type AIChat,
@@ -522,7 +531,7 @@ function Workspace({
   const displayProblem = localizedProblem(problem, locale);
   const modeInfo = getProblemMode(problem);
   const draftKey = `${language}.${judgeMode}`;
-  const functionBlocked = false;
+  const functionBlocked = judgeMode === "function" && Boolean(modeInfo.functionSpec?.dynamic) && language !== "python";
 
   useEffect(() => { localStorage.setItem("fastoj.leftOpen", String(leftOpen)); }, [leftOpen]);
   useEffect(() => { localStorage.setItem("fastoj.rightOpen", String(rightOpen)); }, [rightOpen]);
@@ -952,6 +961,14 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       public: "公开",
       private: "隐藏",
       saveSolution: "保存 Python 题解",
+      problemAgent: "出题 Agent",
+      agentNotice: "AI 生成内容只保存为草稿，管理员审批前不会发布。",
+      generateDraft: "生成草稿",
+      approveDraft: "批准发布",
+      rejectDraft: "拒绝草稿",
+      draftPreview: "草稿预览",
+      validation: "验证报告",
+      steps: "执行轨迹",
     }
     : {
       title: "Admin",
@@ -970,12 +987,34 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       public: "Public",
       private: "Private",
       saveSolution: "Save Python solution",
+      problemAgent: "Problem Agent",
+      agentNotice: "AI-generated content is saved as a draft and is never published before admin approval.",
+      generateDraft: "Generate draft",
+      approveDraft: "Approve",
+      rejectDraft: "Reject",
+      draftPreview: "Draft preview",
+      validation: "Validation report",
+      steps: "Run steps",
     };
   const overviewQuery = useQuery({
     queryKey: ["admin-overview", currentUser?.id],
     queryFn: () => api.adminOverview(),
     enabled: currentUser?.role === "admin",
   });
+  const draftsQuery = useQuery({
+    queryKey: ["admin-problem-drafts", currentUser?.id],
+    queryFn: () => api.adminProblemDrafts(),
+    enabled: currentUser?.role === "admin",
+  });
+  const [agentTopic, setAgentTopic] = useState("array two pointers");
+  const [agentTags, setAgentTags] = useState("array,two-pointers");
+  const [agentDifficulty, setAgentDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [agentMode, setAgentMode] = useState<"function" | "acm">("function");
+  const [agentModel, setAgentModel] = useState<AIModelProfile>("default");
+  const [agentConstraints, setAgentConstraints] = useState("");
+  const [agentMessage, setAgentMessage] = useState("");
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
+  const [selectedDraft, setSelectedDraft] = useState<ProblemDraft | null>(null);
 
   if (currentUser?.role !== "admin") {
     return (
@@ -1011,8 +1050,53 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     await overviewQuery.refetch();
   }
 
+  async function createAgentDraft() {
+    setAgentMessage(locale === "zh" ? "正在生成并验证草稿..." : "Generating and validating draft...");
+    try {
+      const result = await api.adminCreateProblemDraft({
+        topic: agentTopic,
+        difficulty: agentDifficulty,
+        tags: agentTags.split(",").map((tag) => tag.trim()).filter(Boolean),
+        mode: agentMode,
+        target_language: "python",
+        locale,
+        model_profile: agentModel,
+        constraints: agentConstraints.trim() || null,
+      });
+      const run = await api.adminAgentRun(result.run_id);
+      const draft = await api.adminProblemDraft(result.draft_id);
+      setAgentSteps(run.steps ?? []);
+      setSelectedDraft(draft);
+      setAgentMessage(`${result.status}: ${String(result.validation_summary?.summary ?? "")}`);
+      await draftsQuery.refetch();
+    } catch (error) {
+      setAgentMessage(error instanceof Error ? error.message : locale === "zh" ? "生成失败。" : "Generation failed.");
+    }
+  }
+
+  async function loadDraft(draftId: string) {
+    const draft = await api.adminProblemDraft(draftId);
+    setSelectedDraft(draft);
+  }
+
+  async function approveSelectedDraft() {
+    if (!selectedDraft) return;
+    const draft = await api.adminApproveProblemDraft(selectedDraft.id);
+    setSelectedDraft(draft);
+    await overviewQuery.refetch();
+    await draftsQuery.refetch();
+  }
+
+  async function rejectSelectedDraft() {
+    if (!selectedDraft) return;
+    const draft = await api.adminRejectProblemDraft(selectedDraft.id);
+    setSelectedDraft(draft);
+    await draftsQuery.refetch();
+  }
+
   const users = overviewQuery.data?.users ?? [];
   const problems = overviewQuery.data?.problems ?? [];
+  const drafts = draftsQuery.data ?? [];
 
   return (
     <main className="admin-page">
@@ -1021,6 +1105,74 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         <p className="eyebrow">Admin</p>
         <h1>{text.title}</h1>
         <p className="muted">{text.copy}</p>
+        <section className="admin-panel problem-agent-panel">
+          <div>
+            <h2>{text.problemAgent}</h2>
+            <p className="muted">{text.agentNotice}</p>
+          </div>
+          <div className="agent-form">
+            <label>{locale === "zh" ? "主题" : "Topic"}<input value={agentTopic} onChange={(event) => setAgentTopic(event.target.value)} /></label>
+            <label>{locale === "zh" ? "难度" : "Difficulty"}
+              <select value={agentDifficulty} onChange={(event) => setAgentDifficulty(event.target.value as "easy" | "medium" | "hard")}>
+                <option value="easy">easy</option>
+                <option value="medium">medium</option>
+                <option value="hard">hard</option>
+              </select>
+            </label>
+            <label>{locale === "zh" ? "标签" : "Tags"}<input value={agentTags} onChange={(event) => setAgentTags(event.target.value)} /></label>
+            <label>{locale === "zh" ? "模式" : "Mode"}
+              <select value={agentMode} onChange={(event) => setAgentMode(event.target.value as "function" | "acm")}>
+                <option value="function">function</option>
+                <option value="acm">acm</option>
+              </select>
+            </label>
+            <label>{locale === "zh" ? "模型" : "Model"}
+              <select value={agentModel} onChange={(event) => setAgentModel(event.target.value as AIModelProfile)}>
+                <option value="default">default</option>
+                <option value="deepseek">deepseek</option>
+                <option value="qwen-local">qwen-local</option>
+              </select>
+            </label>
+            <label>{locale === "zh" ? "额外约束" : "Constraints"}<input value={agentConstraints} onChange={(event) => setAgentConstraints(event.target.value)} /></label>
+            <button className="primary" onClick={createAgentDraft}>{text.generateDraft}</button>
+          </div>
+          {agentMessage ? <p className="muted">{agentMessage}</p> : null}
+          <div className="agent-workspace">
+            <div className="agent-drafts">
+              {drafts.map((draft) => (
+                <button key={draft.id} className={selectedDraft?.id === draft.id ? "active" : ""} onClick={() => loadDraft(draft.id)}>
+                  <strong>{draft.title}</strong>
+                  <span>{draft.status} / {draft.mode}</span>
+                </button>
+              ))}
+            </div>
+            <div className="agent-preview">
+              <h3>{text.steps}</h3>
+              {agentSteps.length ? agentSteps.map((step) => (
+                <article className="agent-step" key={step.id}>
+                  <strong>{step.step_index}. {step.step_type}</strong>
+                  <span>{step.status}{step.error_message ? `: ${step.error_message}` : ""}</span>
+                </article>
+              )) : <p className="muted">{locale === "zh" ? "选择或生成草稿后显示执行轨迹。" : "Generate a draft to see the run timeline."}</p>}
+            </div>
+            <div className="agent-preview">
+              <h3>{text.draftPreview}</h3>
+              {selectedDraft ? (
+                <>
+                  <strong>{selectedDraft.title}</strong>
+                  <span>{selectedDraft.slug} / {selectedDraft.status}</span>
+                  <p>{selectedDraft.description}</p>
+                  <h3>{text.validation}</h3>
+                  <pre>{JSON.stringify(selectedDraft.validation_report ?? selectedDraft.validation_summary ?? {}, null, 2)}</pre>
+                  <div className="agent-actions">
+                    <button className="primary" disabled={selectedDraft.status !== "validated"} onClick={approveSelectedDraft}>{text.approveDraft}</button>
+                    <button disabled={selectedDraft.status === "approved" || selectedDraft.status === "rejected"} onClick={rejectSelectedDraft}>{text.rejectDraft}</button>
+                  </div>
+                </>
+              ) : <p className="muted">{locale === "zh" ? "还没有选中的草稿。" : "No draft selected."}</p>}
+            </div>
+          </div>
+        </section>
         <div className="admin-grid">
           <section className="admin-panel">
             <h2>{text.users}</h2>

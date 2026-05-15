@@ -26,6 +26,39 @@ export type ProblemFilters = {
 };
 
 export type AIModelProfile = "default" | "deepseek" | "qwen-local";
+export type ProblemAgentRequest = {
+  topic: string;
+  difficulty: "easy" | "medium" | "hard";
+  tags: string[];
+  mode: "function" | "acm";
+  target_language: string;
+  locale: "zh" | "en";
+  model_profile: AIModelProfile;
+  constraints?: string | null;
+};
+export type AgentStep = {
+  id: string;
+  step_index: number;
+  step_type: string;
+  tool_name?: string | null;
+  status: string;
+  error_message?: string | null;
+  output: Record<string, unknown>;
+};
+export type ProblemDraft = {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  difficulty: string;
+  tags: string[];
+  mode: string;
+  status: string;
+  validation_summary?: Record<string, unknown>;
+  validation_report?: Record<string, any>;
+  testcases?: Array<Record<string, any>>;
+  approved_problem_id?: string | null;
+};
 export type CurrentUser = {
   id: string;
   username: string;
@@ -117,6 +150,27 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }, (data: any) => data);
+  },
+  async adminCreateProblemDraft(payload: ProblemAgentRequest) {
+    return request("/api/v1/admin/agent/problem-drafts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, (data: any) => data);
+  },
+  async adminProblemDrafts(): Promise<ProblemDraft[]> {
+    return request("/api/v1/admin/problem-drafts", { method: "GET" }, (data: any) => data ?? []);
+  },
+  async adminProblemDraft(draftId: string): Promise<ProblemDraft> {
+    return request(`/api/v1/admin/problem-drafts/${draftId}`, { method: "GET" }, (data: any) => data);
+  },
+  async adminAgentRun(runId: string) {
+    return request(`/api/v1/admin/agent/runs/${runId}`, { method: "GET" }, (data: any) => data);
+  },
+  async adminApproveProblemDraft(draftId: string): Promise<ProblemDraft> {
+    return request(`/api/v1/admin/problem-drafts/${draftId}/approve`, { method: "POST" }, (data: any) => data);
+  },
+  async adminRejectProblemDraft(draftId: string): Promise<ProblemDraft> {
+    return request(`/api/v1/admin/problem-drafts/${draftId}/reject`, { method: "POST" }, (data: any) => data);
   },
   async problems(filters: ProblemFilters): Promise<ProblemListItem[]> {
     const params = new URLSearchParams();

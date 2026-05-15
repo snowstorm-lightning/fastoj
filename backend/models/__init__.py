@@ -77,6 +77,10 @@ class Problem(Base):
     accepted_submissions = Column(Integer, default=0)
     tags = Column(ARRAY(String(50)), default=list)  # type: ignore[var-annotated]
     hint = Column(Text, nullable=True)
+    mode = Column(String(20), nullable=False, default="acm")
+    input_format = Column(Text, nullable=True)
+    output_format = Column(Text, nullable=True)
+    function_signature = Column(String(500), nullable=True)
     source = Column(String(200), nullable=True)
     is_public = Column(Boolean, default=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
@@ -169,3 +173,84 @@ class Solution(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     problem = relationship("Problem", back_populates="solutions")
+
+
+class ProblemDraft(Base):
+    __tablename__ = "problem_drafts"
+    __table_args__ = (
+        Index("idx_problem_drafts_created_at", "created_at"),
+        Index("idx_problem_drafts_status", "status"),
+        Index("idx_problem_drafts_slug", "slug"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(200), nullable=False)
+    slug = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=False)
+    difficulty = Column(String(20), nullable=False)
+    tags = Column(Text, nullable=False, default="[]")
+    mode = Column(String(20), nullable=False)
+    input_format = Column(Text, nullable=True)
+    output_format = Column(Text, nullable=True)
+    function_signature = Column(String(500), nullable=True)
+    time_limit = Column(Integer, default=1000)
+    memory_limit = Column(Integer, default=256)
+    hint = Column(Text, nullable=True)
+    official_solution_language = Column(String(20), nullable=False)
+    official_solution_code = Column(Text, nullable=False)
+    official_solution_explanation = Column(Text, nullable=False)
+    time_complexity = Column(String(50), nullable=True)
+    space_complexity = Column(String(50), nullable=True)
+    testcases_json = Column(Text, nullable=False, default="[]")
+    validation_report_json = Column(Text, nullable=False, default="{}")
+    status = Column(String(30), nullable=False, default="draft")
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    approved_problem_id = Column(UUID(as_uuid=True), ForeignKey("problems.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    runs = relationship("AgentRun", back_populates="draft")
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        Index("idx_agent_runs_created_at", "created_at"),
+        Index("idx_agent_runs_type_status", "run_type", "status"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_type = Column(String(50), nullable=False)
+    status = Column(String(30), nullable=False, default="running")
+    input_json = Column(Text, nullable=False, default="{}")
+    output_json = Column(Text, nullable=False, default="{}")
+    error_message = Column(Text, nullable=True)
+    model_profile = Column(String(30), nullable=False, default="default")
+    locale = Column(String(10), nullable=False, default="en")
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    draft_id = Column(UUID(as_uuid=True), ForeignKey("problem_drafts.id"), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+
+    draft = relationship("ProblemDraft", back_populates="runs")
+    steps = relationship("AgentStep", back_populates="run", order_by="AgentStep.step_index")
+
+
+class AgentStep(Base):
+    __tablename__ = "agent_steps"
+    __table_args__ = (
+        Index("idx_agent_steps_run_index", "run_id", "step_index"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("agent_runs.id"), nullable=False, index=True)
+    step_index = Column(Integer, nullable=False)
+    step_type = Column(String(30), nullable=False)
+    tool_name = Column(String(100), nullable=True)
+    input_json = Column(Text, nullable=False, default="{}")
+    output_json = Column(Text, nullable=False, default="{}")
+    status = Column(String(30), nullable=False, default="running")
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    run = relationship("AgentRun", back_populates="steps")

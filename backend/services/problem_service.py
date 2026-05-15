@@ -77,6 +77,8 @@ class ProblemService:
                     accepted_submissions=self._accepted_submissions(problem),
                     ac_rate=ac_rate,
                     is_public=problem.is_public,  # type: ignore[arg-type]
+                    mode=problem.mode or "acm",  # type: ignore[arg-type]
+                    function_signature=problem.function_signature,  # type: ignore[arg-type]
                     created_at=problem.created_at.isoformat(),
                 )
             )
@@ -113,6 +115,10 @@ class ProblemService:
             time_limit=problem.time_limit,  # type: ignore[arg-type]
             memory_limit=problem.memory_limit,  # type: ignore[arg-type]
             hint=problem.hint,  # type: ignore[arg-type]
+            mode=problem.mode or "acm",  # type: ignore[arg-type]
+            input_format=problem.input_format,  # type: ignore[arg-type]
+            output_format=problem.output_format,  # type: ignore[arg-type]
+            function_signature=problem.function_signature,  # type: ignore[arg-type]
             total_submissions=problem.total_submissions,  # type: ignore[arg-type]
             accepted_submissions=self._accepted_submissions(problem),
             ac_rate=ac_rate,
