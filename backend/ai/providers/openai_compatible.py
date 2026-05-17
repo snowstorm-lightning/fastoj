@@ -9,6 +9,11 @@ class OpenAICompatibleProvider(BaseAIProvider):
         self.config = config
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> str:
+        if self._requires_real_api_key() and not self._has_real_api_key():
+            raise AIProviderUnavailableError(
+                "DeepSeek profile is not configured. Set AI_DEEPSEEK_API_KEY or AI_API_KEY in .env, "
+                "then restart Docker services."
+            )
         try:
             response = httpx.post(
                 f"{self.config.base_url}/chat/completions",
@@ -42,3 +47,10 @@ class OpenAICompatibleProvider(BaseAIProvider):
             ) from exc
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise AIProviderUnavailableError("AI provider returned an invalid chat-completions response.") from exc
+
+    def _requires_real_api_key(self) -> bool:
+        return "api.deepseek.com" in self.config.base_url.lower()
+
+    def _has_real_api_key(self) -> bool:
+        key = self.config.api_key.strip()
+        return bool(key) and key != "sk-no-key-required"

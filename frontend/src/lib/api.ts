@@ -101,6 +101,13 @@ export function isUnauthorized(error: unknown): boolean {
 }
 
 const SENSITIVE_ERROR_TEXT = /\b(hidden|testcases?|expected|actual|input|output|official_solution_code|current_code|code|token|password|secret|provider|prompt)\b/i;
+const SAFE_BACKEND_ERROR_TEXT = [
+  /^DeepSeek profile is not configured\./,
+  /^AI provider returned HTTP \d{3} for model [A-Za-z0-9._:-]+\.$/,
+  /^AI provider is unreachable at https?:\/\/[A-Za-z0-9.:/_-]+\/?[A-Za-z0-9./_-]*\./,
+  /^AI provider returned an invalid chat-completions response\.$/,
+  /^AI provider is disabled\./,
+];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -109,6 +116,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function safeErrorText(value: string, fallback: string): string {
   const text = value.trim();
   if (!text) return fallback;
+  if (SAFE_BACKEND_ERROR_TEXT.some((pattern) => pattern.test(text))) {
+    return text.length > 240 ? `${text.slice(0, 237)}...` : text;
+  }
   if (SENSITIVE_ERROR_TEXT.test(text)) return fallback;
   return text.length > 240 ? `${text.slice(0, 237)}...` : text;
 }

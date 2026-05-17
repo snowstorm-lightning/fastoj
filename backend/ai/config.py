@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from backend.core.config import settings
 
 AIModelProfile = str
+PLACEHOLDER_API_KEY = "sk-no-key-required"
 
 
 @dataclass(frozen=True)
@@ -18,10 +19,11 @@ class AIConfig:
     def from_settings(cls, model_profile: AIModelProfile | None = None) -> "AIConfig":
         profile = (model_profile or "default").strip().lower()
         if profile == "deepseek":
+            fallback_key = settings.AI_API_KEY if settings.AI_API_KEY != PLACEHOLDER_API_KEY else ""
             return cls(
                 provider=settings.AI_PROVIDER,
                 base_url=settings.AI_DEEPSEEK_BASE_URL.rstrip("/"),
-                api_key=settings.AI_DEEPSEEK_API_KEY or settings.AI_API_KEY,
+                api_key=settings.AI_DEEPSEEK_API_KEY or fallback_key,
                 model=settings.AI_DEEPSEEK_MODEL,
                 timeout_seconds=settings.AI_TIMEOUT_SECONDS,
                 max_output_tokens=settings.AI_MAX_OUTPUT_TOKENS,

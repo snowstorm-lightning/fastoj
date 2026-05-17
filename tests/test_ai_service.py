@@ -49,6 +49,22 @@ def test_openai_provider_wraps_connection_errors(monkeypatch):
         provider.complete_json("system", "user")
 
 
+def test_openai_provider_rejects_unconfigured_deepseek_key():
+    provider = OpenAICompatibleProvider(
+        AIConfig(
+            provider="openai_compatible",
+            base_url="https://api.deepseek.com",
+            api_key="",
+            model="deepseek-v4-flash",
+            timeout_seconds=1,
+            max_output_tokens=128,
+        )
+    )
+
+    with pytest.raises(AIProviderUnavailableError, match="DeepSeek profile is not configured"):
+        provider.complete_json("system", "user")
+
+
 def test_explain_context_does_not_include_hidden_case_details():
     hidden = SimpleNamespace(
         is_hidden=True,

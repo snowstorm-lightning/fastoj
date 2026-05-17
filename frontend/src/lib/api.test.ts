@@ -21,4 +21,14 @@ describe("API error formatting", () => {
     expect(formatApiErrorDetail({ testcases: [{ input: "hidden-input", output: "hidden-output" }] }, fallback)).toBe(fallback);
     expect(formatApiErrorDetail("provider returned hidden_testcases with input/output fields", fallback)).toBe(fallback);
   });
+
+  test("surfaces safe provider setup errors without exposing raw payloads", () => {
+    expect(formatApiErrorResponse({
+      detail: "DeepSeek profile is not configured. Set AI_DEEPSEEK_API_KEY or AI_API_KEY in .env, then restart Docker services.",
+    })).toBe("DeepSeek profile is not configured. Set AI_DEEPSEEK_API_KEY or AI_API_KEY in .env, then restart Docker services.");
+
+    expect(formatApiErrorResponse({
+      detail: "AI provider returned HTTP 401 for model deepseek-v4-flash.",
+    })).toBe("AI provider returned HTTP 401 for model deepseek-v4-flash.");
+  });
 });
