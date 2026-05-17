@@ -34,6 +34,20 @@ Monaco 编程工作台、双语界面、实时提交状态和安全的 AI 解释
 5. **管理后台** - 管理用户和题目、补全官方题解、审核 AI 生成的题目草稿后再
    发布。
 
+## 页面展示
+
+以下截图使用英文界面；产品右上角可以切换中文。
+
+| 题库页 | 编程工作台 |
+| --- | --- |
+| ![FastOJ 题库页，包含筛选器、题目卡片、模式标签和通过率统计](docs/screenshots/library-en.png) | ![FastOJ 工作台，包含题面、Monaco 编辑器、函数模式控制和 AI Judge Copilot](docs/screenshots/workbench-en.png) |
+| 可搜索的练习目录，支持筛选、卡片/列表布局、模式标签和训练数据概览。 | 集中式刷题界面，把题面、starter frame、公开样例运行、结果区和 AI Copilot 放在同一视图中。 |
+
+| 训练图谱 | 登录注册 |
+| --- | --- |
+| ![FastOJ 知识图谱，包含知识点卡片和进度统计](docs/screenshots/graph-en.png) | ![FastOJ 登录页，包含账号表单和产品能力标签](docs/screenshots/auth-en.png) |
+| 基于 React Flow 的知识点地图，点击节点后回到题库并自动应用标签筛选。 | 独立登录/注册页，让账号、提交记录、草稿和 AI 反馈保持关联。 |
+
 ## 快速启动
 
 Docker Compose 是最快的完整体验路径。

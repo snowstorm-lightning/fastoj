@@ -44,6 +44,18 @@ for that.
 5. **Admin console** - manage users and problems, bootstrap official solutions,
    and review AI-generated problem drafts before publishing.
 
+## Page Showcase
+
+| Problem Library | Coding Workbench |
+| --- | --- |
+| ![FastOJ problem library with filters, problem cards, mode badges, and acceptance stats](docs/screenshots/library-en.png) | ![FastOJ workbench with statement panel, Monaco editor, function mode controls, and AI judge copilot](docs/screenshots/workbench-en.png) |
+| Searchable practice catalog with filters, card/list layouts, mode badges, and training metrics. | Focused coding surface with the statement, starter frame, public-run controls, result area, and AI Copilot in one view. |
+
+| Training Graph | Auth Flow |
+| --- | --- |
+| ![FastOJ knowledge graph with topic cards and progress counts](docs/screenshots/graph-en.png) | ![FastOJ login screen with account form and product proof chips](docs/screenshots/auth-en.png) |
+| Topic map built with React Flow; clicking a node returns to the library with a tag filter applied. | Dedicated login/register screen that keeps account, submissions, drafts, and AI feedback tied together. |
+
 ## Quick Start
 
 The Docker Compose path is the fastest way to try the full product.
