@@ -1,39 +1,82 @@
 # FastOJ
 
-## 2026-05-17 验收更新
-
-- 新增 `docs/ACCEPTANCE_HARNESS.md`，记录自动化基线、浏览器验收矩阵、截图清单、hidden-test 安全检查和后续 Playwright 路线。
-- 前端错误消息现在会把 FastAPI validation detail 转成字段/类型摘要，避免显示 `[object Object]`，也不会把结构化 provider/testcase payload 直接字符串化。
-- 中文题库搜索支持本地化题名，例如 `两数之和`，搜索范围仍限制在公开题目元数据和本地化展示文本。
-- Workbench 在切题、新 run、新 submit 时会清空旧 AI hint/explain/review/chat 状态，并忽略旧 submission 的迟到 WebSocket、polling 和 AI 回调。
-- 本轮加入 CSS design tokens，覆盖颜色、圆角、边框、阴影、状态色、focus ring 和 AI glow，核心卡片/面板更接近克制的 soft neo-brutalist AI dashboard。
-- 最新验证：`uv run ruff check .`、`uv run pytest`、`cd frontend && npm run build`、`cd frontend && npm test`、`docker compose up --build -d api worker` 均通过；浏览器复验覆盖题库、workbench 1280px 布局、公开 run、AI stale-state 清理和 hidden-test 可见文本检查。
-
-## 本轮补充
-
-- AI explain/review 已兼容 provider 返回 `null` 文本字段；本地 Qwen 服务不可达时返回 HTTP 503 和明确提示，不再显示泛化的内部服务器错误。
-- 新增 AI 对话接口，只使用题目、代码、判题状态和公开用例结果，不发送隐藏用例内容。
-- 题库卡片现在会同时显示支持的函数模式和 ACM 模式；有效的括号已补充函数模式模板和后端 wrapper。
-- 题库新增卡片/列表两种布局，可在保留当前卡片视图的同时切换到传统 OJ 的一行一道题列表；布局选择会保存在本地。
-- 管理端出题 Agent 的校验失败不再只显示 `validation_failed`，页面会展示失败检查、公开/隐藏用例数量、失败用例数量和沙箱状态等安全摘要，不展示隐藏用例输入、期望输出或实际输出。
-- DeepSeek 生成的 Python function-mode 草稿现在兼容多种常见参数形状：逐行 JSON 参数、单个 JSON 参数数组、以及按函数参数名组织的 JSON 对象；正式提交 wrapper 与草稿校验使用同一套动态参数解析。
-
 [English](README.md) | 简体中文
 
-FastOJ 是一个面向面试训练的 AI 可解释 OJ 平台。它保留传统 OJ 的严格评测，同时把判题解释、代码审查、渐进提示、判题时间线、知识图谱和提交轨迹做成核心体验。
+FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。它把 Docker 沙箱判题、
+Monaco 编程工作台、双语界面、实时提交状态和安全的 AI 解释整合在一起，让
+你可以在本地跑起一套接近 LeetCode 体验、但更容易改造和研究的 OJ 系统。
 
-AI 解释只基于真实提交结果和公开用例信息。隐藏用例的输入、期望输出、实际输出不会返回给普通用户，也不会发送给 AI 服务商。
+如果你想下载一个能真实评测代码、能展示完整产品体验、还能安全接入 AI 的
+开源项目，FastOJ 值得一试。
 
-## 架构
+## 为什么值得 Clone
 
-- 后端：FastAPI、SQLAlchemy 2.0、PostgreSQL、Alembic、JWT 认证。
-- 队列：Redis Streams，包含 consumer group、ack、重试、死信队列和 pending reclaim。
-- 评测：Docker 沙箱 Worker。生产环境不回退到宿主机 `subprocess`。
-- 实时状态：Worker 通过 Redis pub/sub 发布判题状态，API 通过 WebSocket 转发给前端。
-- 前端：Vite、React、TypeScript、Tailwind CSS、Monaco Editor、TanStack Query、Zustand、Zod、xterm、Shiki、@xyflow/react、@chenglou/pretext。
-- AI：OpenAI-compatible Chat Completions Provider，默认关闭。
+- **是真正的 OJ，不是玩具运行器。** 提交通过 Redis 队列进入 Judge Worker，
+  再由 Docker 沙箱执行；生产代码不会回退到宿主机 `subprocess`。
+- **函数模式和 ACM 模式同等重要。** 函数模式给学习者提供对应语言的 starter
+  frame；ACM 模式保留传统 stdin/stdout 训练方式。
+- **AI 能帮忙，但不泄露隐藏用例。** 提示、解释、代码审查和对话只使用判题
+  结果、用户代码、公开样例和安全的聚合摘要。隐藏用例输入、期望输出、实际
+  输出不会返回给用户，也不会发送给 AI 服务商。
+- **前端不是演示壳。** 题库、卡片/列表布局、三栏工作台、判题时间线、AI
+  侧栏、提交轨迹、本地讨论、设置页、管理后台和知识图谱都已经接入。
+- **适合做 AI Provider 实验。** AI 层使用 OpenAI-compatible profile，既能
+  接 DeepSeek 风格的托管 API，也能接本地 Qwen/llama.cpp 服务。
 
-## 启动
+## 产品体验
+
+1. **题库页** - 搜索、标签/难度筛选、卡片和传统 OJ 列表切换、推荐练习入口。
+2. **编程工作台** - 阅读题面、在 Monaco 中写代码、运行公开样例、提交完整
+   判题，并观察状态从 pending 到 result。
+3. **AI Copilot** - 按当前界面语言请求渐进提示、失败解释、代码审查和上下文
+   对话。
+4. **训练图谱** - 浏览知识点节点，点击节点后回到题库并自动应用标签筛选。
+5. **管理后台** - 管理用户和题目、补全官方题解、审核 AI 生成的题目草稿后再
+   发布。
+
+## 快速启动
+
+Docker Compose 是最快的完整体验路径。
+
+```bash
+git clone https://github.com/snowstorm-lightning/fastoj.git
+cd fastoj
+cp .env.example .env
+docker compose up --build
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+打开：
+
+```text
+http://127.0.0.1:8000
+```
+
+导入内置题库：
+
+```bash
+docker compose exec api uv run python -m backend.scripts.seed_data
+```
+
+从可信 shell 创建第一个管理员：
+
+```bash
+docker compose exec api uv run python -m backend.scripts.create_admin --username admin --email admin@example.com
+```
+
+管理员脚本会无回显地提示输入密码。无人值守的本地自动化场景可以在可信执行
+环境里设置 `FASTOJ_ADMIN_PASSWORD`，不要把真实密码写进命令历史。
+
+## 本地开发
+
+如果你想直接跑后端和前端进程，可以使用下面的方式。请先确保 PostgreSQL 和
+Redis 可用，或者保留 Compose 中的基础服务运行。
 
 后端：
 
@@ -51,106 +94,118 @@ npm install
 npm run dev
 ```
 
-Docker：
-
-```bash
-docker compose up --build
-```
-
-## 前端体验
-
-- 题库页：支持关键词、标签、难度筛选、分页、训练摘要、AI 练习数量、函数模式数量和推荐入口。
-- 认证页：登录/注册是独立页面，不嵌入全局 Header。
-- 工作台：三栏布局，题面和结果侧栏支持折叠、拖拽调整宽度，中间是 Monaco 编辑器。
-- 模式切换：支持函数模式和 ACM 模式。函数模式展示对应语言的函数框架；ACM 模式由用户代码处理标准输入输出。
-- 语言切换：UI chrome、判题状态、hover 说明、模式标签、题目展示和 AI 请求语言都跟随中文/英文切换。
-- 详情区：公开用例、官方题解、判题过程、提交记录和本地讨论区通过 Tab 切换。
-- 知识图谱：使用 @xyflow/react 渲染知识点节点，点击节点回到题库并应用标签筛选。
-- 静态图形化讲解：部分题目展示预生成步骤图，不为基础概念解释消耗 AI token。
-- 账户设置：登录用户可以修改显示名、用户名、邮箱、头像 URL、紧凑模式和密码。
-- 管理后台：只有管理员角色可以进入。后台支持管理用户角色/启用状态、题目难度/公开状态，并显示测试用例和题解数量；隐藏用例只显示数量，不暴露内容。
-- 管理端出题 Agent：管理员可以生成题目草稿、查看 AgentRun/AgentStep 执行轨迹、查看验证报告，并手动 approve/reject。AI 生成内容只会保存为 `ProblemDraft`，不会自动发布；approve 后才会创建正式 `Problem`、`TestCase` 和官方 `Solution`。
+Vite 开发服务器默认可以调用同源 API。只有当前端和 API 分别跑在不同 origin
+时，才需要设置 `VITE_API_BASE_URL`。
 
 ## AI 配置
 
-AI 默认关闭：
+AI 默认关闭，所以不配置模型服务或 API Key 也能使用核心 OJ 流程。
 
 ```bash
 AI_PROVIDER=disabled
 ```
 
-DeepSeek API 示例：
+托管 OpenAI-compatible Provider 示例：
 
 ```bash
 AI_PROVIDER=openai_compatible
 AI_BASE_URL=https://api.deepseek.com
-AI_API_KEY=your-deepseek-api-key
+AI_API_KEY=your-provider-key
 AI_MODEL=deepseek-v4-flash
 ```
 
-页面内选择 `DeepSeek` 时使用命名 profile：
+页面内模型选择器使用的命名 profile：
 
 ```bash
 AI_DEEPSEEK_BASE_URL=https://api.deepseek.com
-AI_DEEPSEEK_API_KEY=your-deepseek-api-key
+AI_DEEPSEEK_API_KEY=your-provider-key
 AI_DEEPSEEK_MODEL=deepseek-v4-flash
-```
 
-页面内选择 `Qwen local` 时使用本地 OpenAI-compatible 服务：
-
-```bash
 AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
 AI_QWEN_API_KEY=sk-no-key-required
 AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
 
-如果本地 Qwen 服务没有启动，或端口配置不对，AI 操作会返回 HTTP 503，并显示明确的 provider unreachable 提示，不再显示泛化的内部服务器错误。
+真实密钥放在 `.env` 或部署环境变量中。仓库已经忽略 `.env` 和 `.env.*`；
+`.env.example` 只保留安全占位值。
 
-当前本机部署模式使用 `llama-server` b9060 和 Qwen2.5-Coder-7B-Instruct Q4_K_M，模型与运行时都应放在仓库外的 `%USERPROFILE%\Models\qwen`。本轮本地 `/v1/models` 和 `/v1/chat/completions` smoke test 已通过。可重复启动/停止脚本可以放在 `%USERPROFILE%\Models\qwen\start-qwen-llama-server.ps1` 和 `%USERPROFILE%\Models\qwen\stop-qwen-llama-server.ps1`。
+## 安全模型
 
-Docker API 已通过 `host.docker.internal:8080/v1` 调通 `qwen-local`：临时用户注册/登录、公开题目读取、AI hint 请求均已通过，验证过程没有打印 AI 正文或任何隐藏用例内容。
+- 隐藏用例输入、期望输出、实际输出不会进入 AI prompt。
+- 普通用户只能解释和审查自己的提交；管理员访问全部提交也由服务端角色检查
+  保护。
+- 公开注册只能创建普通 `user`；管理员账号需要从可信 shell 启动，或由已有管
+  理员管理。
+- 生产判题只使用 Docker 沙箱；`FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true`
+  只允许本地开发使用。
+- 沙箱容器默认禁用网络，带内存限制、pid 限制、capability drop、
+  `no-new-privileges`、非 root 用户、输出截断、超时终止和清理。
 
-真实密钥放在仓库根目录 `.env` 或部署环境变量中。`.env` 和 `.env.*` 已被 git 忽略；`.env.example` 只保留变量名和占位值。
+## 内置题库
 
-## 管理端出题 Agent
+种子数据足够覆盖完整产品体验：
 
-管理员接口位于 `/api/v1/admin`：
+- **经典函数题：** Two Sum、Add Two Numbers、Longest Substring Without
+  Repeating Characters。
+- **面试清单 ACM 题：** Valid Parentheses、Maximum Subarray、Group
+  Anagrams、Merge Intervals、Climbing Stairs、Container With Most Water。
+- **AI/ML 算法题：** Logistic Regression Sigmoid、KNN Majority Vote、
+  KMeans One Iteration、Scaled Dot-Product Attention、Softmax Cross
+  Entropy、Attention Mask Apply。
 
-- `POST /api/v1/admin/agent/problem-drafts`
-- `GET /api/v1/admin/agent/runs/{run_id}`
-- `GET /api/v1/admin/problem-drafts`
-- `GET /api/v1/admin/problem-drafts/{draft_id}`
-- `POST /api/v1/admin/problem-drafts/{draft_id}/approve`
-- `POST /api/v1/admin/problem-drafts/{draft_id}/reject`
+函数模式支持 Python、C++、Java、JavaScript、TypeScript、Go，以及部分简单 C
+wrapper。所有题目仍然可以使用 ACM 模式。Judge runtime 内置 Python
+`numpy==2.2.6` 和 CPU `torch==2.7.1+cpu`，AI 算法题可以使用标准 Python、
+NumPy 或 PyTorch。
 
-出题 Agent 会校验必填字段、slug 唯一性、公开/隐藏测试用例数量、非空期望输出，并通过沙箱验证适配器运行官方解法。ACM 草稿直接复用现有 sandbox executor；Python function 草稿会把函数签名保存到正式题目，在工作台生成动态 starter，并在提交时使用 JSON-line 动态 harness 评测。其他 function 语言暂时会明确验证失败，不会伪造通过。
+## 架构
 
-## 安全规则
-
-- 隐藏用例的输入、期望输出、实际输出不会进入 AI prompt。
-- 用户只能解释/审查自己的提交；管理员可以访问全部提交。
-- AI 被要求不能直接泄露完整 AC 解法。
-- 生产环境只使用 Docker 沙箱；`FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true` 仅允许本地开发使用。
-
-## 练习模式和题目
-
-种子数据可以应用到新数据库或已有数据库：
-
-```bash
-uv run python -m backend.scripts.seed_data
+```mermaid
+flowchart LR
+  Browser[React UI] --> API[FastAPI API]
+  API --> DB[(PostgreSQL)]
+  API --> Redis[(Redis Streams)]
+  Redis --> Worker[Judge Worker]
+  Worker --> Sandbox[Docker Sandbox]
+  Worker --> Bus[Redis Pub/Sub]
+  Bus --> API
+  API --> Browser
+  API --> AI[OpenAI-compatible AI Provider]
 ```
 
-种子题包含传统面试题、面试清单题和 AI 算法题：
+核心技术栈：
 
-- 传统/函数题：Two Sum、Add Two Numbers、Longest Substring Without Repeating Characters。
-- 面试清单 ACM 题：Valid Parentheses、Maximum Subarray、Group Anagrams、Merge Intervals、Climbing Stairs、Container With Most Water。
-- AI 算法题：Logistic Regression Sigmoid、KNN Majority Vote、KMeans One Iteration、Scaled Dot-Product Attention、Softmax Cross Entropy、Attention Mask Apply。
+- 后端：Python 3.11+、FastAPI、SQLAlchemy 2.0、Pydantic v2、Alembic、
+  PostgreSQL、Redis Streams。
+- 判题：Docker 沙箱 Worker，支持异步队列、重试、死信队列和重复任务保护。
+- 前端：React、TypeScript、Vite、Tailwind CSS、Monaco Editor、TanStack
+  Query、Zustand、Zod、xterm、Shiki、React Flow、Pretext 文本测量。
+- 工具：`uv`、`ruff`、`pytest`、`npm`、Docker Compose。
 
-函数模式支持 Python、C++、Java、JavaScript、TypeScript、Go，以及部分简单 C 签名。所有题目仍可使用 ACM 模式。
+## 项目结构
 
-Docker judge runtime 内置 Python `numpy==2.2.6` 和 CPU `torch==2.7.1+cpu`，AI 算法提交可以使用标准 Python、NumPy 或 PyTorch。
+```text
+backend/
+  ai/          AI provider 配置、prompt、响应 schema
+  api/         FastAPI 路由
+  core/        设置、数据库、安全、日志
+  models/      SQLAlchemy 模型
+  schemas/     Pydantic API schema
+  services/    业务逻辑、判题、函数模式 wrapper
+  worker/      Judge Worker
+frontend/
+  src/
+    components/
+    lib/
+    stores/
+    main.tsx
+tests/         后端测试
+docs/          交接、验收和审计文档
+```
 
-## 测试命令
+## 质量门槛
+
+较大的变更交付前运行：
 
 ```bash
 uv run ruff check .
@@ -159,18 +214,21 @@ cd frontend && npm run build
 cd frontend && npm test
 ```
 
-本次最新验证：
+如果改动涉及 judge、worker、WebSocket、沙箱或真实提交链路，还需要运行：
 
-- `uv run ruff check .`：通过。
-- `uv run pytest`：72 passed，3 个 datetime deprecation warnings。
-- `cd frontend && npm run build`：通过，仍有 Monaco/Shiki chunk-size warning。
-- `cd frontend && npm test`：6 个测试文件、8 个测试通过；jsdom 仍打印预期的 canvas `getContext` warning。
-- `docker compose up --build -d api worker`：通过，API 和 Worker 均 healthy。
-- Docker 真实公开运行 Two Sum C++ 函数模式：`result=ac`。本轮修复了编译型语言 stdin 被错误管道到编译器、以及沙箱工作目录不可写的问题。
+```bash
+docker compose up --build -d api worker
+```
+
+完整手工验收清单位于
+[`docs/ACCEPTANCE_HARNESS.md`](docs/ACCEPTANCE_HARNESS.md)。
 
 ## 已知限制
 
-- Monaco 和 Shiki 目前直接打进前端包，初始 bundle 偏大。
-- C 函数模式暂时只覆盖简单种子签名；矩阵/字符串类 AI 题建议先用 ACM 模式。
+- Monaco 和 Shiki 目前直接进入前端 bundle，生产 chunk 偏大。
+- C 函数模式暂时只覆盖较简单的种子签名；矩阵/字符串密集的 AI 题建议先用
+  ACM 模式。
 - MLE 分类依赖 Docker runtime 的退出状态。
-- `qwen-local` profile 已接线，但需要本机先启动 OpenAI-compatible Qwen 服务。
+- AI 质量取决于配置的 OpenAI-compatible 模型和提示词行为。
+- 初始 Alembic migration 是当前 schema 的基线，接入已有生产数据库前需要单
+  独验证。
