@@ -591,16 +591,77 @@ def _function_name_from_signature(function_signature: str) -> str:
     return match.group(1)
 
 
+def _split_signature_parameters(params: str) -> list[str]:
+    parts: list[str] = []
+    start = 0
+    depth = 0
+    for index, char in enumerate(params):
+        if char in "([{":
+            depth += 1
+        elif char in ")]}" and depth:
+            depth -= 1
+        elif char == "," and depth == 0:
+            parts.append(params[start:index])
+            start = index + 1
+    parts.append(params[start:])
+    return parts
+
+
+def _parameter_names_from_signature(function_signature: str) -> list[str]:
+    function_name = _function_name_from_signature(function_signature)
+    match = re.search(rf"def\s+{re.escape(function_name)}\s*\((?P<params>.*?)\)", function_signature, re.DOTALL)
+    if not match:
+        raise ValueError("Function mode requires a parseable Python function signature")
+    names: list[str] = []
+    for item in _split_signature_parameters(match.group("params")):
+        cleaned = item.strip()
+        if not cleaned or cleaned.startswith("*"):
+            continue
+        name = cleaned.split(":", 1)[0].split("=", 1)[0].strip()
+        if name and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+            names.append(name)
+    return names
+
+
 def _wrap_dynamic_python(code: str, function_signature: str) -> str:
     function_name = _function_name_from_signature(function_signature)
+    parameter_names = ", ".join(repr(name) for name in _parameter_names_from_signature(function_signature))
     return f"""{code.rstrip()}
 
 if __name__ == "__main__":
     import json
     import sys
 
+    def _fastoj_load_args(raw, parameter_names):
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        if not lines:
+            return []
+        if len(lines) > 1:
+            args = [json.loads(line) for line in lines]
+            names = [name for name in parameter_names if name not in ("self", "cls")]
+            if names and len(args) != len(names):
+                raise ValueError("Function-mode testcase input argument count does not match function_signature.")
+            return args
+        value = json.loads(lines[0])
+        names = [name for name in parameter_names if name not in ("self", "cls")]
+        if isinstance(value, dict) and names:
+            if all(name in value for name in names):
+                return [value[name] for name in names]
+            args_value = value.get("args")
+            if isinstance(args_value, list):
+                if len(args_value) != len(names):
+                    raise ValueError("Function-mode testcase input argument count does not match function_signature.")
+                return args_value
+            return [value]
+        if isinstance(value, list) and len(names) > 1 and len(value) == len(names):
+            return value
+        args = value if isinstance(value, list) and not names else [value]
+        if names and len(args) != len(names):
+            raise ValueError("Function-mode testcase input argument count does not match function_signature.")
+        return args
+
     raw = sys.stdin.read().strip()
-    args = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    args = _fastoj_load_args(raw, [{parameter_names}])
     func = globals().get("{function_name}")
     if not callable(func) and "Solution" in globals():
         candidate = getattr(Solution(), "{function_name}", None)

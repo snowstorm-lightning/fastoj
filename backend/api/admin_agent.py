@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.ai.providers import AIProviderUnavailableError
@@ -55,10 +56,25 @@ def get_agent_run(
 
 @router.get("/problem-drafts", response_model=list[ProblemDraftListItem])
 def list_problem_drafts(
+    query: str | None = Query(None, max_length=100),
+    status_filter: str | None = Query(None, alias="status", max_length=30),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    drafts = db.query(ProblemDraft).order_by(ProblemDraft.created_at.desc()).all()
+    drafts_query = db.query(ProblemDraft)
+    if query and query.strip():
+        pattern = f"%{query.strip()}%"
+        drafts_query = drafts_query.filter(or_(ProblemDraft.title.ilike(pattern), ProblemDraft.slug.ilike(pattern)))
+    if status_filter:
+        drafts_query = drafts_query.filter(ProblemDraft.status == status_filter)
+    drafts = (
+        drafts_query.order_by(ProblemDraft.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     return [_draft_list_item(draft) for draft in drafts]
 
 
@@ -190,6 +206,7 @@ def _validation_summary(report: dict) -> dict:
         "summary": report.get("summary", "not_validated"),
         "public_sample_count": report.get("public_sample_count", 0),
         "hidden_testcase_count": report.get("hidden_testcase_count", 0),
+        "case_summary": report.get("case_summary", {}),
         "failed_checks": [
             check.get("name")
             for check in report.get("checks", [])

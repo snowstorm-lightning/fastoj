@@ -1,3 +1,7 @@
+import io
+import sys
+from contextlib import redirect_stdout
+
 import pytest
 
 from backend.services.function_mode import wrap_function_submission
@@ -107,6 +111,52 @@ def echo_value(value):
         "def echo_value(value: int) -> int",
     )
 
-    assert "json.loads(line)" in wrapped
+    assert "_fastoj_load_args" in wrapped
     assert "Expected function echo_value" in wrapped
     assert "result = func(*args)" in wrapped
+
+
+def test_dynamic_python_function_mode_accepts_object_arguments():
+    wrapped = wrap_function_submission(
+        """
+def add_pair(left, right):
+    return left + right
+""",
+        "python",
+        "agent-add-pair",
+        "def add_pair(left: int, right: int) -> int",
+    )
+
+    old_stdin = sys.stdin
+    try:
+        sys.stdin = io.StringIO('{"left":2,"right":5}')
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exec(wrapped, {"__name__": "__main__"})
+    finally:
+        sys.stdin = old_stdin
+
+    assert output.getvalue().strip() == "7"
+
+
+def test_dynamic_python_function_mode_accepts_array_arguments():
+    wrapped = wrap_function_submission(
+        """
+def add_pair(left, right):
+    return left + right
+""",
+        "python",
+        "agent-add-pair",
+        "def add_pair(left: int, right: int) -> int",
+    )
+
+    old_stdin = sys.stdin
+    try:
+        sys.stdin = io.StringIO("[2,5]")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exec(wrapped, {"__name__": "__main__"})
+    finally:
+        sys.stdin = old_stdin
+
+    assert output.getvalue().strip() == "7"

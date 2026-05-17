@@ -1,10 +1,22 @@
 # FastOJ
 
+## 2026-05-17 验收更新
+
+- 新增 `docs/ACCEPTANCE_HARNESS.md`，记录自动化基线、浏览器验收矩阵、截图清单、hidden-test 安全检查和后续 Playwright 路线。
+- 前端错误消息现在会把 FastAPI validation detail 转成字段/类型摘要，避免显示 `[object Object]`，也不会把结构化 provider/testcase payload 直接字符串化。
+- 中文题库搜索支持本地化题名，例如 `两数之和`，搜索范围仍限制在公开题目元数据和本地化展示文本。
+- Workbench 在切题、新 run、新 submit 时会清空旧 AI hint/explain/review/chat 状态，并忽略旧 submission 的迟到 WebSocket、polling 和 AI 回调。
+- 本轮加入 CSS design tokens，覆盖颜色、圆角、边框、阴影、状态色、focus ring 和 AI glow，核心卡片/面板更接近克制的 soft neo-brutalist AI dashboard。
+- 最新验证：`uv run ruff check .`、`uv run pytest`、`cd frontend && npm run build`、`cd frontend && npm test`、`docker compose up --build -d api worker` 均通过；浏览器复验覆盖题库、workbench 1280px 布局、公开 run、AI stale-state 清理和 hidden-test 可见文本检查。
+
 ## 本轮补充
 
 - AI explain/review 已兼容 provider 返回 `null` 文本字段；本地 Qwen 服务不可达时返回 HTTP 503 和明确提示，不再显示泛化的内部服务器错误。
 - 新增 AI 对话接口，只使用题目、代码、判题状态和公开用例结果，不发送隐藏用例内容。
 - 题库卡片现在会同时显示支持的函数模式和 ACM 模式；有效的括号已补充函数模式模板和后端 wrapper。
+- 题库新增卡片/列表两种布局，可在保留当前卡片视图的同时切换到传统 OJ 的一行一道题列表；布局选择会保存在本地。
+- 管理端出题 Agent 的校验失败不再只显示 `validation_failed`，页面会展示失败检查、公开/隐藏用例数量、失败用例数量和沙箱状态等安全摘要，不展示隐藏用例输入、期望输出或实际输出。
+- DeepSeek 生成的 Python function-mode 草稿现在兼容多种常见参数形状：逐行 JSON 参数、单个 JSON 参数数组、以及按函数参数名组织的 JSON 对象；正式提交 wrapper 与草稿校验使用同一套动态参数解析。
 
 [English](README.md) | 简体中文
 
@@ -89,10 +101,14 @@ AI_DEEPSEEK_MODEL=deepseek-v4-flash
 ```bash
 AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
 AI_QWEN_API_KEY=sk-no-key-required
-AI_QWEN_MODEL=qwen2.5-coder-3b-instruct
+AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
 
 如果本地 Qwen 服务没有启动，或端口配置不对，AI 操作会返回 HTTP 503，并显示明确的 provider unreachable 提示，不再显示泛化的内部服务器错误。
+
+当前本机部署模式使用 `llama-server` b9060 和 Qwen2.5-Coder-7B-Instruct Q4_K_M，模型与运行时都应放在仓库外的 `%USERPROFILE%\Models\qwen`。本轮本地 `/v1/models` 和 `/v1/chat/completions` smoke test 已通过。可重复启动/停止脚本可以放在 `%USERPROFILE%\Models\qwen\start-qwen-llama-server.ps1` 和 `%USERPROFILE%\Models\qwen\stop-qwen-llama-server.ps1`。
+
+Docker API 已通过 `host.docker.internal:8080/v1` 调通 `qwen-local`：临时用户注册/登录、公开题目读取、AI hint 请求均已通过，验证过程没有打印 AI 正文或任何隐藏用例内容。
 
 真实密钥放在仓库根目录 `.env` 或部署环境变量中。`.env` 和 `.env.*` 已被 git 忽略；`.env.example` 只保留变量名和占位值。
 

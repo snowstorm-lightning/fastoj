@@ -32,6 +32,15 @@ export const UI = {
     allDifficulty: "全部难度",
     tagsPlaceholder: "标签，如 Array 或 AI",
     resetFilters: "重置筛选",
+    layout: "布局",
+    layoutOptions: "题库布局",
+    cardLayout: "卡片",
+    listLayout: "列表",
+    solved: "已通过",
+    openProblem: "打开题目",
+    tags: "标签",
+    modes: "模式",
+    noTags: "综合",
     currentProblems: "当前题目",
     functionMode: "函数模式",
     acmMode: "ACM 模式",
@@ -121,6 +130,15 @@ export const UI = {
     allDifficulty: "All difficulties",
     tagsPlaceholder: "Tag, e.g. Array or AI",
     resetFilters: "Reset filters",
+    layout: "Layout",
+    layoutOptions: "Problem layout",
+    cardLayout: "Cards",
+    listLayout: "List",
+    solved: "Solved",
+    openProblem: "Open problem",
+    tags: "Tags",
+    modes: "Modes",
+    noTags: "General",
     currentProblems: "Problems",
     functionMode: "Function mode",
     acmMode: "ACM mode",
@@ -318,4 +336,27 @@ export function localizedProblem<T extends ProblemDetail | ProblemListItem | und
     (result as ProblemDetail).hint = zh.hint;
   }
   return result as T;
+}
+
+function normalizeProblemSearch(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+export function localizedProblemSearchText(problem: ProblemDetail | ProblemListItem, locale: Locale): string {
+  const displayProblem = localizedProblem(problem, locale) ?? problem;
+  const parts = [
+    problem.title,
+    problem.slug,
+    ...problem.tags,
+    displayProblem.title,
+    "description" in displayProblem ? displayProblem.description : "",
+    "hint" in displayProblem ? displayProblem.hint ?? "" : "",
+  ];
+  return normalizeProblemSearch(parts.filter(Boolean).join(" "));
+}
+
+export function matchesLocalizedProblem(problem: ProblemDetail | ProblemListItem, locale: Locale, keyword: string): boolean {
+  const query = normalizeProblemSearch(keyword);
+  if (!query) return true;
+  return localizedProblemSearchText(problem, locale).includes(query);
 }

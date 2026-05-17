@@ -49,13 +49,13 @@ class Settings(BaseSettings):
     AI_PROVIDER: str = "disabled"
     AI_BASE_URL: str = "http://localhost:8080/v1"
     AI_API_KEY: str = "sk-no-key-required"
-    AI_MODEL: str = "qwen2.5-coder-3b-instruct"
+    AI_MODEL: str = "qwen2.5-coder-7b-instruct-q4_k_m"
     AI_DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     AI_DEEPSEEK_API_KEY: str = ""
     AI_DEEPSEEK_MODEL: str = "deepseek-v4-flash"
     AI_QWEN_BASE_URL: str = "http://host.docker.internal:8080/v1"
     AI_QWEN_API_KEY: str = "sk-no-key-required"
-    AI_QWEN_MODEL: str = "qwen2.5-coder-3b-instruct"
+    AI_QWEN_MODEL: str = "qwen2.5-coder-7b-instruct-q4_k_m"
     AI_TIMEOUT_SECONDS: int = 60
     AI_MAX_OUTPUT_TOKENS: int = 1200
 

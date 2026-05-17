@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -17,6 +18,7 @@ from backend.schemas.problem_authoring import ProblemAuthoringRequest
 from backend.services.problem_authoring_agent import (
     ProblemAuthoringAgentService,
     ProblemDraftValidationAdapter,
+    normalize_function_call_args,
 )
 
 
@@ -111,6 +113,17 @@ class FailingExecutor:
             "status": "ac",
             "output": "wrong",
             "error_message": None,
+            "execute_time": 1,
+            "memory_used": 16,
+        }
+
+
+class SecretFailingExecutor:
+    def execute(self, code: str, language: str, input_data: str, time_limit: int = 1000, memory_limit: int = 256):
+        return {
+            "status": "re",
+            "output": "SECRET_ACTUAL_OUTPUT",
+            "error_message": "SECRET_HIDDEN_INPUT SECRET_EXPECTED_OUTPUT",
             "execute_time": 1,
             "memory_used": 16,
         }
@@ -221,6 +234,33 @@ def test_create_draft_saves_draft_run_and_steps():
     assert {step.step_type for step in db.data[AgentStep]} >= {"plan", "model_call", "validation", "persistence"}
 
 
+def test_model_validation_error_sanitizes_raw_payload_values():
+    payload = json.loads(authored_payload())
+    payload["time_limit"] = "SECRET_TIME_LIMIT"
+    payload["hidden_testcases"][0]["input"] = "SECRET_HIDDEN_INPUT"
+    service = ProblemAuthoringAgentService(FakeSession(), provider=FakeProvider(json.dumps(payload)))
+
+    with pytest.raises(ValueError) as exc_info:
+        service._parse_model_response(json.dumps(payload))
+
+    message = str(exc_info.value)
+    assert "time_limit" in message
+    assert "int_parsing" in message
+    assert "SECRET" not in message
+    assert "hidden_testcases" not in message
+
+
+def test_function_call_arg_normalizer_accepts_deepseek_shapes():
+    assert normalize_function_call_args('{"nums":[-1,0,1]}', ["nums"]) == [[-1, 0, 1]]
+    assert normalize_function_call_args("[[2,7,11,15],9]", ["nums", "target"]) == [[2, 7, 11, 15], 9]
+    assert normalize_function_call_args('{"args":[[2,7,11,15],9]}', ["nums", "target"]) == [[2, 7, 11, 15], 9]
+
+
+def test_function_call_arg_normalizer_rejects_count_mismatch_safely():
+    with pytest.raises(ValueError, match="argument count"):
+        normalize_function_call_args("[[2,7,11,15]]", ["nums", "target"])
+
+
 def test_approve_draft_creates_problem_testcases_and_solution_with_hidden_cases():
     db = FakeSession()
     service = ProblemAuthoringAgentService(
@@ -274,3 +314,27 @@ def test_validation_failure_keeps_draft_validation_failed():
     report = json.loads(draft.validation_report_json)
     assert report["passed"] is False
     assert any(check["name"] == "official_solution" for check in report["checks"] if not check["passed"])
+
+
+def test_validation_failure_sanitizes_executor_error_detail():
+    payload = json.loads(authored_payload())
+    payload["hidden_testcases"][0]["input"] = "SECRET_HIDDEN_INPUT"
+    payload["hidden_testcases"][0]["output"] = "SECRET_EXPECTED_OUTPUT"
+    db = FakeSession()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=FakeProvider(json.dumps(payload)),
+        validator=ProblemDraftValidationAdapter(SecretFailingExecutor()),
+    )
+
+    draft, run = service.create_draft(request_payload(), admin_user())
+
+    assert draft.status == "validation_failed"
+    report = draft.validation_report_json
+    run_output = run.output_json
+    assert "SECRET_HIDDEN_INPUT" not in report
+    assert "SECRET_EXPECTED_OUTPUT" not in report
+    assert "SECRET_ACTUAL_OUTPUT" not in report
+    assert "SECRET_HIDDEN_INPUT" not in run_output
+    assert "SECRET_EXPECTED_OUTPUT" not in run_output
+    assert "SECRET_ACTUAL_OUTPUT" not in run_output

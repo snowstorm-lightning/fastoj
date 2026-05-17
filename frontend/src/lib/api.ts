@@ -67,6 +67,24 @@ export type CurrentUser = {
   role: string;
   is_active: boolean;
 };
+export type AdminOverviewFilters = {
+  userQuery?: string;
+  userRole?: string;
+  userStatus?: string;
+  userPage?: number;
+  userPageSize?: number;
+  problemQuery?: string;
+  problemDifficulty?: string;
+  problemVisibility?: string;
+  problemPage?: number;
+  problemPageSize?: number;
+};
+export type ProblemDraftFilters = {
+  query?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+};
 
 export class ApiError extends Error {
   status: number;
@@ -80,6 +98,61 @@ export class ApiError extends Error {
 
 export function isUnauthorized(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;
+}
+
+const SENSITIVE_ERROR_TEXT = /\b(hidden|testcases?|expected|actual|input|output|official_solution_code|current_code|code|token|password|secret|provider|prompt)\b/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeErrorText(value: string, fallback: string): string {
+  const text = value.trim();
+  if (!text) return fallback;
+  if (SENSITIVE_ERROR_TEXT.test(text)) return fallback;
+  return text.length > 240 ? `${text.slice(0, 237)}...` : text;
+}
+
+function validationPath(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((part) => String(part)).filter(Boolean).join(".");
+  }
+  return typeof value === "string" && value.trim() ? value.trim() : "request";
+}
+
+function validationSummary(item: unknown): string | null {
+  if (!isRecord(item)) return null;
+  const path = validationPath(item.loc);
+  const type = typeof item.type === "string" && item.type.trim() ? item.type.trim() : "invalid";
+  return `${path} (${type})`;
+}
+
+export function formatApiErrorDetail(detail: unknown, fallback = "Request failed"): string {
+  if (typeof detail === "string") return safeErrorText(detail, fallback);
+  if (Array.isArray(detail)) {
+    const items = detail.map(validationSummary).filter((item): item is string => Boolean(item));
+    if (items.length) {
+      const preview = items.slice(0, 4).join("; ");
+      return `Validation failed: ${preview}${items.length > 4 ? "; ..." : ""}`;
+    }
+    return fallback;
+  }
+  if (isRecord(detail)) {
+    if (typeof detail.message === "string") return safeErrorText(detail.message, fallback);
+    if (typeof detail.detail === "string") return safeErrorText(detail.detail, fallback);
+  }
+  return fallback;
+}
+
+export function formatApiErrorResponse(data: unknown, fallback = "Request failed"): string {
+  if (!isRecord(data)) return fallback;
+  const detail = formatApiErrorDetail(data.detail, "");
+  if (detail) return detail;
+  if (isRecord(data.error)) {
+    const message = formatApiErrorDetail(data.error.message, "");
+    if (message) return message;
+  }
+  return fallback;
 }
 
 function token() {
@@ -97,7 +170,7 @@ async function request<T>(path: string, options: RequestInit, parse: (data: unkn
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new ApiError(data.detail ?? data.error?.message ?? `HTTP ${response.status}`, response.status);
+    throw new ApiError(formatApiErrorResponse(data, `HTTP ${response.status}`), response.status);
   }
   return parse(data);
 }
@@ -117,7 +190,7 @@ export const api = {
       body,
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail ?? "Login failed");
+    if (!response.ok) throw new Error(formatApiErrorResponse(data, "Login failed"));
     localStorage.setItem("fastoj.jwt", data.access_token);
     return data;
   },
@@ -130,8 +203,19 @@ export const api = {
       body: JSON.stringify(payload),
     }, (data: any) => data);
   },
-  async adminOverview() {
-    return request("/api/v1/admin/overview", { method: "GET" }, (data: any) => data.data);
+  async adminOverview(filters: AdminOverviewFilters = {}) {
+    const params = new URLSearchParams();
+    if (filters.userQuery) params.set("user_query", filters.userQuery);
+    if (filters.userRole) params.set("user_role", filters.userRole);
+    if (filters.userStatus) params.set("user_status", filters.userStatus);
+    if (filters.userPage) params.set("user_page", String(filters.userPage));
+    if (filters.userPageSize) params.set("user_page_size", String(filters.userPageSize));
+    if (filters.problemQuery) params.set("problem_query", filters.problemQuery);
+    if (filters.problemDifficulty) params.set("problem_difficulty", filters.problemDifficulty);
+    if (filters.problemVisibility) params.set("problem_visibility", filters.problemVisibility);
+    if (filters.problemPage) params.set("problem_page", String(filters.problemPage));
+    if (filters.problemPageSize) params.set("problem_page_size", String(filters.problemPageSize));
+    return request(`/api/v1/admin/overview?${params}`, { method: "GET" }, (data: any) => data.data);
   },
   async adminUpdateUser(userId: string, payload: Record<string, unknown>) {
     return request(`/api/v1/admin/users/${userId}`, {
@@ -157,8 +241,13 @@ export const api = {
       body: JSON.stringify(payload),
     }, (data: any) => data);
   },
-  async adminProblemDrafts(): Promise<ProblemDraft[]> {
-    return request("/api/v1/admin/problem-drafts", { method: "GET" }, (data: any) => data ?? []);
+  async adminProblemDrafts(filters: ProblemDraftFilters = {}): Promise<ProblemDraft[]> {
+    const params = new URLSearchParams();
+    if (filters.query) params.set("query", filters.query);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.page) params.set("page", String(filters.page));
+    if (filters.pageSize) params.set("page_size", String(filters.pageSize));
+    return request(`/api/v1/admin/problem-drafts?${params}`, { method: "GET" }, (data: any) => data ?? []);
   },
   async adminProblemDraft(draftId: string): Promise<ProblemDraft> {
     return request(`/api/v1/admin/problem-drafts/${draftId}`, { method: "GET" }, (data: any) => data);

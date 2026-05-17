@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.api.auth import get_current_user
@@ -46,9 +47,52 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 
 
 @router.get("/overview")
-def overview(db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    problems = db.query(Problem).order_by(Problem.created_at.desc()).all()
-    users = db.query(User).order_by(User.created_at.desc()).all()
+def overview(
+    user_query: str | None = Query(None, max_length=100),
+    user_role: str | None = Query(None, pattern="^(user|admin)$"),
+    user_status: str | None = Query(None, pattern="^(active|disabled)$"),
+    user_page: int = Query(1, ge=1),
+    user_page_size: int = Query(10, ge=1, le=50),
+    problem_query: str | None = Query(None, max_length=100),
+    problem_difficulty: str | None = Query(None, pattern="^(easy|medium|hard)$"),
+    problem_visibility: str | None = Query(None, pattern="^(public|private)$"),
+    problem_page: int = Query(1, ge=1),
+    problem_page_size: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    user_base_query = db.query(User)
+    if user_query and user_query.strip():
+        pattern = f"%{user_query.strip()}%"
+        user_base_query = user_base_query.filter(or_(User.username.ilike(pattern), User.email.ilike(pattern)))
+    if user_role:
+        user_base_query = user_base_query.filter(User.role == user_role)
+    if user_status:
+        user_base_query = user_base_query.filter(User.is_active.is_(user_status == "active"))
+
+    problem_base_query = db.query(Problem)
+    if problem_query and problem_query.strip():
+        pattern = f"%{problem_query.strip()}%"
+        problem_base_query = problem_base_query.filter(or_(Problem.title.ilike(pattern), Problem.slug.ilike(pattern)))
+    if problem_difficulty:
+        problem_base_query = problem_base_query.filter(Problem.difficulty == Difficulty(problem_difficulty))
+    if problem_visibility:
+        problem_base_query = problem_base_query.filter(Problem.is_public.is_(problem_visibility == "public"))
+
+    users_total = user_base_query.count()
+    problems_total = problem_base_query.count()
+    users = (
+        user_base_query.order_by(User.created_at.desc())
+        .offset((user_page - 1) * user_page_size)
+        .limit(user_page_size)
+        .all()
+    )
+    problems = (
+        problem_base_query.order_by(Problem.created_at.desc())
+        .offset((problem_page - 1) * problem_page_size)
+        .limit(problem_page_size)
+        .all()
+    )
     return {
         "success": True,
         "data": {
@@ -60,6 +104,7 @@ def overview(db: Session = Depends(get_db), _: User = Depends(require_admin)):
                     "role": user.role,
                     "is_active": user.is_active,
                     "created_at": user.created_at.isoformat(),
+                    "updated_at": user.updated_at.isoformat() if user.updated_at else None,
                 }
                 for user in users
             ],
@@ -68,16 +113,37 @@ def overview(db: Session = Depends(get_db), _: User = Depends(require_admin)):
                     "id": str(problem.id),
                     "title": problem.title,
                     "slug": problem.slug,
+                    "description": problem.description,
                     "difficulty": problem.difficulty.value,
                     "tags": problem.tags or [],
                     "is_public": problem.is_public,
+                    "mode": problem.mode,
+                    "hint": problem.hint,
+                    "time_limit": problem.time_limit,
+                    "memory_limit": problem.memory_limit,
                     "testcase_count": len(problem.testcases),
                     "hidden_testcase_count": sum(1 for testcase in problem.testcases if testcase.is_hidden),
                     "solution_count": len(problem.solutions),
                     "total_submissions": problem.total_submissions,
+                    "created_at": problem.created_at.isoformat(),
+                    "updated_at": problem.updated_at.isoformat() if problem.updated_at else None,
                 }
                 for problem in problems
             ],
+            "pagination": {
+                "users": {
+                    "page": user_page,
+                    "page_size": user_page_size,
+                    "total": users_total,
+                    "total_pages": (users_total + user_page_size - 1) // user_page_size,
+                },
+                "problems": {
+                    "page": problem_page,
+                    "page_size": problem_page_size,
+                    "total": problems_total,
+                    "total_pages": (problems_total + problem_page_size - 1) // problem_page_size,
+                },
+            },
         },
     }
 

@@ -1,5 +1,33 @@
 # Codex Progress
 
+## 2026-05-17 DeepSeek Authoring And Library Layout Follow-up
+
+- [x] Diagnosed DeepSeek v4 `validation_failed` drafts as likely function-mode argument-shape brittleness plus overly terse admin validation messaging.
+- [x] Added safe function-mode testcase argument normalization for generated drafts: JSON-lines, a single JSON argument array, and a single JSON object keyed by function parameter name are accepted.
+- [x] Updated the dynamic Python function-mode submission wrapper to use the same argument normalization as draft validation, avoiding validation/runtime drift after draft approval.
+- [x] Hardened authoring validation output so sandbox executor details are summarized as status/count metadata and secret-like testcase-derived stderr/output is not persisted in validation reports.
+- [x] Tightened the problem-authoring prompt for function-mode return values and deterministic canonical ordering for combination/set-like outputs.
+- [x] Added an admin validation summary UI so `validation_failed` drafts show failed checks, testcase counts, failed-case counts, and sandbox statuses instead of a raw JSON block.
+- [x] Added a persisted problem-library card/list layout toggle; list mode renders an OJ-style one-row-per-problem view with difficulty, tags, supported modes, solved count, acceptance rate, and open action.
+- [x] Full checks passed: `uv run ruff check .`, `uv run pytest` (92 passed), `cd frontend && npm run build`, and `cd frontend && npm test` (8 files / 13 tests passed).
+- [x] Docker verification passed: `docker compose up --build -d api worker`, `docker compose ps`, and HTTP health at `http://127.0.0.1:8000/api/v1/health`.
+- [x] Browser smoke passed for the real Docker-served problem library: card/list toggle works, list mode rendered 15 rows, card mode rendered 15 cards, both had no horizontal overflow, and visible text had no `[object Object]` or hidden-test sentinels. Screenshot capture still timed out in the browser plugin.
+
+## 2026-05-17 Acceptance Harness And Product Polish
+
+- [x] Ran dynamic Phase 1 discovery using the existing AGENTS/README/handoff/progress context and inspected the dirty worktree before edits.
+- [x] Used specialist subagents for code mapping, product planning, frontend design planning, acceptance harness planning, and safety/privacy review; all subagents were closed after their outputs were integrated.
+- [x] Performed browser visual/UX audit against the Docker-served app at `http://127.0.0.1:8000`.
+- [x] Added frontend API error formatting helpers and tests so validation failures do not render `[object Object]` or stringify arbitrary structured payloads.
+- [x] Sanitized AI problem-authoring schema errors so non-missing Pydantic validation failures report path/type summaries without raw draft values.
+- [x] Added localized public problem search helpers and tests so Chinese seeded titles such as `两数之和` can match in the library without querying testcase content.
+- [x] Cleared stale workbench AI/judge state on problem changes and new runs/submissions; stale WebSocket, polling, and AI callbacks are ignored by submission/problem id.
+- [x] Fixed 1280px workbench horizontal overflow by constraining side panel grid tracks.
+- [x] Added CSS design tokens for colors, radius, border depth, shadows, focus states, status colors, and restrained AI glow; applied them to core buttons, cards, panels, and workbench/admin shells.
+- [x] Added `docs/ACCEPTANCE_HARNESS.md` as the repeatable baseline plus browser smoke matrix and automation roadmap without adding Playwright in this batch.
+- [x] Updated README, Chinese README, progress, and handoff docs for the current behavior and verification.
+- [ ] Convert the manual browser harness to Playwright or equivalent automated browser tests.
+
 ## Phase 0: Dependency Audit
 
 - [x] Checked repository dependency files and Docker files.
@@ -153,6 +181,14 @@
 
 ## Verification
 
+- [x] `uv run ruff check .` passed after the 2026-05-17 acceptance/product polish batch.
+- [x] `uv run pytest` passed after the 2026-05-17 batch, 87 tests passed with existing datetime deprecation warnings.
+- [x] `cd frontend && npm run build` passed after the 2026-05-17 frontend edits, with existing Monaco/Shiki chunk-size warnings.
+- [x] `cd frontend && npm test` passed after the 2026-05-17 frontend edits, 8 test files and 13 tests passed with expected jsdom canvas warnings.
+- [x] `docker compose up --build -d api worker` passed after the 2026-05-17 batch.
+- [x] `docker compose ps` reported API and worker healthy after the rebuild; PostgreSQL and Redis healthy; judge runtime running.
+- [x] HTTP health passed at `http://127.0.0.1:8000/api/v1/health`.
+- [x] Browser smoke covered rendered library/workbench pages at 1280px, localized Chinese UI, public run status, AI stale-state clearing, no `[object Object]`, and no visible hidden testcase content in the observed run result.
 - [x] `uv sync`.
 - [x] `uv sync --extra dev`.
 - [x] `uv run ruff check .`.
@@ -183,7 +219,8 @@
 - [x] HTTP health and rebuilt frontend checks passed at `http://127.0.0.1:8000`.
 - [x] Real Docker-backed public run for Two Sum C++ function mode passed with `result=ac`.
 - [x] `docker compose up --build -d api` passed; API container rebuilt with the latest frontend bundle.
-- [x] `Get-Command llama-server` returned no installed command; local Qwen profile is wired but the actual local server is not started.
+- [x] Local Qwen service deployed with `llama-server` b9060 outside the repo under a user-level `%USERPROFILE%\Models\qwen` directory; `/v1/models` and `/v1/chat/completions` passed smoke tests on `http://127.0.0.1:8080/v1`; reusable start/stop scripts were created in that external directory.
+- [x] FastOJ Docker API verified `qwen-local` end to end: registered/logged in a temporary user, selected a public problem, and received an AI hint through `host.docker.internal:8080/v1` without printing AI response text.
 - [x] Real Docker-backed public run no longer fails for Two Sum function mode.
 - [x] Final Docker health check passed after Docker Desktop restart on 2026-05-14.
 - [x] Worker-in-container Docker SDK access verified with requests 2.31.0 and Docker ping returning `True`.

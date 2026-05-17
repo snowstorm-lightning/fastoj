@@ -1,10 +1,35 @@
 # Codex Handoff
 
-Updated: 2026-05-14
+Updated: 2026-05-17
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-05-17 DeepSeek Authoring And Library Layout Follow-up
+
+- Follow-up addressed two user-reported issues: DeepSeek v4 generated drafts showing only `validation_failed`, and the problem library needing an OJ-style one-row layout in addition to the current card grid.
+- Function-mode draft validation now accepts common AI-generated argument shapes: newline-separated JSON values, a single JSON array matching all function arguments, or a single JSON object keyed by argument names.
+- The approved dynamic Python function-mode submission wrapper now uses the same argument-shape handling, so drafts that validate under the new shape rules are judged with matching runtime semantics.
+- Problem-authoring prompts now explicitly require function-mode outputs to be JSON-serializable return values and ask combination/set-like problems to use deterministic canonical ordering.
+- Validation reports now include a safe `case_summary` and sanitize executor error detail so hidden testcase input, expected output, actual output, and stderr-derived values are not persisted or rendered through the validation path.
+- The admin Problem Agent panel now renders validation as a human-readable safe summary: failed checks, public/hidden counts, failed-case counts, and sandbox statuses, instead of a raw JSON dump and `validation_failed: validation_failed`.
+- The problem library now has a persisted card/list layout toggle. List mode renders one problem per row with title/slug, difficulty, tags, supported modes, solved/submission count, acceptance rate, and open action.
+- Full verification passed for this follow-up: `uv run ruff check .`, `uv run pytest` (92 passed), `cd frontend && npm run build`, `cd frontend && npm test` (8 files / 13 tests passed), `docker compose up --build -d api worker`, `docker compose ps`, and HTTP health at `http://127.0.0.1:8000/api/v1/health`.
+- Browser smoke against the real Docker-served app verified the library card/list toggle, 15 rendered list rows, 15 rendered cards after toggling back, no horizontal overflow, and no visible `[object Object]` or hidden-test sentinel text. Screenshot capture still timed out on CDP `Page.captureScreenshot`.
+
+## 2026-05-17 Acceptance/Product Batch
+
+- Dynamic orchestration used specialist subagents for code mapping, product planning, frontend design planning, acceptance harness planning, and safety/privacy review. The safety review made stale AI state and raw error stringification no-go items; both were addressed before handoff.
+- Added a manual acceptance harness at `docs/ACCEPTANCE_HARNESS.md`. It records the automated baseline, browser smoke matrix, screenshot inventory, safety checks, and future Playwright structure without adding new dependencies.
+- Frontend API errors are now sanitized through `formatApiErrorResponse`/`formatApiErrorDetail`, with tests covering FastAPI validation arrays and suspicious structured payloads.
+- AI problem-authoring draft validation errors now report field path/type summaries instead of raw Pydantic exception text, with a regression test ensuring secret-like draft values are not echoed.
+- Library search now has localized public-problem matching helpers, with tests proving Chinese `两数之和` and English `Two Sum` both match the seeded Two Sum card.
+- Workbench judge/AI state is isolated by current problem/submission. New runs/submissions clear stale AI panels, stop old status streams, and ignore late WebSocket, polling, explain, review, hint, or chat callbacks from stale submissions.
+- Workbench 1280px overflow was fixed by clamping grid panel tracks; browser smoke reported no horizontal overflow.
+- Core visual tokens were added in CSS for color, radius, border depth, shadows, focus rings, status colors, and AI glow. Buttons, inputs, library cards, workbench panels, settings/admin/auth shells, and AI regions now use stronger soft neo-brutalist panel depth.
+- Browser smoke after rebuild inspected the real Docker-served UI at `http://127.0.0.1:8000`: library and workbench rendered, workbench at 1280px had no horizontal overflow, public run produced a visible result, no `[object Object]` appeared, no hidden testcase content appeared in the observed run result, and AI provider error state cleared when a new run started.
+- Final screenshot capture after the last CSS rebuild timed out in the browser plugin, but earlier library/workbench screenshots were captured during the audit and final DOM/layout checks confirmed the rebuilt CSS tokens were loaded.
 
 ## Completed So Far
 
@@ -49,11 +74,11 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Admin Console now includes a minimal Problem Agent panel for topic/difficulty/tags/mode/model input, AgentRun step timeline, draft preview, validation report, approve, and reject. It explicitly states that generated content remains a draft until approval.
 - Admin bootstrap script added at `backend/scripts/create_admin.py`; it creates or promotes the first administrator from a trusted server shell, uses existing password hashing, requires exact username/email matches for promotion, and does not allow public self-service role assignment.
 - Obsolete static frontend prototype files and stale Codex checkpoint artifacts were removed after their useful context was consolidated into committed code and handoff/progress docs.
-- The Qwen local profile expects an OpenAI-compatible local server such as `llama-server` on `http://host.docker.internal:8080/v1`. `llama-server` is not installed in the current PATH, so the local Qwen server has not been started.
+- The Qwen local profile now has a local OpenAI-compatible service pattern: install `llama-server` b9060 and Qwen2.5-Coder-7B-Instruct Q4_K_M outside the repo under `%USERPROFILE%\Models\qwen`, listen on `http://127.0.0.1:8080/v1`, and let Docker containers call it through `http://host.docker.internal:8080/v1`. Reusable local scripts can live at `%USERPROFILE%\Models\qwen\start-qwen-llama-server.ps1` and `%USERPROFILE%\Models\qwen\stop-qwen-llama-server.ps1`.
 
 ## Not Completed Yet
 
-- Full browser manual acceptance path has not been executed by Codex.
+- Full browser manual acceptance path is partially executed and now documented, but it is not yet automated as a Playwright/equivalent suite.
 - WebSocket fallback behavior has not been verified in a real browser session.
 - Real Redis dead-letter behavior is covered by unit-level tests but not manually exercised end to end.
 - Frontend bundle size is large because Monaco and Shiki are loaded directly.
@@ -61,15 +86,23 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Approved Python function-mode Agent drafts now carry dynamic function metadata into the public problem API, workbench starter generation, and submission wrapper. Non-Python arbitrary function-mode harness metadata is still not implemented; those drafts fail validation instead of being published as runnable function tasks.
 - Docker sandbox compiled-language execution now redirects `input.txt` into the final program instead of piping it into the compiler, and `/tmp/work` permissions are relaxed with `chmod` so `nobody` can create compiled binaries without adding Linux capabilities.
 - Docker Compose rebuild passed after the latest worker/dependency edits. After Docker Desktop was restarted on 2026-05-14, API and worker reported healthy, HTTP health and frontend returned 200, and worker-in-container Docker SDK access returned `True`.
-- Browser manual acceptance still needs to be run end to end.
-- In-app browser automation tooling is not currently exposed in this session, so visual browser acceptance was not run by Codex after the latest UI polish.
+- The final CSS rebuild was verified by DOM/layout checks; a final screenshot attempt timed out in the browser plugin. Earlier library/workbench screenshots were captured during this batch.
 
 ## Current Modified File List
 
-Modified and new files after the latest admin-agent and cleanup work include backend admin-agent models/schemas/services/routes/prompts, the admin bootstrap script, frontend Admin Console/API/i18n updates, backend tests, README files, and Codex docs. Removed files include obsolete static frontend prototype files and stale checkpoint/recovery artifacts.
+Modified and new files after the latest admin-agent, acceptance, and frontend polish work include backend admin/admin-agent routes, `backend/services/problem_authoring_agent.py`, frontend API/i18n/main/styles files, frontend API/i18n tests, backend problem-authoring tests, README files, `docs/ACCEPTANCE_HARNESS.md`, and Codex handoff/progress docs. Removed files from earlier cleanup included obsolete static frontend prototype files and stale checkpoint/recovery artifacts.
 
 ## Executed Commands And Results
 
+- `uv run ruff check .`: passed after the 2026-05-17 batch.
+- `uv run pytest`: passed after the 2026-05-17 batch, 87 tests passed with existing datetime deprecation warnings.
+- `cd frontend && npm run build`: passed after frontend API/i18n/state/CSS edits, with existing Monaco/Shiki chunk-size warnings.
+- `cd frontend && npm test`: passed, 8 test files and 13 tests passed; jsdom printed expected canvas `getContext` warnings.
+- `docker compose up --build -d api worker`: passed after the 2026-05-17 batch.
+- `docker compose ps`: passed after rebuild; API and worker healthy, PostgreSQL/Redis healthy, judge runtime running.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/v1/health`: passed with HTTP 200 and `{"status":"healthy","app":"FastOJ"}`.
+- `docker compose exec -T api uv run python -m backend.scripts.seed_data`: passed, created 0 missing problems and normalized 15 existing problems.
+- Browser smoke at `http://127.0.0.1:8000`: passed for rendered library/workbench inspection, 1280px workbench overflow check, public run result visibility, stale AI error clearing on a new run, no `[object Object]`, and no visible hidden testcase content in the observed run result.
 - `uv sync`: passed.
 - `uv sync --extra dev`: passed.
 - `uv run ruff check .`: passed.
@@ -137,6 +170,7 @@ Modified and new files after the latest admin-agent and cleanup work include bac
 - Real API public run and full submit for Two Sum function mode: passed with `result=ac`.
 - Real API public run and full submit for Valid Parentheses ACM mode: passed with `result=ac`.
 - AI explain endpoint with `AI_PROVIDER=disabled`: returned HTTP 503 as expected.
+- Local Qwen deployment smoke: `llama-server` `/v1/models` and `/v1/chat/completions` passed on `127.0.0.1:8080`; Docker API reached the service via `host.docker.internal`; FastOJ `model_profile=qwen-local` AI hint passed through the HTTP API after temporary user registration/login.
 - `uv run ruff check .`: passed.
 - `uv run pytest`: passed, 69 tests passed with 3 datetime deprecation warnings.
 - `cd frontend && npm run build`: passed with existing Monaco/Shiki chunk-size warnings.
@@ -164,6 +198,10 @@ Modified and new files after the latest admin-agent and cleanup work include bac
 
 ## Failed Commands And Error Summary
 
+- One `uv run ruff check .` run failed on UP038 for `isinstance(nested, (dict, str))`; changed it to `isinstance(nested, dict | str)` and reran ruff successfully.
+- One sandboxed `docker compose ps` check hit Docker pipe permission denial; reran the Docker status check with approved escalation and confirmed healthy services.
+- Browser `fill`/`type` for Chinese search was blocked by the Browser virtual clipboard not being installed. The localized search behavior is covered by frontend unit tests; the rendered Chinese library was still inspected in the browser.
+- A final browser screenshot attempt after the last CSS rebuild timed out on CDP `Page.captureScreenshot`; earlier library/workbench screenshots were captured during the audit, and final DOM/layout checks verified the rebuilt CSS state.
 - Earlier `uv sync` failed in sandbox due uv cache permission; approved rerun passed.
 - Earlier `npm config set save-exact true` failed due user `.npmrc` permission; approved rerun passed.
 - Earlier frontend dependency install failed in sandbox cache-only mode; approved network rerun passed.
@@ -180,8 +218,9 @@ Modified and new files after the latest admin-agent and cleanup work include bac
 
 ## Next Minimal Continue Plan
 
-1. Run the browser manual acceptance path at `http://127.0.0.1:8000`, including register/login redirect, token-expiry alert, language switch, sidebar toggles/resizing, function/ACM single-button toggle across languages, public run, full submit, WebSocket/polling status, and DeepSeek AI hint/explain/review in Chinese.
-2. Inspect the Chinese UI in a real browser for any remaining mixed-language problem text; move problem statement/solution translations from temporary frontend/backend maps to backend-managed localized fields when the content model is finalized.
-3. Expand admin UI beyond basic controls when ready: full problem editor, official-solution editor, and testcase editor that never exposes hidden testcase contents to non-admins and warns before editing hidden data.
-4. Expand C function-mode harnesses for AI tasks that require matrices or strings, or hide C function mode for those tasks until supported.
-5. Optionally split Monaco/Shiki into lazy chunks to reduce initial frontend bundle size.
+1. Convert `docs/ACCEPTANCE_HARNESS.md` into a Playwright/equivalent browser suite covering auth, library search/filter, function and ACM run/submit, WebSocket-first status, polling fallback, AI locale behavior, settings, admin, and screenshot smoke.
+2. Finish the remaining browser manual acceptance items not fully automated in this batch: register/login redirect, token-expiry alert, settings save/error with typed form data, admin mutation restore paths, and explicit polling fallback simulation.
+3. Inspect the Chinese UI in a real browser for any remaining mixed-language problem text; move problem statement/solution translations from temporary frontend/backend maps to backend-managed localized fields when the content model is finalized.
+4. Expand admin UI beyond basic controls when ready: full problem editor, official-solution editor, testcase manager with hidden-content safeguards, submission audit, judge queue, and system health.
+5. Expand C function-mode harnesses for AI tasks that require matrices or strings, or hide C function mode for those tasks until supported.
+6. Split Monaco/Shiki into lazy chunks to reduce initial frontend bundle size.

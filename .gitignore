@@ -53,6 +53,12 @@ htmlcov/
 *.log
 logs/
 
+# Local deployment notes and machine-specific configuration
+docs/local-*.md
+docs/*.local.md
+local-config/
+models/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

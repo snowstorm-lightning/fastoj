@@ -42,6 +42,43 @@ def normalize_slug(value: str) -> str:
     return slug.strip("-") or "generated-problem"
 
 
+def normalize_function_call_args(raw: str, parameter_names: list[str]) -> list[Any]:
+    """Accept common AI-authored function testcase shapes without exposing values."""
+
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if not lines:
+        return []
+    try:
+        if len(lines) > 1:
+            args = [json.loads(line) for line in lines]
+            names = [name for name in parameter_names if name not in {"self", "cls"}]
+            if names and len(args) != len(names):
+                raise ValueError("Function-mode testcase input argument count does not match function_signature.")
+            return args
+        value = json.loads(lines[0])
+    except json.JSONDecodeError as exc:
+        raise ValueError("Function-mode testcase input must be valid JSON.") from exc
+
+    names = [name for name in parameter_names if name not in {"self", "cls"}]
+    if isinstance(value, dict) and names:
+        if all(name in value for name in names):
+            args = [value[name] for name in names]
+            return args
+        args_value = value.get("args")
+        if isinstance(args_value, list):
+            args = args_value
+            if len(args) != len(names):
+                raise ValueError("Function-mode testcase input argument count does not match function_signature.")
+            return args
+        return [value]
+    if isinstance(value, list) and len(names) > 1 and len(value) == len(names):
+        return value
+    args = value if isinstance(value, list) and not names else [value]
+    if names and len(args) != len(names):
+        raise ValueError("Function-mode testcase input argument count does not match function_signature.")
+    return args
+
+
 class ProblemDraftValidationAdapter:
     """Validates generated drafts through the same sandbox executor used by judging."""
 
@@ -85,6 +122,19 @@ class ProblemDraftValidationAdapter:
             "Every expected output must be non-empty",
         )
 
+        if draft.mode == "function" and str(draft.function_signature or "").strip():
+            try:
+                parameter_names = self._function_parameters(draft)
+                for testcase in testcases:
+                    normalize_function_call_args(str(testcase.get("input") or ""), parameter_names)
+                check(
+                    "function_testcase_inputs",
+                    True,
+                    "Function testcase inputs are valid JSON argument values",
+                )
+            except ValueError as exc:
+                check("function_testcase_inputs", False, str(exc))
+
         case_results = []
         if all(item["passed"] for item in checks):
             try:
@@ -112,6 +162,7 @@ class ProblemDraftValidationAdapter:
             "summary": "validated" if passed else "validation_failed",
             "checks": checks,
             "case_results": case_results,
+            "case_summary": self._case_summary(case_results),
             "public_sample_count": public_count,
             "hidden_testcase_count": hidden_count,
         }
@@ -154,21 +205,42 @@ class ProblemDraftValidationAdapter:
                     "status": "ac" if passed else status_value if status_value != "ac" else "wa",
                     "execute_time": execution.get("execute_time", 0),
                     "memory_used": execution.get("memory_used", 0),
-                    "error_message": execution.get("error_message"),
+                    "error_message": self._safe_case_error(status_value, passed),
                 }
             )
         return results
 
     def _build_python_function_harness(self, draft: AuthoredProblemDraft) -> str:
         function_name = self._function_name(draft)
+        parameter_names = self._function_parameters(draft)
+        parameter_names_json = json.dumps(parameter_names, ensure_ascii=False)
         return f"""{draft.official_solution_code.rstrip()}
 
 if __name__ == "__main__":
     import json
     import sys
 
+    def _fastoj_load_args(raw, parameter_names):
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        if not lines:
+            return []
+        if len(lines) > 1:
+            return [json.loads(line) for line in lines]
+        value = json.loads(lines[0])
+        names = [name for name in parameter_names if name not in ("self", "cls")]
+        if isinstance(value, dict) and names:
+            if all(name in value for name in names):
+                return [value[name] for name in names]
+            args_value = value.get("args")
+            if isinstance(args_value, list):
+                return args_value
+            return [value]
+        if isinstance(value, list) and len(names) > 1 and len(value) == len(names):
+            return value
+        return [value]
+
     raw = sys.stdin.read().strip()
-    args = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    args = _fastoj_load_args(raw, {parameter_names_json})
     fn = globals().get("{function_name}")
     if not callable(fn) and "Solution" in globals():
         candidate = getattr(Solution(), "{function_name}", None)
@@ -195,6 +267,39 @@ if __name__ == "__main__":
             return match.group(1)
         raise ValueError("Function mode requires a Python def function signature")
 
+    def _function_parameters(self, draft: AuthoredProblemDraft) -> list[str]:
+        signature = draft.function_signature or ""
+        function_name = self._function_name(draft)
+        match = re.search(rf"def\s+{re.escape(function_name)}\s*\((?P<params>.*?)\)", signature, re.DOTALL)
+        if not match:
+            match = re.search(rf"def\s+{re.escape(function_name)}\s*\((?P<params>.*?)\)", draft.official_solution_code, re.DOTALL)
+        if not match:
+            raise ValueError("Function mode requires a parseable Python function signature")
+        names: list[str] = []
+        for item in self._split_signature_parameters(match.group("params")):
+            cleaned = item.strip()
+            if not cleaned or cleaned.startswith("*"):
+                continue
+            name = cleaned.split(":", 1)[0].split("=", 1)[0].strip()
+            if name and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+                names.append(name)
+        return names
+
+    def _split_signature_parameters(self, params: str) -> list[str]:
+        parts: list[str] = []
+        start = 0
+        depth = 0
+        for index, char in enumerate(params):
+            if char in "([{":
+                depth += 1
+            elif char in ")]}" and depth:
+                depth -= 1
+            elif char == "," and depth == 0:
+                parts.append(params[start:index])
+                start = index + 1
+        parts.append(params[start:])
+        return parts
+
     def _outputs_match(self, actual_output: str, expected_output: str) -> bool:
         if actual_output == expected_output:
             return True
@@ -202,6 +307,22 @@ if __name__ == "__main__":
             return json.loads(actual_output) == json.loads(expected_output)
         except json.JSONDecodeError:
             return False
+
+    def _safe_case_error(self, status_value: Any, passed: bool) -> str | None:
+        if passed:
+            return None
+        status = str(status_value or "se").upper()
+        return f"Official solution returned {status} during validation."
+
+    def _case_summary(self, case_results: list[dict[str, Any]]) -> dict[str, Any]:
+        failed = [result for result in case_results if not result.get("passed")]
+        return {
+            "total": len(case_results),
+            "failed": len(failed),
+            "failed_public": sum(1 for result in failed if result.get("hidden") is False),
+            "failed_hidden": sum(1 for result in failed if result.get("hidden") is True),
+            "failed_statuses": sorted({str(result.get("status") or "unknown") for result in failed}),
+        }
 
 
 class ProblemAuthoringAgentService:
@@ -403,18 +524,68 @@ class ProblemAuthoringAgentService:
 
     def _parse_model_response(self, raw: str) -> AuthoredProblemDraft:
         data = self._extract_json(raw)
-        return AuthoredProblemDraft.model_validate(data)
-
-    def _extract_json(self, raw: str) -> dict[str, Any]:
+        candidate = self._find_draft_payload(data)
         try:
-            data = json.loads(raw)
-            return data if isinstance(data, dict) else {}
+            return AuthoredProblemDraft.model_validate(candidate)
+        except ValidationError as exc:
+            missing = [
+                ".".join(str(part) for part in error["loc"])
+                for error in exc.errors()
+                if error.get("type") == "missing"
+            ]
+            if missing:
+                preview = ", ".join(missing[:8])
+                suffix = "..." if len(missing) > 8 else ""
+                raise ValueError(f"AI problem draft JSON is missing required fields: {preview}{suffix}") from exc
+            raise ValueError(
+                "AI problem draft JSON does not match the required schema: "
+                f"{self._validation_error_summary(exc)}"
+            ) from exc
+
+    def _validation_error_summary(self, exc: ValidationError) -> str:
+        summaries = []
+        for error in exc.errors():
+            loc = ".".join(str(part) for part in error.get("loc", ())) or "root"
+            error_type = str(error.get("type") or "invalid")
+            summaries.append(f"{loc} ({error_type})")
+        if not summaries:
+            return "unknown validation error"
+        preview = ", ".join(summaries[:8])
+        return f"{preview}{'...' if len(summaries) > 8 else ''}"
+
+    def _extract_json(self, raw: str) -> Any:
+        try:
+            return json.loads(raw)
         except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
-            if match:
-                data = json.loads(match.group(0))
-                return data if isinstance(data, dict) else {}
+            decoder = json.JSONDecoder()
+            for match in re.finditer(r"[\{\[]", raw):
+                try:
+                    data, _index = decoder.raw_decode(raw[match.start() :])
+                    return data
+                except json.JSONDecodeError:
+                    continue
         return {}
+
+    def _find_draft_payload(self, data: Any) -> dict[str, Any]:
+        if isinstance(data, str):
+            return self._find_draft_payload(self._extract_json(data))
+        if not isinstance(data, dict):
+            raise ValueError("AI provider did not return a JSON object for the problem draft")
+
+        required_signal = {"title", "description", "official_solution_code"}
+        if required_signal & set(data):
+            return data
+
+        for key in ("problem", "problem_draft", "draft", "data", "result", "output", "content", "json"):
+            nested = data.get(key)
+            if isinstance(nested, dict | str):
+                try:
+                    return self._find_draft_payload(nested)
+                except ValueError:
+                    continue
+
+        keys = ", ".join(sorted(str(key) for key in data.keys())[:8]) or "none"
+        raise ValueError(f"AI provider returned JSON without a problem draft object. Top-level keys: {keys}")
 
     def _testcases(self, authored: AuthoredProblemDraft) -> list[dict[str, Any]]:
         testcases: list[dict[str, Any]] = []
@@ -543,5 +714,6 @@ class ProblemAuthoringAgentService:
             "summary": report["summary"],
             "public_sample_count": report["public_sample_count"],
             "hidden_testcase_count": report["hidden_testcase_count"],
+            "case_summary": report.get("case_summary", {}),
             "failed_checks": [check["name"] for check in report["checks"] if not check["passed"]],
         }

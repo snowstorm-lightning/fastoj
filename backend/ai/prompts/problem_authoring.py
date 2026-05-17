@@ -7,7 +7,8 @@ Return only valid JSON matching the requested schema. Do not wrap it in Markdown
 Do not generate copyrighted problem statements.
 Public samples must be small and explainable. Hidden testcases must cover boundary cases.
 Do not place hidden testcase content outside the hidden_testcases field.
-For function mode, provide a clear Python-style function_signature and JSON-line testcase inputs, one JSON value per argument line.
+For function mode, provide a clear Python-style function_signature and testcase inputs that match the function arguments.
+Prefer JSON-line inputs with one JSON value per argument line; a single JSON object keyed by argument name is also acceptable.
 For ACM mode, provide stdin/stdout testcases and clear input_format/output_format.
 Always include official solution code, explanation, time complexity, space complexity, and validation notes."""
 
@@ -50,7 +51,9 @@ def build_prompt(context: dict[str, Any]) -> str:
             "Every testcase output must be non-empty.",
             "official_solution_language should match target_language when possible.",
             "For function mode, official_solution_code should define the function named in function_signature.",
-            "For function mode, each testcase input must be newline-separated JSON values matching the function arguments.",
+            "For function mode, testcase input must be either newline-separated JSON values matching the function arguments, a single JSON array matching all arguments, or a single JSON object keyed by argument names.",
+            "For function mode, testcase output must be the JSON-serializable return value, not printed stdout text.",
+            "For combination or set-like outputs, make the official solution and expected outputs use deterministic canonical ordering.",
             "For ACM mode, official_solution_code must read stdin and write stdout.",
         ],
     }

@@ -66,7 +66,7 @@ The Vite dev server proxies API calls by using the same origin unless `VITE_API_
 
 The React frontend is intentionally split into focused views instead of one dense all-in-one page:
 
-- Problem library: keyword, tag, difficulty, pagination, training summary, AI-practice count, function-mode count, and recommendation entry.
+- Problem library: keyword, tag, difficulty, pagination, training summary, AI-practice count, function-mode count, recommendation entry, and a persisted card/list layout toggle. The list layout is a classic OJ-style one-row-per-problem view with difficulty, tags, modes, solved count, and acceptance rate.
 - Auth flow: login and registration live on a dedicated page instead of being embedded in the global header.
 - Workbench: a focused three-column layout with collapsible and resizable problem/result sidebars, central Monaco editor, and a right-side AI/judge drawer.
 - Mode switch: supported problems can run in `function` mode, where the editor shows a language-specific function signature and the backend wraps it in a stdin/stdout harness before judging. All problems can still use `acm` mode, where the submission owns standard input and output. The workbench uses one compact toggle button with localized text and mode-colored status dots.
@@ -76,12 +76,17 @@ The React frontend is intentionally split into focused views instead of one dens
 - Static visual guide: supported problems render a prebuilt visual step flow in the statement sidebar, avoiding runtime AI calls for basic conceptual explanation.
 - Button clarity: primary workflow buttons use icon-first controls, custom hover popovers, and 3D normal/hover/pressed states. Collapsed sidebars use compact edge controls.
 - Token expiry: if a submit action discovers an expired session, the frontend shows a localized expiry alert before redirecting to the dedicated auth page.
+- Error surfaces: FastAPI validation errors are summarized as field/type messages instead of raw objects, so auth/settings/admin failures do not render `[object Object]` or stringify structured payloads.
+- Localized search: the Chinese library can match localized seeded problem titles such as `两数之和` while keeping search scoped to public problem metadata.
 - AI model selection: the workbench can choose a controlled AI profile (`default`, `deepseek`, or `qwen-local`) without exposing arbitrary model names or base URLs to the browser.
+- AI state isolation: new runs, new submissions, and problem switches clear stale hint/explain/review/chat state, and late status/AI callbacks are ignored if they belong to an older submission.
 - Account settings: signed-in users can edit display name, username, email, avatar URL, compact mode, and password.
-- Admin console: server-side admin role checks protect user and problem management. The UI can change user role/active state, problem difficulty/public state, and create a missing Python official-solution placeholder without exposing hidden testcase content.
+- Admin console: server-side admin role checks protect user and problem management. The UI can change user role/active state, problem difficulty/public state, and create a missing Python official-solution placeholder without exposing hidden testcase content. Problem-authoring draft validation is shown as a safe summary of failed checks, public/hidden counts, failed-case counts, and sandbox statuses instead of raw testcase or stderr payloads.
 - Admin provisioning: public registration always creates a normal `user`; administrator accounts are bootstrapped with `backend.scripts.create_admin` or managed by an existing admin from the console.
 
 AI Copilot defaults to the current verdict and next action. Longer information such as suspicious code regions, public-case comparison, boundary checks, and complexity notes is placed in expandable sections to reduce cognitive load.
+
+The current visual system uses local CSS design tokens for panel radius, strong borders, offset shadows, status colors, focus states, and restrained AI glow. The direction is soft neo-brutalism adapted to a dark AI/OJ workbench rather than a generic marketing page.
 
 ## Pretext Text Layout
 
@@ -196,7 +201,7 @@ Admin Problem Authoring Agent endpoints are also available under `/api/v1/admin`
 - `POST /api/v1/admin/problem-drafts/{draft_id}/approve`
 - `POST /api/v1/admin/problem-drafts/{draft_id}/reject`
 
-The agent stores generated content as `ProblemDraft` rows with `AgentRun` and `AgentStep` traces. Draft approval is a separate admin action that creates the public `Problem`, `TestCase`, and official `Solution` rows. AI-generated problems are never published automatically. Draft validation checks required fields, slug uniqueness, testcase counts, non-empty expected outputs, and runs the official solution through the sandbox validation adapter. ACM drafts use the existing sandbox executor directly. Python function-mode drafts store their function signature on the approved problem, render a dynamic starter in the workbench, and run through the same JSON-line dynamic harness during submission.
+The agent stores generated content as `ProblemDraft` rows with `AgentRun` and `AgentStep` traces. Draft approval is a separate admin action that creates the public `Problem`, `TestCase`, and official `Solution` rows. AI-generated problems are never published automatically. Draft validation checks required fields, slug uniqueness, testcase counts, non-empty expected outputs, function-mode argument shape, and the official solution through the sandbox validation adapter. ACM drafts use the existing sandbox executor directly. Python function-mode drafts store their function signature on the approved problem, render a dynamic starter in the workbench, and run through the same dynamic harness during submission. The dynamic Python harness accepts newline-separated JSON argument values, a single JSON array matching all arguments, or a single JSON object keyed by argument name, which makes DeepSeek-style generated drafts less brittle while preserving deterministic judging.
 
 Rules:
 
@@ -257,17 +262,20 @@ The Docker judge runtime includes Python `numpy==2.2.6` and CPU `torch==2.7.1+cp
 Recommended runtime:
 
 ```bash
-llama-server -m /models/qwen2.5-coder-3b-instruct-q4_k_m.gguf \
-  --host 0.0.0.0 \
+llama-server -m %USERPROFILE%\Models\qwen\models\qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+  --host 127.0.0.1 \
   --port 8080 \
-  -c 8192 \
-  -np 2
+  --alias qwen2.5-coder-7b-instruct-q4_k_m \
+  --ctx-size 4096 \
+  --n-gpu-layers 99 \
+  --parallel 1
 ```
 
 Recommended models:
 
 - Low resource: Qwen2.5-Coder-1.5B-Instruct-GGUF, Q4_K_M or similar 4-bit quantization.
 - Default quality: Qwen2.5-Coder-3B-Instruct-GGUF, Q4_K_M or similar 4-bit quantization.
+- Current local deployment pattern: Qwen2.5-Coder-7B-Instruct-GGUF Q4_K_M stored outside the repo under `%USERPROFILE%\Models\qwen`. Reusable local start/stop scripts can live at `%USERPROFILE%\Models\qwen\start-qwen-llama-server.ps1` and `%USERPROFILE%\Models\qwen\stop-qwen-llama-server.ps1`.
 
 FastOJ configuration:
 
@@ -275,7 +283,7 @@ FastOJ configuration:
 AI_PROVIDER=openai_compatible
 AI_BASE_URL=http://localhost:8080/v1
 AI_API_KEY=sk-no-key-required
-AI_MODEL=qwen2.5-coder-3b-instruct
+AI_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
 
 In Docker Compose on Docker Desktop, use:
@@ -289,7 +297,7 @@ For the in-page `Qwen local` selector, keep `AI_PROVIDER=openai_compatible` and 
 ```bash
 AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
 AI_QWEN_API_KEY=sk-no-key-required
-AI_QWEN_MODEL=qwen2.5-coder-3b-instruct
+AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
 
 If the local Qwen server is not running or the port is wrong, AI actions return HTTP 503 with a clear provider-unreachable message instead of a generic server error.
@@ -316,13 +324,13 @@ AI_DEEPSEEK_MODEL=deepseek-v4-flash
 | `AI_PROVIDER` | `disabled` | `disabled` or `openai_compatible` |
 | `AI_BASE_URL` | `http://localhost:8080/v1` | OpenAI-compatible base URL |
 | `AI_API_KEY` | `sk-no-key-required` | Provider API key |
-| `AI_MODEL` | `qwen2.5-coder-3b-instruct` | Chat model |
+| `AI_MODEL` | `qwen2.5-coder-7b-instruct-q4_k_m` | Chat model |
 | `AI_DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Named DeepSeek profile base URL |
 | `AI_DEEPSEEK_API_KEY` | empty | Named DeepSeek profile API key |
 | `AI_DEEPSEEK_MODEL` | `deepseek-v4-flash` | Named DeepSeek profile model |
 | `AI_QWEN_BASE_URL` | `http://host.docker.internal:8080/v1` | Named local Qwen profile base URL for Docker Desktop |
 | `AI_QWEN_API_KEY` | `sk-no-key-required` | Named local Qwen profile API key |
-| `AI_QWEN_MODEL` | `qwen2.5-coder-3b-instruct` | Named local Qwen profile model |
+| `AI_QWEN_MODEL` | `qwen2.5-coder-7b-instruct-q4_k_m` | Named local Qwen profile model |
 | `AI_TIMEOUT_SECONDS` | `60` | AI request timeout |
 | `AI_MAX_OUTPUT_TOKENS` | `1200` | AI response token cap |
 
@@ -354,9 +362,9 @@ docker compose up --build
 Latest verification from this workspace:
 
 - `uv run ruff check .`: passed.
-- `uv run pytest`: passed, 86 tests passed; existing timezone deprecation warnings remain in older tests and service timestamp code.
-- `cd frontend && npm run build`: passed after admin-agent cleanup and admin bootstrap docs, with existing Monaco/Shiki chunk-size warnings.
-- `cd frontend && npm test`: passed, 6 test files and 10 tests passed; jsdom printed expected canvas `getContext` warnings.
+- `uv run pytest`: passed, 92 tests passed; existing timezone deprecation warnings remain in older tests and service timestamp code.
+- `cd frontend && npm run build`: passed after design-token, localized-search, and stale AI-state edits, with existing Monaco/Shiki chunk-size warnings.
+- `cd frontend && npm test`: passed, 8 test files and 13 tests passed; jsdom printed expected canvas `getContext` warnings.
 - `docker compose build judge-runtime`: passed after adding NumPy and CPU PyTorch to the judge image.
 - `docker compose up --build -d api`: passed and rebuilt/recreated the API container with the latest frontend bundle.
 - `docker compose ps`: API and worker healthy; PostgreSQL and Redis healthy; judge runtime running.
@@ -364,9 +372,14 @@ Latest verification from this workspace:
 - `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000`: passed with HTTP 200 and returned rebuilt frontend HTML.
 - `docker compose config`: passed.
 - `docker compose up --build -d api worker`: passed after admin bootstrap and cleanup work; API and worker are healthy.
+- `docker compose up --build -d api worker`: passed after the acceptance-harness and frontend polish batch; API and worker are healthy.
+- `docker compose up --build -d api worker`: passed after the DeepSeek authoring and library-layout follow-up; API and worker are healthy.
+- Browser smoke at `http://127.0.0.1:8000`: verified the real rendered library card/list toggle, list mode with 15 one-row problem entries, card mode with 15 cards, no horizontal overflow, no `[object Object]`, and no visible hidden-test sentinel text. Screenshot capture still timed out in the browser plugin.
+- Browser smoke at `http://127.0.0.1:8000`: inspected the real rendered library and workbench at 1280px, captured library/workbench screenshots during the audit, confirmed no horizontal workbench overflow, no `[object Object]`, no visible hidden-test content in the run result, and AI error state clearing on a new run.
 - Docker-backed public run for Two Sum C++ function mode passed with `result=ac` after fixing compiled-language stdin redirection and sandbox workspace permissions.
 - Frontend build/test and backend tests passed after the model selector, localized graph, structured sample cards, discussion/settings views, and acceptance-rate clamping work.
-- `Get-Command llama-server`: not found in the current PATH. The `qwen-local` UI/backend profile is wired, but a local OpenAI-compatible Qwen server still needs to be installed and started before that selector can return real model responses.
+- Local Qwen deployment: `llama-server` b9060 was installed outside the repo under a user-level `%USERPROFILE%\Models\qwen` directory, Qwen2.5-Coder-7B-Instruct Q4_K_M was stored in that external model directory, and `/v1/models` plus `/v1/chat/completions` passed smoke tests on `http://127.0.0.1:8080/v1`.
+- FastOJ API smoke with `model_profile=qwen-local`: temporary user registration/login, public problem lookup, and AI hint request passed against the Docker API using `http://host.docker.internal:8080/v1`.
 - `docker compose exec -T api uv run python -m backend.scripts.seed_data`: passed and normalized 15 existing problems in the current database; all bundled problems now have at least 10 testcase rows and at least two public samples.
 - `docker compose exec -T worker ... SandboxExecutor`: passed for a Python submission importing both NumPy and PyTorch.
 - Real API public run and full submit for Two Sum function mode passed with `result=ac`; the old `Runtime error (exit code 2)` path is fixed.
@@ -377,6 +390,8 @@ Latest verification from this workspace:
 - Problem cards now show both supported modes; `Valid Parentheses` has function-mode starters and backend wrapper coverage in addition to ACM mode.
 
 ## Manual Acceptance Path
+
+The repeatable acceptance harness is recorded in [`docs/ACCEPTANCE_HARNESS.md`](docs/ACCEPTANCE_HARNESS.md). It covers the required automated baseline, browser smoke matrix, screenshot inventory, hidden-test safety checks, and the Playwright automation roadmap without adding a new browser-test dependency in this batch.
 
 1. Open the frontend.
 2. Register and log in.

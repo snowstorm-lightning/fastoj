@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 
@@ -30,7 +30,7 @@ import {
   getVisualSpec,
   type JudgeMode,
 } from "./lib/problemModes";
-import { localizedProblem, type Locale, UI, verdictInfo } from "./lib/i18n";
+import { localizedProblem, matchesLocalizedProblem, type Locale, UI, verdictInfo } from "./lib/i18n";
 import { measureTrainingText } from "./lib/textLayout";
 import { LANGUAGES, useAppStore } from "./stores/useAppStore";
 import { AICopilotPanel } from "./components/AICopilotPanel";
@@ -45,6 +45,7 @@ const queryClient = new QueryClient();
 type View = "library" | "workbench" | "graph" | "auth" | "settings" | "admin";
 type DetailTab = "cases" | "solution" | "judge" | "trail" | "discussion";
 type AuthMode = "login" | "register";
+type LibraryLayout = "card" | "list";
 type DiscussionPost = { id: string; author: string; body: string; createdAt: string };
 type AIChatLine = { id: string; role: "user" | "assistant"; message: string; suggestions?: string[] };
 
@@ -392,15 +393,25 @@ function LibraryPage({
   const [difficulty, setDifficulty] = useState("");
   const [tags, setTags] = useState(selectedTag);
   const [page, setPage] = useState(1);
+  const [layout, setLayout] = useState<LibraryLayout>(() => {
+    const saved = localStorage.getItem("fastoj.libraryLayout");
+    return saved === "list" || saved === "card" ? saved : "card";
+  });
 
   useEffect(() => {
     setTags(selectedTag);
     setPage(1);
   }, [selectedTag]);
 
-  const filters: ProblemFilters = { keyword, difficulty, tags, page };
+  useEffect(() => {
+    localStorage.setItem("fastoj.libraryLayout", layout);
+  }, [layout]);
+
+  const trimmedKeyword = keyword.trim();
+  const needsLocalizedSearch = locale === "zh" && /[^\x00-\x7F]/.test(trimmedKeyword);
+  const filters: ProblemFilters = { keyword: needsLocalizedSearch ? "" : keyword, difficulty, tags, page };
   const problemsQuery = useQuery({ queryKey: ["problems", filters], queryFn: () => api.problems(filters) });
-  const problems = problemsQuery.data ?? [];
+  const problems = (problemsQuery.data ?? []).filter((problem) => matchesLocalizedProblem(problem, locale, keyword));
   const aiCount = problems.filter((problem) => getProblemMode(problem).isAiPractice).length;
   const functionCount = problems.filter((problem) => getProblemMode(problem).supportsFunction).length;
   const averageAc = problems.length
@@ -420,8 +431,8 @@ function LibraryPage({
       <aside className="library-sidebar">
         <div className="filter-group">
           <strong>{text.filters}</strong>
-          <input placeholder={text.keyword} value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-          <DifficultyDropdown value={difficulty} locale={locale} onChange={setDifficulty} />
+          <input placeholder={text.keyword} value={keyword} onChange={(event) => { setKeyword(event.target.value); setPage(1); }} />
+          <DifficultyDropdown value={difficulty} locale={locale} onChange={(value) => { setDifficulty(value); setPage(1); }} />
           <input placeholder={text.tagsPlaceholder} value={tags} onChange={(event) => { setTags(event.target.value); setPage(1); }} />
           <button title={text.resetFilters} onClick={resetFilters}>{text.resetFilters}</button>
         </div>
@@ -446,10 +457,23 @@ function LibraryPage({
             <button onClick={onGraph}>{text.graph}</button>
           </div>
         </div>
-        <div className="problem-list" aria-label={locale === "zh" ? "题目列表" : "Problem list"}>
+        <div className="library-controls">
+          <span className="muted">{text.layout}</span>
+          <div className="segmented layout-toggle" role="group" aria-label={text.layoutOptions}>
+            <button className={layout === "card" ? "active" : ""} aria-pressed={layout === "card"} onClick={() => setLayout("card")}>
+              {text.cardLayout}
+            </button>
+            <button className={layout === "list" ? "active" : ""} aria-pressed={layout === "list"} onClick={() => setLayout("list")}>
+              {text.listLayout}
+            </button>
+          </div>
+        </div>
+        <div className={layout === "list" ? "problem-list problem-list-rows" : "problem-list"} aria-label={locale === "zh" ? "题目列表" : "Problem list"}>
           {problemsQuery.isLoading ? <p className="muted">{locale === "zh" ? "加载题库中..." : "Loading problems..."}</p> : null}
           {problems.map((problem) => (
-            <ProblemCard key={problem.id} problem={problem} locale={locale} active={problem.id === selectedId} onSelect={() => onSelect(problem.id)} />
+            layout === "list"
+              ? <ProblemRow key={problem.id} problem={problem} locale={locale} active={problem.id === selectedId} onSelect={() => onSelect(problem.id)} />
+              : <ProblemCard key={problem.id} problem={problem} locale={locale} active={problem.id === selectedId} onSelect={() => onSelect(problem.id)} />
           ))}
         </div>
         <div className="pager">
@@ -466,11 +490,22 @@ function Metric({ label, value }: { label: string; value: number | string }) {
   return <div className="metric"><strong>{value}</strong><span>{label}</span></div>;
 }
 
+function ProblemModeBadges({ problem, locale }: { problem: ProblemListItem; locale: Locale }) {
+  const text = UI[locale];
+  const mode = getProblemMode(problem);
+  return (
+    <>
+      {mode.supportsFunction ? <span>{text.functionMode}</span> : null}
+      {mode.supportsAcm ? <span>{text.acmMode}</span> : null}
+      {mode.isAiPractice ? <span>{text.aiAlgorithms}</span> : null}
+    </>
+  );
+}
+
 function ProblemCard({ problem, locale, active, onSelect }: { problem: ProblemListItem; locale: Locale; active: boolean; onSelect: () => void }) {
   const displayProblem = localizedProblem(problem, locale);
   const text = UI[locale];
   const titleLayout = measureTrainingText(`${displayProblem.title} ${displayProblem.tags.join(" ")}`, 280, "14px Inter, system-ui, sans-serif", 18);
-  const mode = getProblemMode(displayProblem);
   return (
     <button
       className={active ? "problem-card active" : "problem-card"}
@@ -480,14 +515,135 @@ function ProblemCard({ problem, locale, active, onSelect }: { problem: ProblemLi
     >
       <span className={`difficulty ${displayProblem.difficulty.toLowerCase()}`}>{displayProblem.difficulty}</span>
       <strong>{displayProblem.title}</strong>
-      <span className="tag-line">{displayProblem.tags.join(" / ") || "General"}</span>
+      <span className="tag-line">{displayProblem.tags.join(" / ") || text.noTags}</span>
       <span className="mode-line">
-        {mode.supportsFunction ? <span>{text.functionMode}</span> : null}
-        {mode.supportsAcm ? <span>{text.acmMode}</span> : null}
-        {mode.isAiPractice ? <span>{text.aiAlgorithms}</span> : null}
+        <ProblemModeBadges problem={displayProblem} locale={locale} />
       </span>
-      <span className="card-meta">{displayProblem.accepted_submissions}/{displayProblem.total_submissions} accepted - {percent(displayProblem.ac_rate)}%</span>
+      <span className="card-meta">{text.solved} {displayProblem.accepted_submissions}/{displayProblem.total_submissions} - {text.acceptance} {percent(displayProblem.ac_rate)}%</span>
     </button>
+  );
+}
+
+function ProblemRow({ problem, locale, active, onSelect }: { problem: ProblemListItem; locale: Locale; active: boolean; onSelect: () => void }) {
+  const displayProblem = localizedProblem(problem, locale);
+  const text = UI[locale];
+  return (
+    <button
+      className={active ? "problem-row active" : "problem-row"}
+      title={`${text.openProblem}: ${displayProblem.title}`}
+      onClick={onSelect}
+    >
+      <span className="problem-row-title">
+        <strong>{displayProblem.title}</strong>
+        <small>{displayProblem.slug}</small>
+      </span>
+      <span className={`difficulty ${displayProblem.difficulty.toLowerCase()}`}>{displayProblem.difficulty}</span>
+      <span className="problem-row-tags" aria-label={text.tags}>{displayProblem.tags.join(" / ") || text.noTags}</span>
+      <span className="mode-line problem-row-modes" aria-label={text.modes}>
+        <ProblemModeBadges problem={displayProblem} locale={locale} />
+      </span>
+      <span className="problem-row-stats">
+        <span>{text.solved} {displayProblem.accepted_submissions}/{displayProblem.total_submissions}</span>
+        <span>{text.acceptance} {percent(displayProblem.ac_rate)}%</span>
+      </span>
+      <span className="problem-row-open">{text.openProblem}</span>
+    </button>
+  );
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function validationLabel(name: string, locale: Locale): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    title: { zh: "题目标题", en: "Title" },
+    description: { zh: "题目描述", en: "Description" },
+    official_solution_code: { zh: "官方解法代码", en: "Official solution code" },
+    official_solution_explanation: { zh: "官方解法说明", en: "Official solution explanation" },
+    time_complexity: { zh: "时间复杂度", en: "Time complexity" },
+    space_complexity: { zh: "空间复杂度", en: "Space complexity" },
+    function_signature: { zh: "函数签名", en: "Function signature" },
+    function_testcase_inputs: { zh: "函数用例参数格式", en: "Function testcase input shape" },
+    input_format: { zh: "输入格式", en: "Input format" },
+    output_format: { zh: "输出格式", en: "Output format" },
+    public_sample_count: { zh: "公开样例数量", en: "Public sample count" },
+    hidden_testcase_count: { zh: "隐藏用例数量", en: "Hidden testcase count" },
+    non_empty_outputs: { zh: "期望输出非空", en: "Non-empty expected outputs" },
+    official_solution: { zh: "官方解法沙箱验证", en: "Official solution sandbox run" },
+  };
+  return labels[name]?.[locale] ?? name;
+}
+
+function validationStatusMessage(status: string, summary: unknown, locale: Locale): string {
+  const report = recordValue(summary);
+  const failedChecks = stringList(report.failed_checks);
+  const caseSummary = recordValue(report.case_summary);
+  const failedCases = Number(caseSummary.failed ?? 0);
+  if (status === "validated" || report.passed === true) {
+    return locale === "zh" ? "草稿已通过结构校验和官方解法验证。" : "Draft passed schema and official-solution validation.";
+  }
+  if (failedChecks.length) {
+    const labels = failedChecks.slice(0, 3).map((name) => validationLabel(name, locale)).join(locale === "zh" ? "、" : ", ");
+    const suffix = failedChecks.length > 3 ? (locale === "zh" ? " 等" : ", ...") : "";
+    return locale === "zh" ? `校验未通过：${labels}${suffix}` : `Validation failed: ${labels}${suffix}`;
+  }
+  if (failedCases > 0) {
+    return locale === "zh" ? `官方解法有 ${failedCases} 个用例未通过。` : `Official solution failed ${failedCases} testcase(s).`;
+  }
+  return locale === "zh" ? "草稿校验未通过，请查看下方安全摘要。" : "Draft validation failed. Check the safe summary below.";
+}
+
+function ValidationReport({ draft, locale }: { draft: ProblemDraft; locale: Locale }) {
+  const report = recordValue(draft.validation_report ?? draft.validation_summary);
+  const checks = Array.isArray(report.checks) ? report.checks.map(recordValue) : [];
+  const failedChecks = stringList(report.failed_checks);
+  const caseSummary = recordValue(report.case_summary);
+  const passed = report.passed === true || draft.status === "validated" || draft.status === "approved";
+  const publicCount = Number(report.public_sample_count ?? 0);
+  const hiddenCount = Number(report.hidden_testcase_count ?? 0);
+  const failedCases = Number(caseSummary.failed ?? 0);
+  const failedStatuses = stringList(caseSummary.failed_statuses);
+  return (
+    <div className="validation-report">
+      <div className="validation-head">
+        <span className={`status-badge ${passed ? "ac" : "wa"}`}>{passed ? "OK" : "Needs review"}</span>
+        <strong>{validationStatusMessage(draft.status, report, locale)}</strong>
+      </div>
+      <div className="validation-metrics">
+        <span><strong>{publicCount}</strong>{locale === "zh" ? "公开样例" : "public samples"}</span>
+        <span><strong>{hiddenCount}</strong>{locale === "zh" ? "隐藏用例" : "hidden cases"}</span>
+        <span><strong>{failedCases}</strong>{locale === "zh" ? "失败用例" : "failed cases"}</span>
+      </div>
+      {failedChecks.length ? (
+        <div className="validation-failures">
+          <strong>{locale === "zh" ? "失败检查" : "Failed checks"}</strong>
+          <ul>
+            {failedChecks.map((name) => <li key={name}>{validationLabel(name, locale)}</li>)}
+          </ul>
+        </div>
+      ) : null}
+      {failedStatuses.length ? (
+        <p className="muted">{locale === "zh" ? "沙箱状态" : "Sandbox statuses"}: {failedStatuses.join(", ")}</p>
+      ) : null}
+      {checks.length ? (
+        <div className="validation-checks">
+          {checks.map((check) => {
+            const name = String(check.name ?? "check");
+            const ok = check.passed === true;
+            return (
+              <span className={ok ? "validation-check passed" : "validation-check failed"} key={name}>
+                {ok ? "✓" : "!"} {validationLabel(name, locale)}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -522,6 +678,10 @@ function Workspace({
   const [chatLines, setChatLines] = useState<AIChatLine[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("cases");
+  const activeProblemIdRef = useRef<string | null>(problemId);
+  const activeSubmissionIdRef = useRef<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
 
   const problemQuery = useQuery({ queryKey: ["problem", problemId], queryFn: () => api.problem(problemId ?? ""), enabled: Boolean(problemId) });
   const trailQuery = useQuery({ queryKey: ["submissions", problemId, submission?.id], queryFn: () => api.submissions(problemId ?? ""), enabled: Boolean(problemId && authenticated) });
@@ -539,6 +699,18 @@ function Workspace({
   useEffect(() => { localStorage.setItem("fastoj.rightWidth", String(rightWidth)); }, [rightWidth]);
   useEffect(() => { localStorage.setItem("fastoj.aiModel", aiModel); }, [aiModel]);
   useEffect(() => { if (problemId) setRecentProblemId(problemId); }, [problemId, setRecentProblemId]);
+
+  useEffect(() => {
+    activeProblemIdRef.current = problemId;
+    activeSubmissionIdRef.current = null;
+    stopStatusStream();
+    setSubmission(null);
+    setEvents([]);
+    clearCopilotState();
+    setDetailTab("cases");
+  }, [problemId]);
+
+  useEffect(() => () => stopStatusStream(), []);
 
   useEffect(() => {
     if (!problemId || !problem) return;
@@ -583,20 +755,47 @@ function Workspace({
     window.addEventListener("pointerup", onUp);
   }
 
+  function clearCopilotState() {
+    setExplain(null);
+    setReview(null);
+    setHint(null);
+    setChatLines([]);
+    setAiError(null);
+  }
+
+  function stopStatusStream() {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+  }
+
   async function judge(runOnly: boolean) {
     if (!problemId || functionBlocked) return;
     if (!authenticated || !localStorage.getItem("fastoj.jwt")) {
       onRequireAuth();
       return;
     }
+    const requestProblemId = problemId;
+    stopStatusStream();
+    activeSubmissionIdRef.current = null;
+    clearCopilotState();
+    setSubmission(null);
     setDetailTab("judge");
     setRightOpen(true);
     setEvents([{ type: "pending", status: "pending", progress: 0 }]);
     try {
       const created = await api.submit(problemId, language, code, runOnly, judgeMode);
+      if (activeProblemIdRef.current !== requestProblemId) return;
+      activeSubmissionIdRef.current = created.id;
       setSubmission(created as SubmissionDetail);
       connectStatus(created.id);
     } catch (error) {
+      if (activeProblemIdRef.current !== requestProblemId) return;
       if (isUnauthorized(error)) {
         localStorage.removeItem("fastoj.jwt");
         setEvents([{ type: "error", status: "finished", result: "se", message: text.authExpired }]);
@@ -609,27 +808,44 @@ function Workspace({
   }
 
   function connectStatus(submissionId: string) {
+    stopStatusStream();
+    activeSubmissionIdRef.current = submissionId;
     const socket = makeJudgeSocket(submissionId);
     let polling = false;
     const poll = window.setInterval(async () => {
+      if (activeSubmissionIdRef.current !== submissionId) {
+        window.clearInterval(poll);
+        if (pollRef.current === poll) pollRef.current = null;
+        return;
+      }
       if (polling) return;
       polling = true;
       try {
         const detail = await api.submission(submissionId);
+        if (activeSubmissionIdRef.current !== submissionId) return;
         setSubmission(detail);
-        if (detail.status === "finished") window.clearInterval(poll);
+        if (detail.status === "finished") {
+          window.clearInterval(poll);
+          if (pollRef.current === poll) pollRef.current = null;
+        }
       } finally {
         polling = false;
       }
     }, 1600);
+    pollRef.current = poll;
     if (!socket) return;
+    socketRef.current = socket;
     socket.onmessage = (event) => {
+      if (activeSubmissionIdRef.current !== submissionId) return;
       const payload = JSON.parse(event.data);
       const data = payload.data ?? {};
       setEvents((items) => [...items, { type: payload.type, ...data }]);
       if (payload.type === "result") {
         window.clearInterval(poll);
-        api.submission(submissionId).then(setSubmission).catch(() => undefined);
+        if (pollRef.current === poll) pollRef.current = null;
+        api.submission(submissionId).then((detail) => {
+          if (activeSubmissionIdRef.current === submissionId) setSubmission(detail);
+        }).catch(() => undefined);
       }
     };
     socket.onerror = () => socket.close();
@@ -637,37 +853,49 @@ function Workspace({
 
   async function explainSubmission() {
     if (!submission) return;
-    const cached = getCachedExplain(`${submission.id}.${aiModel}.${locale}`);
+    const submissionId = submission.id;
+    const cached = getCachedExplain(`${submissionId}.${aiModel}.${locale}`);
     if (cached) {
+      if (activeSubmissionIdRef.current !== submissionId) return;
       setExplain(cached);
       return;
     }
     try {
       setAiError(null);
-      const result = await api.explain(submission.id, aiModel, locale);
+      const result = await api.explain(submissionId, aiModel, locale);
+      if (activeSubmissionIdRef.current !== submissionId) return;
       setExplain(result);
-      setCachedExplain(`${submission.id}.${aiModel}.${locale}`, result);
+      setCachedExplain(`${submissionId}.${aiModel}.${locale}`, result);
     } catch (error) {
+      if (activeSubmissionIdRef.current !== submissionId) return;
       setAiError(error instanceof Error ? error.message : "AI explain failed");
     }
   }
 
   async function reviewSubmission() {
     if (!submission) return;
+    const submissionId = submission.id;
     try {
       setAiError(null);
-      setReview(await api.review(submission.id, aiModel, locale));
+      const result = await api.review(submissionId, aiModel, locale);
+      if (activeSubmissionIdRef.current !== submissionId) return;
+      setReview(result);
     } catch (error) {
+      if (activeSubmissionIdRef.current !== submissionId) return;
       setAiError(error instanceof Error ? error.message : "AI review failed");
     }
   }
 
   async function requestHint(level: 1 | 2 | 3) {
     if (!problemId) return;
+    const requestProblemId = problemId;
     try {
       setAiError(null);
-      setHint(await api.hint(problemId, level, language, code, aiModel, locale));
+      const result = await api.hint(problemId, level, language, code, aiModel, locale);
+      if (activeProblemIdRef.current !== requestProblemId) return;
+      setHint(result);
     } catch (error) {
+      if (activeProblemIdRef.current !== requestProblemId) return;
       setAiError(error instanceof Error ? error.message : "AI hint failed");
     }
   }
@@ -677,16 +905,19 @@ function Workspace({
       setAiError(locale === "zh" ? "请先运行或提交一次代码，再开始对话。" : "Run or submit once before starting a chat.");
       return;
     }
+    const submissionId = submission.id;
     const userLine: AIChatLine = { id: `${Date.now()}.user`, role: "user", message };
     setChatLines((items) => [...items, userLine]);
     try {
       setAiError(null);
-      const result: AIChat = await api.chat(submission.id, message, aiModel, locale);
+      const result: AIChat = await api.chat(submissionId, message, aiModel, locale);
+      if (activeSubmissionIdRef.current !== submissionId) return;
       setChatLines((items) => [
         ...items,
         { id: `${Date.now()}.assistant`, role: "assistant", message: result.message, suggestions: result.suggested_actions },
       ]);
     } catch (error) {
+      if (activeSubmissionIdRef.current !== submissionId) return;
       setAiError(error instanceof Error ? error.message : "AI chat failed");
     }
   }
@@ -969,6 +1200,23 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       draftPreview: "草稿预览",
       validation: "验证报告",
       steps: "执行轨迹",
+      searchUsers: "搜索用户名或邮箱",
+      searchProblems: "搜索题名或 slug",
+      allRoles: "全部角色",
+      allStatus: "全部状态",
+      allDifficulty: "全部难度",
+      allVisibility: "全部可见性",
+      manage: "管理",
+      edit: "编辑",
+      save: "保存",
+      previous: "上一页",
+      next: "下一页",
+      noResults: "没有匹配结果。",
+      pageSummary: "第 {page} / {totalPages} 页，共 {total} 条",
+      titleLabel: "标题",
+      descriptionLabel: "描述",
+      hintLabel: "提示",
+      tagsLabel: "标签（逗号分隔）",
     }
     : {
       title: "Admin",
@@ -995,17 +1243,35 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       draftPreview: "Draft preview",
       validation: "Validation report",
       steps: "Run steps",
+      searchUsers: "Search username or email",
+      searchProblems: "Search title or slug",
+      allRoles: "All roles",
+      allStatus: "All status",
+      allDifficulty: "All difficulty",
+      allVisibility: "All visibility",
+      manage: "Manage",
+      edit: "Edit",
+      save: "Save",
+      previous: "Previous",
+      next: "Next",
+      noResults: "No matching results.",
+      pageSummary: "Page {page} / {totalPages}, {total} total",
+      titleLabel: "Title",
+      descriptionLabel: "Description",
+      hintLabel: "Hint",
+      tagsLabel: "Tags, comma separated",
     };
-  const overviewQuery = useQuery({
-    queryKey: ["admin-overview", currentUser?.id],
-    queryFn: () => api.adminOverview(),
-    enabled: currentUser?.role === "admin",
-  });
-  const draftsQuery = useQuery({
-    queryKey: ["admin-problem-drafts", currentUser?.id],
-    queryFn: () => api.adminProblemDrafts(),
-    enabled: currentUser?.role === "admin",
-  });
+  const [userSearch, setUserSearch] = useState("");
+  const [userRoleFilter, setUserRoleFilter] = useState("");
+  const [userStatusFilter, setUserStatusFilter] = useState("");
+  const [userPage, setUserPage] = useState(1);
+  const [problemSearch, setProblemSearch] = useState("");
+  const [problemDifficultyFilter, setProblemDifficultyFilter] = useState("");
+  const [problemVisibilityFilter, setProblemVisibilityFilter] = useState("");
+  const [problemPage, setProblemPage] = useState(1);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
+  const [problemEdit, setProblemEdit] = useState({ title: "", description: "", tags: "", hint: "" });
   const [agentTopic, setAgentTopic] = useState("array two pointers");
   const [agentTags, setAgentTags] = useState("array,two-pointers");
   const [agentDifficulty, setAgentDifficulty] = useState<"easy" | "medium" | "hard">("medium");
@@ -1015,6 +1281,38 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const [agentMessage, setAgentMessage] = useState("");
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const [selectedDraft, setSelectedDraft] = useState<ProblemDraft | null>(null);
+  const overviewQuery = useQuery({
+    queryKey: [
+      "admin-overview",
+      currentUser?.id,
+      userSearch,
+      userRoleFilter,
+      userStatusFilter,
+      userPage,
+      problemSearch,
+      problemDifficultyFilter,
+      problemVisibilityFilter,
+      problemPage,
+    ],
+    queryFn: () => api.adminOverview({
+      userQuery: userSearch.trim() || undefined,
+      userRole: userRoleFilter || undefined,
+      userStatus: userStatusFilter || undefined,
+      userPage,
+      userPageSize: 8,
+      problemQuery: problemSearch.trim() || undefined,
+      problemDifficulty: problemDifficultyFilter || undefined,
+      problemVisibility: problemVisibilityFilter || undefined,
+      problemPage,
+      problemPageSize: 8,
+    }),
+    enabled: currentUser?.role === "admin",
+  });
+  const draftsQuery = useQuery({
+    queryKey: ["admin-problem-drafts", currentUser?.id],
+    queryFn: () => api.adminProblemDrafts({ pageSize: 8 }),
+    enabled: currentUser?.role === "admin",
+  });
 
   if (currentUser?.role !== "admin") {
     return (
@@ -1067,7 +1365,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       const draft = await api.adminProblemDraft(result.draft_id);
       setAgentSteps(run.steps ?? []);
       setSelectedDraft(draft);
-      setAgentMessage(`${result.status}: ${String(result.validation_summary?.summary ?? "")}`);
+      setAgentMessage(validationStatusMessage(result.status, result.validation_summary, locale));
       await draftsQuery.refetch();
     } catch (error) {
       setAgentMessage(error instanceof Error ? error.message : locale === "zh" ? "生成失败。" : "Generation failed.");
@@ -1096,7 +1394,39 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
 
   const users = overviewQuery.data?.users ?? [];
   const problems = overviewQuery.data?.problems ?? [];
+  const userPagination = overviewQuery.data?.pagination?.users ?? { page: userPage, page_size: 8, total: 0, total_pages: 0 };
+  const problemPagination = overviewQuery.data?.pagination?.problems ?? { page: problemPage, page_size: 8, total: 0, total_pages: 0 };
   const drafts = draftsQuery.data ?? [];
+  const selectedUser = users.find((user: any) => user.id === selectedUserId) ?? null;
+  const selectedProblem = problems.find((problem: any) => problem.id === selectedProblemId) ?? null;
+
+  function pageSummary(pagination: any) {
+    const totalPages = Math.max(Number(pagination.total_pages ?? 0), 1);
+    return text.pageSummary
+      .replace("{page}", String(pagination.page ?? 1))
+      .replace("{totalPages}", String(totalPages))
+      .replace("{total}", String(pagination.total ?? 0));
+  }
+
+  function chooseProblem(problem: any) {
+    setSelectedProblemId(problem.id);
+    setProblemEdit({
+      title: problem.title ?? "",
+      description: problem.description ?? "",
+      tags: (problem.tags ?? []).join(", "),
+      hint: problem.hint ?? "",
+    });
+  }
+
+  async function saveProblemEdit() {
+    if (!selectedProblemId) return;
+    await updateProblem(selectedProblemId, {
+      title: problemEdit.title,
+      description: problemEdit.description,
+      tags: problemEdit.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+      hint: problemEdit.hint,
+    });
+  }
 
   return (
     <main className="admin-page">
@@ -1163,7 +1493,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                   <span>{selectedDraft.slug} / {selectedDraft.status}</span>
                   <p>{selectedDraft.description}</p>
                   <h3>{text.validation}</h3>
-                  <pre>{JSON.stringify(selectedDraft.validation_report ?? selectedDraft.validation_summary ?? {}, null, 2)}</pre>
+                  <ValidationReport draft={selectedDraft} locale={locale} />
                   <div className="agent-actions">
                     <button className="primary" disabled={selectedDraft.status !== "validated"} onClick={approveSelectedDraft}>{text.approveDraft}</button>
                     <button disabled={selectedDraft.status === "approved" || selectedDraft.status === "rejected"} onClick={rejectSelectedDraft}>{text.rejectDraft}</button>
@@ -1175,9 +1505,44 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         </section>
         <div className="admin-grid">
           <section className="admin-panel">
-            <h2>{text.users}</h2>
-            {users.map((user: any) => (
-              <article className="admin-row" key={user.id}>
+            <div className="admin-panel-header">
+              <h2>{text.users}</h2>
+              <span className="muted">{pageSummary(userPagination)}</span>
+            </div>
+            <div className="admin-filters">
+              <input
+                value={userSearch}
+                onChange={(event) => {
+                  setUserSearch(event.target.value);
+                  setUserPage(1);
+                }}
+                placeholder={text.searchUsers}
+              />
+              <select
+                value={userRoleFilter}
+                onChange={(event) => {
+                  setUserRoleFilter(event.target.value);
+                  setUserPage(1);
+                }}
+              >
+                <option value="">{text.allRoles}</option>
+                <option value="user">{text.user}</option>
+                <option value="admin">{text.admin}</option>
+              </select>
+              <select
+                value={userStatusFilter}
+                onChange={(event) => {
+                  setUserStatusFilter(event.target.value);
+                  setUserPage(1);
+                }}
+              >
+                <option value="">{text.allStatus}</option>
+                <option value="active">{text.active}</option>
+                <option value="disabled">{text.disabled}</option>
+              </select>
+            </div>
+            {users.length ? users.map((user: any) => (
+              <article className={selectedUserId === user.id ? "admin-row active" : "admin-row"} key={user.id}>
                 <div>
                   <strong>{user.username}</strong>
                   <span>{user.email}</span>
@@ -1189,13 +1554,71 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 <button onClick={() => updateUser(user.id, { is_active: !user.is_active })}>
                   {user.is_active ? text.active : text.disabled}
                 </button>
+                <button onClick={() => setSelectedUserId(selectedUserId === user.id ? null : user.id)}>{text.manage}</button>
               </article>
-            ))}
+            )) : <p className="muted">{text.noResults}</p>}
+            <div className="admin-pagination">
+              <button disabled={userPage <= 1} onClick={() => setUserPage((page) => Math.max(1, page - 1))}>{text.previous}</button>
+              <button disabled={userPage >= Math.max(Number(userPagination.total_pages ?? 0), 1)} onClick={() => setUserPage((page) => page + 1)}>{text.next}</button>
+            </div>
+            {selectedUser ? (
+              <div className="admin-edit-panel">
+                <h3>{selectedUser.username}</h3>
+                <span className="muted">{selectedUser.id}</span>
+                <div className="admin-edit-grid">
+                  <label>{locale === "zh" ? "角色" : "Role"}
+                    <select value={selectedUser.role} onChange={(event) => updateUser(selectedUser.id, { role: event.target.value })}>
+                      <option value="user">{text.user}</option>
+                      <option value="admin">{text.admin}</option>
+                    </select>
+                  </label>
+                  <button onClick={() => updateUser(selectedUser.id, { is_active: !selectedUser.is_active })}>
+                    {selectedUser.is_active ? text.disabled : text.active}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
           <section className="admin-panel">
-            <h2>{text.problems}</h2>
-            {problems.map((problem: any) => (
-              <article className="admin-row problem-admin-row" key={problem.id}>
+            <div className="admin-panel-header">
+              <h2>{text.problems}</h2>
+              <span className="muted">{pageSummary(problemPagination)}</span>
+            </div>
+            <div className="admin-filters problem-filters">
+              <input
+                value={problemSearch}
+                onChange={(event) => {
+                  setProblemSearch(event.target.value);
+                  setProblemPage(1);
+                }}
+                placeholder={text.searchProblems}
+              />
+              <select
+                value={problemDifficultyFilter}
+                onChange={(event) => {
+                  setProblemDifficultyFilter(event.target.value);
+                  setProblemPage(1);
+                }}
+              >
+                <option value="">{text.allDifficulty}</option>
+                <option value="easy">easy</option>
+                <option value="medium">medium</option>
+                <option value="hard">hard</option>
+              </select>
+              <select
+                value={problemVisibilityFilter}
+                onChange={(event) => {
+                  setProblemVisibilityFilter(event.target.value);
+                  setProblemPage(1);
+                }}
+              >
+                <option value="">{text.allVisibility}</option>
+                <option value="public">{text.public}</option>
+                <option value="private">{text.private}</option>
+              </select>
+            </div>
+            {problems.length ? problems.map((problem: any) => (
+              <article className={selectedProblemId === problem.id ? "admin-row problem-admin-row active" : "admin-row problem-admin-row"} key={problem.id}>
                 <div>
                   <strong>{problem.title}</strong>
                 <span>{problem.slug} · {problem.difficulty} · {problem.tags.join(", ")}</span>
@@ -1213,8 +1636,31 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 <button onClick={() => savePythonSolution(problem.id)} disabled={problem.solution_count > 0}>
                   {problem.solution_count} {text.solutions}
                 </button>
+                <button onClick={() => selectedProblemId === problem.id ? setSelectedProblemId(null) : chooseProblem(problem)}>{text.edit}</button>
               </article>
-            ))}
+            )) : <p className="muted">{text.noResults}</p>}
+            <div className="admin-pagination">
+              <button disabled={problemPage <= 1} onClick={() => setProblemPage((page) => Math.max(1, page - 1))}>{text.previous}</button>
+              <button disabled={problemPage >= Math.max(Number(problemPagination.total_pages ?? 0), 1)} onClick={() => setProblemPage((page) => page + 1)}>{text.next}</button>
+            </div>
+            {selectedProblem ? (
+              <div className="admin-edit-panel problem-edit-panel">
+                <h3>{selectedProblem.title}</h3>
+                <span className="muted">{selectedProblem.slug} · {selectedProblem.mode} · {selectedProblem.testcase_count} {text.cases} · {selectedProblem.hidden_testcase_count} {text.hidden}</span>
+                <div className="admin-edit-grid">
+                  <label>{text.titleLabel}<input value={problemEdit.title} onChange={(event) => setProblemEdit((value) => ({ ...value, title: event.target.value }))} /></label>
+                  <label>{text.tagsLabel}<input value={problemEdit.tags} onChange={(event) => setProblemEdit((value) => ({ ...value, tags: event.target.value }))} /></label>
+                  <label>{text.descriptionLabel}<textarea value={problemEdit.description} onChange={(event) => setProblemEdit((value) => ({ ...value, description: event.target.value }))} /></label>
+                  <label>{text.hintLabel}<textarea value={problemEdit.hint} onChange={(event) => setProblemEdit((value) => ({ ...value, hint: event.target.value }))} /></label>
+                </div>
+                <div className="agent-actions">
+                  <button className="primary" onClick={saveProblemEdit}>{text.save}</button>
+                  <button onClick={() => updateProblem(selectedProblem.id, { is_public: !selectedProblem.is_public })}>
+                    {selectedProblem.is_public ? text.private : text.public}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
       </section>
