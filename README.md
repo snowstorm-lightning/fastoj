@@ -170,14 +170,16 @@ ignores `.env` and `.env.*`; `.env.example` contains safe placeholders only.
 
 ## Seeded Curriculum
 
-The bundled seed data gives you enough material to evaluate the whole experience:
+The bundled seed data is now large enough for sustained interview practice:
 
-- **Classic function problems:** Two Sum, Add Two Numbers, Longest Substring
-  Without Repeating Characters.
-- **Interview-list ACM problems:** Valid Parentheses, Maximum Subarray, Group
-  Anagrams, Merge Intervals, Climbing Stairs, Container With Most Water.
+- **Hot 100 interview track:** all 100 canonical Hot 100 problems, using
+  original FastOJ statements and deterministic ACM input/output for linked-list,
+  tree, design, and multi-answer tasks.
+- **Function-mode classics:** Two Sum, Add Two Numbers, Longest Substring
+  Without Repeating Characters, and Valid Parentheses include starter frames and
+  official Python references.
 - **AI/ML algorithm exercises:** Logistic Regression Sigmoid, KNN Majority Vote,
-  KMeans One Iteration, Scaled Dot-Product Attention, Softmax Cross Entropy,
+  KMeans One Iteration, Scaled Dot-Product Attention, Softmax Cross Entropy, and
   Attention Mask Apply.
 
 Function mode supports Python, C++, Java, JavaScript, TypeScript, Go, and selected

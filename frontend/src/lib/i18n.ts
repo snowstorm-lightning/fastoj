@@ -321,6 +321,9 @@ const PROBLEM_ZH: Record<string, { title: string; description?: string; hint?: s
   },
 };
 
+PROBLEM_ZH["longest-substring-without-repeating-characters"] =
+  PROBLEM_ZH["longest-substring-without-repeating"];
+
 export function localizedProblem<T extends ProblemDetail | ProblemListItem | undefined>(
   problem: T,
   locale: Locale,

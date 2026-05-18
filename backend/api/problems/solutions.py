@@ -21,6 +21,10 @@ ZH_EXPLANATIONS = {
     "attention-mask-apply": "先把 mask 为 0 的位置排除在 softmax 之外，只在可见位置归一化概率，被屏蔽位置输出 0。",
 }
 
+ZH_EXPLANATIONS["longest-substring-without-repeating-characters"] = ZH_EXPLANATIONS[
+    "longest-substring-without-repeating"
+]
+
 
 @router.get("")
 async def get_problem_solutions(

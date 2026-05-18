@@ -6,6 +6,7 @@ from datetime import datetime
 
 from backend.core.database import Base, SessionLocal, engine
 from backend.models import Difficulty, Problem, Solution, TestCase
+from backend.scripts.hot100_data import HOT100_LEGACY_SLUG_ALIASES, HOT100_PROBLEMS_DATA
 
 PROBLEMS_DATA = [
     {
@@ -16,9 +17,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.EASY,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Array", "Hash Table", "Function"],
+            "tags": ["Hot 100", "Array", "Hash Table", "Function"],
             "hint": "Use a hash table to remember values already scanned.",
-            "source": "Core function practice",
+            "source": "Hot 100 practice",
         },
         "testcases": [
             {"input": "[2,7,11,15]\n9", "output": "[0,1]", "is_sample": True, "is_hidden": False, "score": 10},
@@ -41,9 +42,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 2000,
             "memory_limit": 256,
-            "tags": ["Linked List", "Math", "Function"],
+            "tags": ["Hot 100", "Linked List", "Math", "Function"],
             "hint": "Walk both arrays and carry one digit at a time.",
-            "source": "Core function practice",
+            "source": "Hot 100 practice",
         },
         "testcases": [
             {"input": "[2,4,3]\n[5,6,4]", "output": "[7,0,8]", "is_sample": True, "is_hidden": False, "score": 10},
@@ -54,14 +55,14 @@ PROBLEMS_DATA = [
     {
         "problem": {
             "title": "Longest Substring Without Repeating Characters",
-            "slug": "longest-substring-without-repeating",
+            "slug": "longest-substring-without-repeating-characters",
             "description": "Given a string s, find the length of the longest substring without repeated characters.",
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 2000,
             "memory_limit": 256,
-            "tags": ["String", "Hash Table", "Sliding Window", "Function"],
+            "tags": ["Hot 100", "String", "Hash Table", "Sliding Window", "Function"],
             "hint": "Keep a moving left boundary and last-seen positions.",
-            "source": "Core function practice",
+            "source": "Hot 100 practice",
         },
         "testcases": [
             {"input": "abcabcbb", "output": "3", "is_sample": True, "is_hidden": False, "score": 10},
@@ -77,9 +78,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.EASY,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Interview", "Stack", "String"],
+            "tags": ["Hot 100", "Interview", "Stack", "String"],
             "hint": "Use a stack of expected closing brackets.",
-            "source": "Interview list practice",
+            "source": "Hot 100 practice",
         },
         "testcases": [
             {"input": "()[]{}", "output": "true", "is_sample": True, "is_hidden": False, "score": 10},
@@ -95,9 +96,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Interview", "Array", "Dynamic Programming"],
+            "tags": ["Hot 100", "Interview", "Array", "Dynamic Programming"],
             "hint": "Track the best subarray ending at the current position.",
-            "source": "Interview list practice",
+            "source": "Hot 100 practice",
         },
         "testcases": [
             {"input": "[-2,1,-3,4,-1,2,1,-5,4]", "output": "6", "is_sample": True, "is_hidden": False, "score": 10},
@@ -113,9 +114,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 2000,
             "memory_limit": 256,
-            "tags": ["Interview", "Array", "Hash Table", "String"],
+            "tags": ["Hot 100", "Interview", "Array", "Hash Table", "String"],
             "hint": "Use the sorted characters of each word as the hash key.",
-            "source": "Interview list practice",
+            "source": "Hot 100 practice",
         },
         "testcases": [
             {"input": "[\"eat\",\"tea\",\"tan\",\"ate\",\"nat\",\"bat\"]", "output": "[[\"ate\",\"eat\",\"tea\"],[\"bat\"],[\"nat\",\"tan\"]]", "is_sample": True, "is_hidden": False, "score": 10},
@@ -131,9 +132,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Interview", "Array", "Sorting"],
+            "tags": ["Hot 100", "Interview", "Array", "Sorting"],
             "hint": "Sort by left endpoint, then extend or start a new interval.",
-            "source": "Interview list practice",
+            "source": "Hot 100 practice",
         },
         "testcases": [
             {"input": "[[1,3],[2,6],[8,10],[15,18]]", "output": "[[1,6],[8,10],[15,18]]", "is_sample": True, "is_hidden": False, "score": 10},
@@ -149,9 +150,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.EASY,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Interview", "Dynamic Programming", "Math"],
+            "tags": ["Hot 100", "Interview", "Dynamic Programming", "Math"],
             "hint": "This is Fibonacci with small shifted base cases.",
-            "source": "Interview list practice",
+            "source": "Hot 100 practice",
         },
         "testcases": [
             {"input": "2", "output": "2", "is_sample": True, "is_hidden": False, "score": 10},
@@ -167,9 +168,9 @@ PROBLEMS_DATA = [
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 1000,
             "memory_limit": 256,
-            "tags": ["Interview", "Array", "Two Pointers"],
+            "tags": ["Hot 100", "Interview", "Array", "Two Pointers"],
             "hint": "Move the pointer at the shorter line inward.",
-            "source": "Interview list practice",
+            "source": "Hot 100 practice",
         },
         "testcases": [
             {"input": "[1,8,6,2,5,4,8,3,7]", "output": "49", "is_sample": True, "is_hidden": False, "score": 10},
@@ -287,11 +288,17 @@ PROBLEMS_DATA = [
     },
 ]
 
+PROBLEMS_DATA.extend(HOT100_PROBLEMS_DATA)
+
 
 DEFAULT_SOLUTIONS = {
     "add-two-numbers": {
         "code": "def add_two_numbers(l1, l2):\n    ans, carry, i = [], 0, 0\n    while i < len(l1) or i < len(l2) or carry:\n        total = carry\n        if i < len(l1): total += l1[i]\n        if i < len(l2): total += l2[i]\n        ans.append(total % 10)\n        carry = total // 10\n        i += 1\n    return ans\n",
         "explanation": "Walk both reversed digit arrays from low to high digits. Keep a carry and append total % 10 each step.",
+    },
+    "longest-substring-without-repeating-characters": {
+        "code": "def length_of_longest_substring(s):\n    left = 0\n    last = {}\n    best = 0\n    for right, ch in enumerate(s):\n        if ch in last and last[ch] >= left:\n            left = last[ch] + 1\n        last[ch] = right\n        best = max(best, right - left + 1)\n    return best\n",
+        "explanation": "Use a sliding window. When a repeated character appears inside the window, move the left boundary after its previous position.",
     },
     "longest-substring-without-repeating": {
         "code": "def length_of_longest_substring(s):\n    left = 0\n    last = {}\n    best = 0\n    for right, ch in enumerate(s):\n        if ch in last and last[ch] >= left:\n            left = last[ch] + 1\n        last[ch] = right\n        best = max(best, right - left + 1)\n    return best\n",
@@ -324,7 +331,7 @@ DEFAULT_SOLUTIONS = {
 }
 
 
-def _default_solution(item: dict) -> dict:
+def _default_solution(item: dict) -> dict | None:
     slug = item["problem"]["slug"]
     if item.get("solution"):
         return item["solution"]
@@ -336,13 +343,7 @@ def _default_solution(item: dict) -> dict:
             "space_complexity": "O(n)",
             **data,
         }
-    return {
-        "language": "python",
-        "code": "# Reference solution is intentionally concise.\n",
-        "explanation": item["problem"]["hint"] or "Follow the main pattern described in the statement.",
-        "time_complexity": "See explanation",
-        "space_complexity": "See explanation",
-    }
+    return None
 
 
 def _expanded_testcases(item: dict) -> list[dict]:
@@ -380,6 +381,10 @@ def seed_problems():
         for item in PROBLEMS_DATA:
             problem_data = item["problem"]
             existing = db.query(Problem).filter(Problem.slug == problem_data["slug"]).first()
+            if not existing:
+                legacy_slugs = HOT100_LEGACY_SLUG_ALIASES.get(problem_data["slug"], [])
+                if legacy_slugs:
+                    existing = db.query(Problem).filter(Problem.slug.in_(legacy_slugs)).first()
             if existing:
                 problem = existing
                 for key, value in problem_data.items():

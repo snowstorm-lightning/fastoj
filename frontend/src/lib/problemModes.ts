@@ -149,6 +149,9 @@ ${TODO}    return []
   },
 };
 
+FUNCTION_SPECS["longest-substring-without-repeating-characters"] =
+  FUNCTION_SPECS["longest-substring-without-repeating"];
+
 export const ACM_STARTERS: Record<string, string> = {
   python: "import sys\n\n# Read stdin and print the exact required answer.\ndata = sys.stdin.read().strip()\n# TODO: parse input and solve\nprint(data)\n",
   cpp: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    // TODO: parse stdin and print the answer\n    return 0;\n}\n",
@@ -237,6 +240,9 @@ const FUNCTION_STARTERS: Record<string, Partial<Record<string, string>>> = {
   },
 };
 
+FUNCTION_STARTERS["longest-substring-without-repeating-characters"] =
+  FUNCTION_STARTERS["longest-substring-without-repeating"];
+
 const VISUALS: Record<string, VisualSpec> = {
   "two-sum": {
     title: { zh: "哈希表扫描", en: "Hash Table Scan" },
@@ -295,6 +301,9 @@ const VISUALS: Record<string, VisualSpec> = {
     },
   },
 };
+
+VISUALS["longest-substring-without-repeating-characters"] =
+  VISUALS["longest-substring-without-repeating"];
 
 export function getFunctionSpec(problem?: AnyProblem | null): FunctionSpec | null {
   if (!problem) return null;

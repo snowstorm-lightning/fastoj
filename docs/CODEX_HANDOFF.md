@@ -1,10 +1,19 @@
 # Codex Handoff
 
-Updated: 2026-05-17
+Updated: 2026-05-18
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-05-18 Hot 100 Seed Catalog Expansion
+
+- The bundled seed catalog now contains all 100 canonical Hot 100 practice problems plus the existing 6 AI/ML exercises, for 106 total seeded problems.
+- New Hot 100 metadata lives in `backend/scripts/hot100_data.py`; statements are FastOJ-original summaries, and linked-list, tree, design, and multi-answer tasks use deterministic ACM input/output conventions.
+- The legacy `longest-substring-without-repeating` seed slug is now migrated to canonical `longest-substring-without-repeating-characters` during seed upsert, with backend function-mode and frontend starter/localization aliases to avoid breaking existing behavior.
+- New regression coverage in `tests/test_seed_catalog.py` verifies Hot 100 coverage, slug uniqueness, and canonical slug behavior.
+- Verification passed: `uv run ruff check .`, `uv run pytest` (96 passed), `cd frontend && npm run build`, `cd frontend && npm test` (8 files / 15 tests passed), Docker seed execution, database count check (106 problems / 1060 testcase rows), and HTTP health at `http://127.0.0.1:8000/api/v1/health`.
+- Direct local `uv run python -m backend.scripts.seed_data` failed before Docker verification because psycopg2 hit a Windows localized connection-error decoding issue. The same seed script passed in the intended Docker API container after starting `docker compose up -d api`.
 
 ## 2026-05-17 DeepSeek Authoring And Library Layout Follow-up
 
@@ -46,7 +55,7 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Added a single-button function/ACM mode toggle. It changes localized text and mode-colored status dots instead of rendering two competing buttons.
 - Added frontend-side Chinese/English i18n for navigation, auth, problem display text, verdict labels, hover verdict explanations, tabs, mode labels, and AI Copilot/submission trail text.
 - Added static visual step panels for supported problem types so basic explanations do not require AI calls.
-- Seed data now appends missing problems by slug and includes interview-list tasks plus AI algorithm practice tasks for logistic regression sigmoid, KNN, KMeans, scaled dot-product attention, softmax cross entropy, and attention mask application.
+- Seed data now appends missing problems by slug and includes the full canonical Hot 100 track plus AI algorithm practice tasks for logistic regression sigmoid, KNN, KMeans, scaled dot-product attention, softmax cross entropy, and attention mask application.
 - Removed prototype testcase compatibility. Per user direction, this is a new project and function-mode input targets the current JSON-line format only.
 - Seed data now normalizes existing seeded problems by slug instead of deleting testcase rows, so incompatible local DB testcase inputs are rewritten to JSON-line format without breaking historical testcase-result foreign keys.
 - Pretext is wrapped by `frontend/src/lib/textLayout.ts` and used by problem cards, graph nodes, and submission trail summaries.

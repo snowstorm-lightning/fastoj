@@ -23,6 +23,14 @@ const validParentheses = {
   tags: ["Stack", "String"],
 };
 
+const canonicalLongestSubstring = {
+  ...twoSum,
+  id: "3",
+  title: "Longest Substring Without Repeating Characters",
+  slug: "longest-substring-without-repeating-characters",
+  tags: ["String", "Sliding Window", "Function"],
+};
+
 describe("problem mode metadata", () => {
   it("detects function-mode problems", () => {
     expect(getProblemMode(twoSum).supportsFunction).toBe(true);
@@ -41,6 +49,13 @@ describe("problem mode metadata", () => {
     expect(mode.supportsFunction).toBe(true);
     expect(mode.supportsAcm).toBe(true);
     expect(buildStarter(validParentheses, "python", "function")).toContain("def is_valid_parentheses");
+  });
+
+  it("supports the canonical Hot 100 slug for longest substring", () => {
+    expect(getProblemMode(canonicalLongestSubstring).supportsFunction).toBe(true);
+    expect(buildStarter(canonicalLongestSubstring, "python", "function")).toContain(
+      "def length_of_longest_substring",
+    );
   });
 
   it("builds a dynamic Python starter from approved agent metadata", () => {

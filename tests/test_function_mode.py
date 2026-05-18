@@ -45,6 +45,20 @@ def two_sum(nums, target):
     assert "target = json.loads(lines[1])" in wrapped
 
 
+def test_wrap_longest_substring_canonical_hot100_slug():
+    wrapped = wrap_function_submission(
+        """
+def length_of_longest_substring(s):
+    return len(set(s))
+""",
+        "python",
+        "longest-substring-without-repeating-characters",
+    )
+
+    assert "length_of_longest_substring" in wrapped
+    assert "s = raw" in wrapped
+
+
 def test_wrap_two_sum_cpp_function_mode():
     wrapped = wrap_function_submission(
         """

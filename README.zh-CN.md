@@ -157,12 +157,12 @@ AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 
 ## 内置题库
 
-种子数据足够覆盖完整产品体验：
+种子数据已经扩展到可以支撑持续刷题：
 
+- **Hot 100 面试题：** 覆盖 100 道 canonical Hot 100 题，链表、二叉树、设计题和
+  多答案题都使用 FastOJ 自写题面与确定性的 ACM 输入输出。
 - **经典函数题：** Two Sum、Add Two Numbers、Longest Substring Without
-  Repeating Characters。
-- **面试清单 ACM 题：** Valid Parentheses、Maximum Subarray、Group
-  Anagrams、Merge Intervals、Climbing Stairs、Container With Most Water。
+  Repeating Characters、Valid Parentheses 带 starter frame 和 Python 官方参考。
 - **AI/ML 算法题：** Logistic Regression Sigmoid、KNN Majority Vote、
   KMeans One Iteration、Scaled Dot-Product Attention、Softmax Cross
   Entropy、Attention Mask Apply。

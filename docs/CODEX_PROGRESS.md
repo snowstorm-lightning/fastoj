@@ -1,5 +1,14 @@
 # Codex Progress
 
+## 2026-05-18 Hot 100 Seed Catalog Expansion
+
+- [x] Expanded the bundled seed catalog to 106 problems: all 100 canonical Hot 100 practice problems plus the existing 6 AI/ML algorithm exercises.
+- [x] Added `backend/scripts/hot100_data.py` with original FastOJ statements, deterministic ACM input/output conventions for linked-list/tree/design/multi-answer tasks, and at least 3 base cases per new problem.
+- [x] Kept existing function-mode classics and migrated the legacy `longest-substring-without-repeating` seed slug to canonical `longest-substring-without-repeating-characters` with backend/frontend compatibility aliases.
+- [x] Added seed catalog regression tests for Hot 100 coverage, uniqueness, and canonical slug use.
+- [x] Docker seed verification passed: `docker compose exec -T api uv run python -m backend.scripts.seed_data` created 91 missing problems and normalized 15 existing problems; database count verified at 106 problems and 1060 testcase rows.
+- [x] Full checks passed: `uv run ruff check .`, `uv run pytest` (96 passed), `cd frontend && npm run build`, `cd frontend && npm test` (8 files / 15 tests passed), and HTTP health at `http://127.0.0.1:8000/api/v1/health`.
+
 ## 2026-05-17 DeepSeek Authoring And Library Layout Follow-up
 
 - [x] Diagnosed DeepSeek v4 `validation_failed` drafts as likely function-mode argument-shape brittleness plus overly terse admin validation messaging.

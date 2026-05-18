@@ -32,7 +32,7 @@ MOCK_PROBLEMS = [
     {
         "id": "2",
         "title": "无重复字符的最长子串",
-        "slug": "longest-substring-without-repeating",
+        "slug": "longest-substring-without-repeating-characters",
         "difficulty": "medium",
         "tags": ["字符串", "滑动窗口"],
         "total_submissions": 96,

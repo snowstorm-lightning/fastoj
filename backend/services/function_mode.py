@@ -199,6 +199,10 @@ FUNCTION_ENTRYPOINTS = {
     },
 }
 
+FUNCTION_ENTRYPOINTS["longest-substring-without-repeating-characters"] = FUNCTION_ENTRYPOINTS[
+    "longest-substring-without-repeating"
+]
+
 
 CPP_HELPERS = r"""
 #include <bits/stdc++.h>
