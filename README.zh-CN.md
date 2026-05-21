@@ -286,6 +286,21 @@ Invoke-RestMethod `
   -Body $body
 ```
 
+日常用 PowerShell 启动时按这个顺序执行：
+
+```powershell
+& "$env:USERPROFILE\Models\qwen\start-qwen-llama-server.ps1"
+Invoke-RestMethod http://127.0.0.1:8080/v1/models
+docker compose up
+```
+
+如果希望 FastOJ 容器后台运行：
+
+```powershell
+& "$env:USERPROFILE\Models\qwen\start-qwen-llama-server.ps1"
+docker compose up -d
+```
+
 如果 FastOJ 通过 Docker Compose 运行，容器需要用 `host.docker.internal`
 访问宿主机上的 Qwen 服务，因此 `.env` 中应配置：
 
@@ -309,8 +324,12 @@ docker compose up --build -d api
 如果后端直接跑在宿主机上，而不是 Docker 容器里，则 `AI_BASE_URL` 和
 `AI_QWEN_BASE_URL` 使用 `http://127.0.0.1:8080/v1`。
 
-前台运行的服务可以用 `Ctrl+C` 停止；如果后台启动，则在同一个可信本地环境中
-停止 `llama-server` 进程。
+前台运行的 `docker compose up` 可以用 `Ctrl+C` 停止。本地 Qwen 服务用下面的
+脚本停止：
+
+```powershell
+& "$env:USERPROFILE\Models\qwen\stop-qwen-llama-server.ps1"
+```
 
 参考：[Qwen GGUF quickstart](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF)、
 [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) 和

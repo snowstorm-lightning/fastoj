@@ -296,6 +296,21 @@ Invoke-RestMethod `
   -Body $body
 ```
 
+Daily startup from PowerShell:
+
+```powershell
+& "$env:USERPROFILE\Models\qwen\start-qwen-llama-server.ps1"
+Invoke-RestMethod http://127.0.0.1:8080/v1/models
+docker compose up
+```
+
+For detached FastOJ containers:
+
+```powershell
+& "$env:USERPROFILE\Models\qwen\start-qwen-llama-server.ps1"
+docker compose up -d
+```
+
 When FastOJ runs through Docker Compose, containers reach the host Qwen service
 through `host.docker.internal`, so `.env` should contain:
 
@@ -319,8 +334,12 @@ docker compose up --build -d api
 If you run the backend directly on the host instead of inside Docker, use
 `http://127.0.0.1:8080/v1` for `AI_BASE_URL` and `AI_QWEN_BASE_URL`.
 
-Stop the foreground server with `Ctrl+C`; if it was launched in the background,
-stop the `llama-server` process from the same trusted local environment.
+Stop foreground `docker compose up` with `Ctrl+C`. Stop the local Qwen service
+with:
+
+```powershell
+& "$env:USERPROFILE\Models\qwen\stop-qwen-llama-server.ps1"
+```
 
 References: [Qwen GGUF quickstart](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF),
 [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases), and
