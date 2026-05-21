@@ -152,26 +152,101 @@ AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 
 ### Local Qwen Deployment
 
-FastOJ does not ship a Qwen model or `llama-server`. Download a Qwen GGUF model
-that is compatible with llama.cpp plus a llama.cpp build that includes
-`llama-server`, and install them outside the repository, for example under
-`%USERPROFILE%\Models\qwen`, so model files and large binaries never enter git.
+FastOJ talks to local Qwen through llama.cpp's OpenAI-compatible
+`llama-server`. The tested profile uses the official
+[Qwen/Qwen2.5-Coder-7B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF)
+model with the `Q4_K_M` quantization and the local model id
+`qwen2.5-coder-7b-instruct-q4_k_m`.
+
+FastOJ does not ship model files or `llama-server`. Keep them outside the
+repository, for example under `%USERPROFILE%\Models\qwen`, so large binaries and
+model weights never enter git.
 
 Expected local layout:
 
 ```text
 %USERPROFILE%\Models\qwen\
-  llama-server.exe
+  llama-server.exe  # optional when llama.cpp is installed globally
   qwen2.5-coder-7b-instruct-q4_k_m.gguf
   start-qwen-llama-server.ps1
   stop-qwen-llama-server.ps1
 ```
 
-Example `start-qwen-llama-server.ps1`:
+Recommended Windows install path:
+
+1. Install llama.cpp with WinGet:
+
+   ```powershell
+   winget install llama.cpp
+   llama-server --version
+   ```
+
+   If `llama-server` is not found, close and reopen PowerShell so the updated
+   `PATH` is loaded.
+
+2. Create a model directory:
+
+   ```powershell
+   New-Item -ItemType Directory -Force "$env:USERPROFILE\Models\qwen"
+   ```
+
+3. Install the Hugging Face downloader:
+
+   ```powershell
+   py -m pip install -U huggingface_hub
+   ```
+
+4. Download the Q4_K_M GGUF file:
+
+   ```powershell
+   huggingface-cli download Qwen/Qwen2.5-Coder-7B-Instruct-GGUF `
+     --include "qwen2.5-coder-7b-instruct-q4_k_m.gguf" `
+     --local-dir "$env:USERPROFILE\Models\qwen"
+   ```
+
+5. If you installed llama.cpp with WinGet, the start script below can find it
+   through `PATH`. To inspect the resolved path, run:
+
+   ```powershell
+   Get-Command llama-server
+   ```
+
+Manual binary install path:
+
+1. Open the [llama.cpp releases page](https://github.com/ggml-org/llama.cpp/releases).
+2. Download the latest Windows asset that matches the machine:
+   - `Windows x64 (CPU)` for CPU-only or unknown GPU setups.
+   - `Windows x64 (CUDA 12/13)` plus the matching `CUDA DLLs` asset for NVIDIA
+     GPU offload.
+   - `Windows x64 (Vulkan)` for Vulkan-capable GPU setups.
+3. Extract the zip into `%USERPROFILE%\Models\qwen`.
+4. Confirm that `%USERPROFILE%\Models\qwen\llama-server.exe` exists.
+5. Download `qwen2.5-coder-7b-instruct-q4_k_m.gguf` from the Qwen Hugging Face
+   model page into the same directory. The `huggingface-cli download` command
+   above is preferred because it can resume large downloads.
+
+Source build path, useful when no binary matches the machine:
+
+```bash
+git clone https://github.com/ggml-org/llama.cpp.git
+cd llama.cpp
+cmake -B build
+cmake --build build -j --target llama-server llama-cli
+```
+
+Then copy the built `llama-server` binary into `%USERPROFILE%\Models\qwen` or
+point the start script to the build output.
+
+Example `%USERPROFILE%\Models\qwen\start-qwen-llama-server.ps1`:
 
 ```powershell
 $root = "$env:USERPROFILE\Models\qwen"
-& "$root\llama-server.exe" `
+$server = Join-Path $root "llama-server.exe"
+if (-not (Test-Path $server)) {
+  $server = (Get-Command llama-server -ErrorAction Stop).Source
+}
+
+& $server `
   -m "$root\qwen2.5-coder-7b-instruct-q4_k_m.gguf" `
   --alias qwen2.5-coder-7b-instruct-q4_k_m `
   --host 127.0.0.1 `
@@ -186,10 +261,39 @@ listening on `127.0.0.1:8080`; the API path is `http://127.0.0.1:8080/v1`.
 If you use another GGUF file, keep `--alias`, `AI_MODEL`, and `AI_QWEN_MODEL`
 aligned.
 
+Quick alternative: if `llama-server` is already installed and you do not need a
+fixed local GGUF path, llama.cpp can download from Hugging Face directly:
+
+```powershell
+llama-server `
+  -hf Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M `
+  --alias qwen2.5-coder-7b-instruct-q4_k_m `
+  --host 127.0.0.1 `
+  --port 8080 `
+  -c 8192 `
+  -ngl 999
+```
+
 Smoke-test the local server before starting FastOJ:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/v1/models
+```
+
+For a stronger API check:
+
+```powershell
+$body = @{
+  model = "qwen2.5-coder-7b-instruct-q4_k_m"
+  messages = @(@{ role = "user"; content = "Say OK only." })
+  max_tokens = 8
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8080/v1/chat/completions `
+  -ContentType "application/json" `
+  -Body $body
 ```
 
 When FastOJ runs through Docker Compose, containers reach the host Qwen service
@@ -217,6 +321,10 @@ If you run the backend directly on the host instead of inside Docker, use
 
 Stop the foreground server with `Ctrl+C`; if it was launched in the background,
 stop the `llama-server` process from the same trusted local environment.
+
+References: [Qwen GGUF quickstart](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF),
+[llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases), and
+[llama-server docs](https://www.mintlify.com/ggml-org/llama.cpp/inference/server).
 
 Real secrets belong in `.env` or deployment environment variables. The repository
 ignores `.env` and `.env.*`; `.env.example` contains safe placeholders only.

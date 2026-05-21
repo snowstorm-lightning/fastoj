@@ -142,26 +142,100 @@ AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 
 ### 本地 Qwen 部署与启动
 
-FastOJ 仓库不内置 Qwen 模型文件或 `llama-server`。先下载兼容 llama.cpp
-的 Qwen GGUF 模型，以及包含 `llama-server` 的 llama.cpp 构建；建议把它们
-安装到仓库外，例如 `%USERPROFILE%\Models\qwen`，避免把大模型和运行二进制
-放进 git。
+FastOJ 通过 llama.cpp 的 OpenAI-compatible `llama-server` 访问本地 Qwen。
+当前测试过的 profile 使用官方
+[Qwen/Qwen2.5-Coder-7B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF)
+模型、`Q4_K_M` 量化，以及本地模型 id
+`qwen2.5-coder-7b-instruct-q4_k_m`。
+
+FastOJ 仓库不内置模型文件或 `llama-server`。建议把它们放到仓库外，例如
+`%USERPROFILE%\Models\qwen`，避免把大模型和运行二进制放进 git。
 
 推荐的本地目录结构：
 
 ```text
 %USERPROFILE%\Models\qwen\
-  llama-server.exe
+  llama-server.exe  # 使用全局安装的 llama.cpp 时可省略
   qwen2.5-coder-7b-instruct-q4_k_m.gguf
   start-qwen-llama-server.ps1
   stop-qwen-llama-server.ps1
 ```
 
-`start-qwen-llama-server.ps1` 示例：
+推荐的 Windows 安装方式：
+
+1. 用 WinGet 安装 llama.cpp：
+
+   ```powershell
+   winget install llama.cpp
+   llama-server --version
+   ```
+
+   如果提示找不到 `llama-server`，关闭并重新打开 PowerShell，让新的 `PATH`
+   生效。
+
+2. 创建模型目录：
+
+   ```powershell
+   New-Item -ItemType Directory -Force "$env:USERPROFILE\Models\qwen"
+   ```
+
+3. 安装 Hugging Face 下载工具：
+
+   ```powershell
+   py -m pip install -U huggingface_hub
+   ```
+
+4. 下载 Q4_K_M GGUF 文件：
+
+   ```powershell
+   huggingface-cli download Qwen/Qwen2.5-Coder-7B-Instruct-GGUF `
+     --include "qwen2.5-coder-7b-instruct-q4_k_m.gguf" `
+     --local-dir "$env:USERPROFILE\Models\qwen"
+   ```
+
+5. 如果用 WinGet 安装 llama.cpp，下面的启动脚本可以通过 `PATH` 找到它。
+   如需查看实际解析到的路径，运行：
+
+   ```powershell
+   Get-Command llama-server
+   ```
+
+手动安装二进制的方式：
+
+1. 打开 [llama.cpp releases 页面](https://github.com/ggml-org/llama.cpp/releases)。
+2. 下载和机器匹配的最新 Windows asset：
+   - CPU-only 或不确定 GPU 时，选 `Windows x64 (CPU)`。
+   - NVIDIA GPU offload 选 `Windows x64 (CUDA 12/13)`，并下载同一版本匹配的
+     `CUDA DLLs`。
+   - Vulkan 可用的 GPU 可以选 `Windows x64 (Vulkan)`。
+3. 把 zip 解压到 `%USERPROFILE%\Models\qwen`。
+4. 确认 `%USERPROFILE%\Models\qwen\llama-server.exe` 存在。
+5. 从 Qwen Hugging Face 模型页下载
+   `qwen2.5-coder-7b-instruct-q4_k_m.gguf` 到同一目录。更推荐使用上面的
+   `huggingface-cli download`，因为大文件下载失败后更容易续传。
+
+源码构建方式，适合没有匹配二进制的机器：
+
+```bash
+git clone https://github.com/ggml-org/llama.cpp.git
+cd llama.cpp
+cmake -B build
+cmake --build build -j --target llama-server llama-cli
+```
+
+然后把构建出的 `llama-server` 复制到 `%USERPROFILE%\Models\qwen`，或者让启动
+脚本指向构建输出路径。
+
+`%USERPROFILE%\Models\qwen\start-qwen-llama-server.ps1` 示例：
 
 ```powershell
 $root = "$env:USERPROFILE\Models\qwen"
-& "$root\llama-server.exe" `
+$server = Join-Path $root "llama-server.exe"
+if (-not (Test-Path $server)) {
+  $server = (Get-Command llama-server -ErrorAction Stop).Source
+}
+
+& $server `
   -m "$root\qwen2.5-coder-7b-instruct-q4_k_m.gguf" `
   --alias qwen2.5-coder-7b-instruct-q4_k_m `
   --host 127.0.0.1 `
@@ -177,10 +251,39 @@ $root = "$env:USERPROFILE\Models\qwen"
 如果换用其他 GGUF 文件，需要保持 `--alias`、`AI_MODEL` 和
 `AI_QWEN_MODEL` 一致。
 
+快速替代方式：如果 `llama-server` 已经安装，且不需要固定本地 GGUF 文件路径，
+也可以让 llama.cpp 直接从 Hugging Face 下载并启动：
+
+```powershell
+llama-server `
+  -hf Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M `
+  --alias qwen2.5-coder-7b-instruct-q4_k_m `
+  --host 127.0.0.1 `
+  --port 8080 `
+  -c 8192 `
+  -ngl 999
+```
+
 启动 FastOJ 前先检查本地模型服务：
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/v1/models
+```
+
+更完整的 API 检查：
+
+```powershell
+$body = @{
+  model = "qwen2.5-coder-7b-instruct-q4_k_m"
+  messages = @(@{ role = "user"; content = "Say OK only." })
+  max_tokens = 8
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8080/v1/chat/completions `
+  -ContentType "application/json" `
+  -Body $body
 ```
 
 如果 FastOJ 通过 Docker Compose 运行，容器需要用 `host.docker.internal`
@@ -208,6 +311,10 @@ docker compose up --build -d api
 
 前台运行的服务可以用 `Ctrl+C` 停止；如果后台启动，则在同一个可信本地环境中
 停止 `llama-server` 进程。
+
+参考：[Qwen GGUF quickstart](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF)、
+[llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) 和
+[llama-server 文档](https://www.mintlify.com/ggml-org/llama.cpp/inference/server)。
 
 真实密钥放在 `.env` 或部署环境变量中。仓库已经忽略 `.env` 和 `.env.*`；
 `.env.example` 只保留安全占位值。
