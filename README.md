@@ -150,6 +150,74 @@ AI_QWEN_API_KEY=sk-no-key-required
 AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
 
+### Local Qwen Deployment
+
+FastOJ does not ship a Qwen model or `llama-server`. Download a Qwen GGUF model
+that is compatible with llama.cpp plus a llama.cpp build that includes
+`llama-server`, and install them outside the repository, for example under
+`%USERPROFILE%\Models\qwen`, so model files and large binaries never enter git.
+
+Expected local layout:
+
+```text
+%USERPROFILE%\Models\qwen\
+  llama-server.exe
+  qwen2.5-coder-7b-instruct-q4_k_m.gguf
+  start-qwen-llama-server.ps1
+  stop-qwen-llama-server.ps1
+```
+
+Example `start-qwen-llama-server.ps1`:
+
+```powershell
+$root = "$env:USERPROFILE\Models\qwen"
+& "$root\llama-server.exe" `
+  -m "$root\qwen2.5-coder-7b-instruct-q4_k_m.gguf" `
+  --alias qwen2.5-coder-7b-instruct-q4_k_m `
+  --host 127.0.0.1 `
+  --port 8080 `
+  -c 8192 `
+  -ngl 999
+```
+
+If the machine has no supported GPU, remove or lower `-ngl`. Keep the server
+listening on `127.0.0.1:8080`; the API path is `http://127.0.0.1:8080/v1`.
+
+If you use another GGUF file, keep `--alias`, `AI_MODEL`, and `AI_QWEN_MODEL`
+aligned.
+
+Smoke-test the local server before starting FastOJ:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/v1/models
+```
+
+When FastOJ runs through Docker Compose, containers reach the host Qwen service
+through `host.docker.internal`, so `.env` should contain:
+
+```bash
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=http://host.docker.internal:8080/v1
+AI_API_KEY=sk-no-key-required
+AI_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
+
+AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
+AI_QWEN_API_KEY=sk-no-key-required
+AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
+```
+
+Restart the API after changing `.env`:
+
+```bash
+docker compose up --build -d api
+```
+
+If you run the backend directly on the host instead of inside Docker, use
+`http://127.0.0.1:8080/v1` for `AI_BASE_URL` and `AI_QWEN_BASE_URL`.
+
+Stop the foreground server with `Ctrl+C`; if it was launched in the background,
+stop the `llama-server` process from the same trusted local environment.
+
 Real secrets belong in `.env` or deployment environment variables. The repository
 ignores `.env` and `.env.*`; `.env.example` contains safe placeholders only.
 

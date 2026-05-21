@@ -140,6 +140,75 @@ AI_QWEN_API_KEY=sk-no-key-required
 AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
 
+### 本地 Qwen 部署与启动
+
+FastOJ 仓库不内置 Qwen 模型文件或 `llama-server`。先下载兼容 llama.cpp
+的 Qwen GGUF 模型，以及包含 `llama-server` 的 llama.cpp 构建；建议把它们
+安装到仓库外，例如 `%USERPROFILE%\Models\qwen`，避免把大模型和运行二进制
+放进 git。
+
+推荐的本地目录结构：
+
+```text
+%USERPROFILE%\Models\qwen\
+  llama-server.exe
+  qwen2.5-coder-7b-instruct-q4_k_m.gguf
+  start-qwen-llama-server.ps1
+  stop-qwen-llama-server.ps1
+```
+
+`start-qwen-llama-server.ps1` 示例：
+
+```powershell
+$root = "$env:USERPROFILE\Models\qwen"
+& "$root\llama-server.exe" `
+  -m "$root\qwen2.5-coder-7b-instruct-q4_k_m.gguf" `
+  --alias qwen2.5-coder-7b-instruct-q4_k_m `
+  --host 127.0.0.1 `
+  --port 8080 `
+  -c 8192 `
+  -ngl 999
+```
+
+如果机器没有可用 GPU，可以移除或调低 `-ngl`。服务保持监听
+`127.0.0.1:8080`；OpenAI-compatible API 地址是
+`http://127.0.0.1:8080/v1`。
+
+如果换用其他 GGUF 文件，需要保持 `--alias`、`AI_MODEL` 和
+`AI_QWEN_MODEL` 一致。
+
+启动 FastOJ 前先检查本地模型服务：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/v1/models
+```
+
+如果 FastOJ 通过 Docker Compose 运行，容器需要用 `host.docker.internal`
+访问宿主机上的 Qwen 服务，因此 `.env` 中应配置：
+
+```bash
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=http://host.docker.internal:8080/v1
+AI_API_KEY=sk-no-key-required
+AI_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
+
+AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
+AI_QWEN_API_KEY=sk-no-key-required
+AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
+```
+
+修改 `.env` 后重启 API：
+
+```bash
+docker compose up --build -d api
+```
+
+如果后端直接跑在宿主机上，而不是 Docker 容器里，则 `AI_BASE_URL` 和
+`AI_QWEN_BASE_URL` 使用 `http://127.0.0.1:8080/v1`。
+
+前台运行的服务可以用 `Ctrl+C` 停止；如果后台启动，则在同一个可信本地环境中
+停止 `llama-server` 进程。
+
 真实密钥放在 `.env` 或部署环境变量中。仓库已经忽略 `.env` 和 `.env.*`；
 `.env.example` 只保留安全占位值。
 
