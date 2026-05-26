@@ -60,6 +60,15 @@ for that.
 
 The Docker Compose path is the fastest way to try the full product.
 
+Linux/WSL prerequisites:
+
+- Docker Engine or Docker Desktop with Linux containers enabled.
+- Python 3.11+ and `uv` for host-side backend checks.
+- Node.js `20.19+` or `22.12+` and npm `10+` for frontend builds.
+- On WSL, keep the checkout on the Linux filesystem, for example under
+  `~/projects`, not under `/mnt/c`, so bind mounts and dependency installs stay
+  fast and preserve Linux file semantics.
+
 ```bash
 git clone https://github.com/snowstorm-lightning/fastoj.git
 cd fastoj
@@ -100,10 +109,21 @@ instead of passing secrets through shell history.
 
 Use this path when you want to run backend and frontend processes directly. Make
 sure PostgreSQL and Redis are available, or keep the Compose services running.
+With the bundled Compose file, host tools reach PostgreSQL on port `5433`; the
+copied `.env` from `.env.example` already sets
+`DATABASE_URL=postgresql://fastoj:fastoj_secret@localhost:5433/fastoj`.
+
+For direct backend judging, build the Docker judge runtime once:
+
+```bash
+docker compose build judge-runtime
+```
 
 Backend:
 
 ```bash
+cp .env.example .env
+docker compose up -d postgres redis
 uv sync --extra dev
 uv run alembic -c backend/alembic.ini upgrade head
 uv run uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
@@ -113,7 +133,7 @@ Frontend:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -159,10 +179,20 @@ model with the `Q4_K_M` quantization and the local model id
 `qwen2.5-coder-7b-instruct-q4_k_m`.
 
 FastOJ does not ship model files or `llama-server`. Keep them outside the
-repository, for example under `%USERPROFILE%\Models\qwen`, so large binaries and
-model weights never enter git.
+repository, for example under `$HOME/Models/qwen` on Linux/WSL or
+`%USERPROFILE%\Models\qwen` on Windows, so large binaries and model weights never
+enter git.
 
-Expected local layout:
+Expected Linux/WSL local layout:
+
+```text
+$HOME/Models/qwen/
+  llama-server  # optional when llama.cpp is installed globally
+  qwen2.5-coder-7b-instruct-q4_k_m.gguf
+  start-qwen-llama-server.sh
+```
+
+Expected Windows local layout:
 
 ```text
 %USERPROFILE%\Models\qwen\
@@ -170,6 +200,44 @@ Expected local layout:
   qwen2.5-coder-7b-instruct-q4_k_m.gguf
   start-qwen-llama-server.ps1
   stop-qwen-llama-server.ps1
+```
+
+Recommended Linux/WSL setup:
+
+```bash
+mkdir -p "$HOME/Models/qwen"
+python3 -m pip install -U huggingface_hub
+huggingface-cli download Qwen/Qwen2.5-Coder-7B-Instruct-GGUF \
+  --include "qwen2.5-coder-7b-instruct-q4_k_m.gguf" \
+  --local-dir "$HOME/Models/qwen"
+```
+
+If `llama-server` is installed globally, create
+`$HOME/Models/qwen/start-qwen-llama-server.sh`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$HOME/Models/qwen"
+server="$root/llama-server"
+if [ ! -x "$server" ]; then
+  server="$(command -v llama-server)"
+fi
+
+exec "$server" \
+  -m "$root/qwen2.5-coder-7b-instruct-q4_k_m.gguf" \
+  --alias qwen2.5-coder-7b-instruct-q4_k_m \
+  --host 127.0.0.1 \
+  --port 8080 \
+  -c 8192 \
+  -ngl 999
+```
+
+Then make it executable:
+
+```bash
+chmod +x "$HOME/Models/qwen/start-qwen-llama-server.sh"
 ```
 
 Recommended Windows install path:
@@ -234,8 +302,9 @@ cmake -B build
 cmake --build build -j --target llama-server llama-cli
 ```
 
-Then copy the built `llama-server` binary into `%USERPROFILE%\Models\qwen` or
-point the start script to the build output.
+Then copy the built `llama-server` binary into `$HOME/Models/qwen` on Linux/WSL
+or `%USERPROFILE%\Models\qwen` on Windows, or point the start script to the
+build output.
 
 Example `%USERPROFILE%\Models\qwen\start-qwen-llama-server.ps1`:
 
@@ -264,6 +333,18 @@ aligned.
 Quick alternative: if `llama-server` is already installed and you do not need a
 fixed local GGUF path, llama.cpp can download from Hugging Face directly:
 
+```bash
+llama-server \
+  -hf Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M \
+  --alias qwen2.5-coder-7b-instruct-q4_k_m \
+  --host 127.0.0.1 \
+  --port 8080 \
+  -c 8192 \
+  -ngl 999
+```
+
+PowerShell equivalent:
+
 ```powershell
 llama-server `
   -hf Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M `
@@ -276,11 +357,29 @@ llama-server `
 
 Smoke-test the local server before starting FastOJ:
 
+```bash
+curl --noproxy '*' http://127.0.0.1:8080/v1/models
+```
+
+PowerShell:
+
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/v1/models
 ```
 
 For a stronger API check:
+
+```bash
+curl --noproxy '*' http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5-coder-7b-instruct-q4_k_m",
+    "messages": [{"role": "user", "content": "Say OK only."}],
+    "max_tokens": 8
+  }'
+```
+
+PowerShell:
 
 ```powershell
 $body = @{
@@ -296,23 +395,45 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-Daily startup from PowerShell:
+Daily startup from Linux/WSL uses two shells because `llama-server` stays in the
+foreground.
+
+```bash
+# Shell 1
+"$HOME/Models/qwen/start-qwen-llama-server.sh"
+```
+
+```bash
+# Shell 2
+curl --noproxy '*' http://127.0.0.1:8080/v1/models
+docker compose up
+```
+
+Daily startup from PowerShell also uses two shells:
 
 ```powershell
+# Shell 1
 & "$env:USERPROFILE\Models\qwen\start-qwen-llama-server.ps1"
+```
+
+```powershell
+# Shell 2
 Invoke-RestMethod http://127.0.0.1:8080/v1/models
 docker compose up
 ```
 
-For detached FastOJ containers:
+For detached FastOJ containers, run this in Shell 2 after the model server is
+already running:
 
-```powershell
-& "$env:USERPROFILE\Models\qwen\start-qwen-llama-server.ps1"
+```bash
 docker compose up -d
 ```
 
 When FastOJ runs through Docker Compose, containers reach the host Qwen service
-through `host.docker.internal`, so `.env` should contain:
+through `host.docker.internal`, so `.env` should contain the container-facing
+URL below. The Compose file maps `host.docker.internal` to Docker's
+`host-gateway` for native Linux while remaining compatible with Docker Desktop
+and WSL.
 
 ```bash
 AI_PROVIDER=openai_compatible
@@ -336,6 +457,12 @@ If you run the backend directly on the host instead of inside Docker, use
 
 Stop foreground `docker compose up` with `Ctrl+C`. Stop the local Qwen service
 with:
+
+```bash
+pkill -f "llama-server.*qwen2.5-coder-7b-instruct-q4_k_m" || true
+```
+
+PowerShell:
 
 ```powershell
 & "$env:USERPROFILE\Models\qwen\stop-qwen-llama-server.ps1"

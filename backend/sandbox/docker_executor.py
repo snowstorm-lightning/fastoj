@@ -122,7 +122,7 @@ class DockerExecutor:
     def _get_run_command(self, code_file: str, language: str) -> str:
         """Get the command to run the code."""
         commands = {
-            "python": f"python {code_file}",
+            "python": f"python3 {code_file}",
             "c": f"./solution {code_file}",
             "cpp": f"./solution {code_file}",
             "java": "java Solution",
@@ -130,7 +130,7 @@ class DockerExecutor:
             "typescript": f"ts-node {code_file}",
             "golang": f"go run {code_file}",
         }
-        return commands.get(language, f"python {code_file}")
+        return commands.get(language, f"python3 {code_file}")
 
     def _create_container(
         self,

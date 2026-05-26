@@ -1,10 +1,22 @@
 # Codex Handoff
 
-Updated: 2026-05-18
+Updated: 2026-05-26
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-05-26 Linux/WSL Deployment Pass
+
+- The project now deploys successfully from WSL/Linux with Docker Desktop's Linux engine.
+- Compose database credentials and API `SECRET_KEY` are configurable through `.env` while retaining local-development defaults.
+- The API service now maps `host.docker.internal` to Docker `host-gateway`, so local OpenAI-compatible model servers on the Linux host can be reached from containers on native Linux as well as Docker Desktop/WSL.
+- `.env.example` now includes host-direct development values: PostgreSQL on `localhost:5433`, Redis on `localhost:6379`, safe local secrets, and JSON syntax guidance for list settings such as `CORS_ORIGINS`.
+- `Dockerfile.dev` no longer bakes `.env` into the image and starts via `uv run`.
+- Python execution now uses `python3` on non-Windows hosts and inside Docker judge execution paths, matching Linux test expectations.
+- Frontend metadata now declares Node `^20.19.0 || >=22.12.0` and npm `>=10`.
+- English and Chinese READMEs now include Linux/WSL prerequisites, `npm ci` for reproducible frontend installs, direct-backend port guidance, judge runtime build guidance, `host.docker.internal` behavior, and Linux/WSL local Qwen startup/smoke-test commands.
+- Verification passed on 2026-05-26: `uv sync --extra dev`, `uv run ruff check .`, `uv run pytest` (96 passed), `cd frontend && npm run build`, `cd frontend && npm test` (8 files / 15 tests passed), `docker compose up --build -d api worker`, `docker compose ps` healthy, `curl --noproxy '*' http://127.0.0.1:8000/api/v1/health`, Docker-served frontend HTML, worker container Docker judge smoke returning `{'status': 'ac', 'output': 'ok\n', ...}`, and `docker compose exec -T api uv run python -m backend.scripts.seed_data` normalizing 106 problems.
 
 ## 2026-05-18 Hot 100 Seed Catalog Expansion
 

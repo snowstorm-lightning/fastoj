@@ -321,7 +321,7 @@ class SandboxExecutor:
     def _get_run_command_docker(self, code_file: str, language: str) -> str:
         """Get the command to run the code in Docker."""
         commands = {
-            "python": "python solution.py",
+            "python": "python3 solution.py",
             "c": "gcc solution.c -o solution || exit 42; ./solution",
             "cpp": "g++ solution.cpp -o solution || exit 42; ./solution",
             "java": "javac Solution.java || exit 42; java Solution",
@@ -329,7 +329,7 @@ class SandboxExecutor:
             "typescript": "ts-node solution.ts",
             "golang": "go run solution.go",
         }
-        return commands.get(language, f"python {code_file}")
+        return commands.get(language, f"python3 {code_file}")
 
     def _execute_in_subprocess_fallback(
         self,

@@ -1,5 +1,16 @@
 # Codex Progress
 
+## 2026-05-26 Linux/WSL Deployment Pass
+
+- [x] Verified current WSL toolchain: Docker Desktop Linux engine 29.2.1, Docker Compose v5.1.0, `uv 0.10.10`, Node v24.13.1, and npm 11.14.1.
+- [x] Made Compose Linux-friendly by allowing `.env` overrides for PostgreSQL credentials and `SECRET_KEY`, and by mapping `host.docker.internal` to Docker `host-gateway` for native Linux local-AI access.
+- [x] Updated `.env.example` for host-direct backend development against the Compose-published PostgreSQL port `5433`, Redis on `6379`, safe local secrets, and JSON syntax for list env vars.
+- [x] Removed the obsolete `Dockerfile.dev` build-time `.env` copy and made it launch through `uv run`.
+- [x] Aligned Python runner commands with Linux expectations by using `python3` on non-Windows hosts and in Docker judge execution paths.
+- [x] Added frontend Node/npm engine metadata and refreshed the lockfile root metadata.
+- [x] Updated English and Chinese README deployment guidance for Linux/WSL prerequisites, `npm ci`, direct backend `.env` settings, judge runtime build, `host.docker.internal` behavior, and Linux/WSL local Qwen commands.
+- [x] Verification passed in WSL/Linux: `uv run ruff check .`, `uv run pytest` (96 passed), `cd frontend && npm run build`, `cd frontend && npm test` (8 files / 15 tests passed), `docker compose up --build -d api worker`, `docker compose ps` healthy, API health at `http://127.0.0.1:8000/api/v1/health`, frontend HTML served by the API container, worker-to-Docker judge smoke returned `ac`, and Docker seed script normalized 106 problems.
+
 ## 2026-05-18 Hot 100 Seed Catalog Expansion
 
 - [x] Expanded the bundled seed catalog to 106 problems: all 100 canonical Hot 100 practice problems plus the existing 6 AI/ML algorithm exercises.

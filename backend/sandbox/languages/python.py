@@ -1,3 +1,5 @@
+import sys
+
 from backend.sandbox.languages.base import LanguageRunner
 
 
@@ -9,7 +11,8 @@ class PythonRunner(LanguageRunner):
         return None
 
     def get_run_command(self, source_file: str, output_file: str | None = None) -> str | None:
-        return f"python {source_file}"
+        executable = "python" if sys.platform == "win32" else "python3"
+        return f"{executable} {source_file}"
 
     def needs_compilation(self) -> bool:
         return False
