@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.models import Problem, TestCase
 from backend.schemas.problem import ProblemDetail, ProblemFilter, ProblemListItem, SampleTestCase
+from backend.services.problem_modes import FUNCTION_SIGNATURES
 
 
 class ProblemService:
@@ -23,6 +24,16 @@ class ProblemService:
         total = max(int(problem.total_submissions or 0), 0)
         accepted = max(int(problem.accepted_submissions or 0), 0)
         return min(accepted, total)
+
+    @staticmethod
+    def _function_signature(problem: Problem) -> str | None:
+        return problem.function_signature or FUNCTION_SIGNATURES.get(str(problem.slug))
+
+    @classmethod
+    def _mode(cls, problem: Problem) -> str:
+        if cls._function_signature(problem):
+            return "function"
+        return problem.mode or "acm"
 
     def get_problems(self, filters: ProblemFilter) -> tuple[list[ProblemListItem], int]:
         """Get paginated and filtered problem list."""
@@ -77,8 +88,8 @@ class ProblemService:
                     accepted_submissions=self._accepted_submissions(problem),
                     ac_rate=ac_rate,
                     is_public=problem.is_public,  # type: ignore[arg-type]
-                    mode=problem.mode or "acm",  # type: ignore[arg-type]
-                    function_signature=problem.function_signature,  # type: ignore[arg-type]
+                    mode=self._mode(problem),
+                    function_signature=self._function_signature(problem),
                     created_at=problem.created_at.isoformat(),
                 )
             )
@@ -115,10 +126,10 @@ class ProblemService:
             time_limit=problem.time_limit,  # type: ignore[arg-type]
             memory_limit=problem.memory_limit,  # type: ignore[arg-type]
             hint=problem.hint,  # type: ignore[arg-type]
-            mode=problem.mode or "acm",  # type: ignore[arg-type]
+            mode=self._mode(problem),
             input_format=problem.input_format,  # type: ignore[arg-type]
             output_format=problem.output_format,  # type: ignore[arg-type]
-            function_signature=problem.function_signature,  # type: ignore[arg-type]
+            function_signature=self._function_signature(problem),
             total_submissions=problem.total_submissions,  # type: ignore[arg-type]
             accepted_submissions=self._accepted_submissions(problem),
             ac_rate=ac_rate,

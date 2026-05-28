@@ -16,22 +16,33 @@ export type JudgeEvent = {
 export function JudgeTimeline({
   events,
   submission,
+  theme = "dark",
 }: {
   events: JudgeEvent[];
   submission: SubmissionDetail | null;
+  theme?: "light" | "dark";
 }) {
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const terminal = useRef<Terminal | null>(null);
 
   useEffect(() => {
     if (!terminalRef.current || terminal.current) return;
-    const term = new Terminal({ convertEol: true, rows: 8, theme: { background: "#111827" } });
+    const term = new Terminal({
+      convertEol: true,
+      rows: 8,
+      theme: terminalTheme("dark"),
+    });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(terminalRef.current);
     fit.fit();
     terminal.current = term;
   }, []);
+
+  useEffect(() => {
+    if (!terminal.current) return;
+    terminal.current.options.theme = terminalTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     const term = terminal.current;
@@ -55,4 +66,10 @@ export function JudgeTimeline({
       <div className="terminal" ref={terminalRef} />
     </section>
   );
+}
+
+function terminalTheme(theme: "light" | "dark") {
+  return theme === "light"
+    ? { background: "#f8fafc", foreground: "#1e293b", cursor: "#2563eb", selectionBackground: "#bfdbfe" }
+    : { background: "#10151f", foreground: "#dbeafe", cursor: "#34d399", selectionBackground: "#334155" };
 }

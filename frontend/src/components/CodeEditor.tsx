@@ -15,31 +15,42 @@ export function CodeEditor({
   language,
   value,
   onChange,
+  theme = "dark",
 }: {
   language: string;
   value: string;
   onChange: (value: string) => void;
+  theme?: "light" | "dark";
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  const valueRef = useRef(value);
-  valueRef.current = value;
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     if (!containerRef.current || editorRef.current) return;
     const editor = monaco.editor.create(containerRef.current, {
       value,
       language: LANGUAGE_MAP[language] ?? "plaintext",
-      theme: "vs-dark",
+      theme: theme === "light" ? "vs" : "vs-dark",
       minimap: { enabled: false },
       fontSize: 14,
       automaticLayout: true,
       scrollBeyondLastLine: false,
     });
-    editor.onDidChangeModelContent(() => onChange(editor.getValue()));
+    editor.onDidChangeModelContent(() => onChangeRef.current(editor.getValue()));
     editorRef.current = editor;
     return () => editor.dispose();
+    // Monaco must be created exactly once for this DOM node.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    monaco.editor.setTheme(theme === "light" ? "vs" : "vs-dark");
+  }, [theme]);
 
   useEffect(() => {
     const editor = editorRef.current;

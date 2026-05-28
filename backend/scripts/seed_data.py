@@ -7,6 +7,7 @@ from datetime import datetime
 from backend.core.database import Base, SessionLocal, engine
 from backend.models import Difficulty, Problem, Solution, TestCase
 from backend.scripts.hot100_data import HOT100_LEGACY_SLUG_ALIASES, HOT100_PROBLEMS_DATA
+from backend.services.problem_modes import FUNCTION_SIGNATURES
 
 PROBLEMS_DATA = [
     {
@@ -289,6 +290,13 @@ PROBLEMS_DATA = [
 ]
 
 PROBLEMS_DATA.extend(HOT100_PROBLEMS_DATA)
+
+
+for item in PROBLEMS_DATA:
+    signature = FUNCTION_SIGNATURES.get(item["problem"]["slug"])
+    if signature:
+        item["problem"]["mode"] = "function"
+        item["problem"]["function_signature"] = signature
 
 
 DEFAULT_SOLUTIONS = {
