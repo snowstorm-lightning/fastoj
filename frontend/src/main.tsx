@@ -30,7 +30,17 @@ import {
   getVisualSpec,
   type JudgeMode,
 } from "./lib/problemModes";
-import { localizedProblem, matchesLocalizedProblem, type Locale, UI, verdictInfo } from "./lib/i18n";
+import {
+  canonicalTagQuery,
+  localizeDifficulty,
+  localizeTag,
+  localizeTags,
+  localizedProblem,
+  matchesLocalizedProblem,
+  type Locale,
+  UI,
+  verdictInfo,
+} from "./lib/i18n";
 import { measureTrainingText } from "./lib/textLayout";
 import { LANGUAGES, useAppStore } from "./stores/useAppStore";
 import { AICopilotPanel } from "./components/AICopilotPanel";
@@ -46,13 +56,14 @@ type View = "library" | "workbench" | "graph" | "auth" | "settings" | "admin";
 type DetailTab = "cases" | "solution" | "judge" | "trail" | "discussion";
 type AuthMode = "login" | "register";
 type LibraryLayout = "card" | "list";
+type AppTheme = "light" | "dark";
 type DiscussionPost = { id: string; author: string; body: string; createdAt: string };
 type AIChatLine = { id: string; role: "user" | "assistant"; message: string; suggestions?: string[] };
 
 const AI_MODEL_OPTIONS: Array<{ value: AIModelProfile; zh: string; en: string; detailZh: string; detailEn: string }> = [
   { value: "default", zh: "自动选择", en: "Auto route", detailZh: "使用服务器默认 AI 配置", detailEn: "Use the server default AI profile" },
   { value: "deepseek", zh: "DeepSeek 云端", en: "DeepSeek Cloud", detailZh: "调用 DeepSeek 兼容接口", detailEn: "Use the DeepSeek-compatible API" },
-  { value: "qwen-local", zh: "Qwen 本地", en: "Local Qwen", detailZh: "连接本机 OpenAI-compatible 服务", detailEn: "Use a local OpenAI-compatible Qwen server" },
+  { value: "qwen-local", zh: "Qwen 本地", en: "Local Qwen", detailZh: "连接本机兼容 OpenAI 接口的服务", detailEn: "Use a local OpenAI-compatible Qwen server" },
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -71,27 +82,39 @@ function AuthBar({
   authenticated,
   currentUser,
   locale,
+  theme,
   onView,
   onAuth,
   onLogout,
   onLocale,
+  onTheme,
 }: {
   view: View;
   authenticated: boolean;
   currentUser: CurrentUser | null;
   locale: Locale;
+  theme: AppTheme;
   onView: (view: View) => void;
   onAuth: (mode: AuthMode) => void;
   onLogout: () => void;
   onLocale: () => void;
+  onTheme: (theme: AppTheme) => void;
 }) {
   const text = UI[locale];
   return (
     <header className="topbar">
       <button className="brand-lockup brand-button" title={locale === "zh" ? "返回题库首页" : "Back to problem library"} onClick={() => onView("library")}>
         <strong>FastOJ</strong>
-        <span>AI interview judge</span>
+        <span>{locale === "zh" ? "AI 练习判题" : "AI interview judge"}</span>
       </button>
+      <div className="theme-switch segmented" role="group" aria-label={locale === "zh" ? "界面主题" : "Theme"}>
+        <button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => onTheme("light")}>
+          {locale === "zh" ? "浅色" : "Light"}
+        </button>
+        <button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => onTheme("dark")}>
+          {locale === "zh" ? "深色" : "Dark"}
+        </button>
+      </div>
       <nav className="topnav" aria-label={locale === "zh" ? "主导航" : "Main navigation"}>
         <button className={view === "library" ? "active" : ""} onClick={() => onView("library")}>{text.navLibrary}</button>
         <button className={view === "workbench" ? "active" : ""} onClick={() => onView("workbench")}>{text.navWorkbench}</button>
@@ -168,12 +191,12 @@ function AuthPage({
     <main className="auth-page">
       <section className="auth-card">
         <div className="auth-copy">
-          <p className="eyebrow">FastOJ Account</p>
+          <p className="eyebrow">{locale === "zh" ? "FastOJ 账号" : "FastOJ Account"}</p>
           <h1>{mode === "login" ? text.loginTitle : text.registerTitle}</h1>
           <p>{text.accountCopy}</p>
           <div className="auth-proof">
-            <span>Docker sandbox</span>
-            <span>Redis Streams</span>
+            <span>{locale === "zh" ? "Docker 沙箱" : "Docker sandbox"}</span>
+            <span>{locale === "zh" ? "Redis 队列" : "Redis Streams"}</span>
             <span>{locale === "zh" ? "隐藏用例隔离" : "Hidden case isolation"}</span>
           </div>
         </div>
@@ -195,7 +218,21 @@ function AuthPage({
   );
 }
 
-function SettingsPage({ locale, currentUser, onClose, onProfileSaved }: { locale: Locale; currentUser: CurrentUser | null; onClose: () => void; onProfileSaved: (user: CurrentUser) => void }) {
+function SettingsPage({
+  locale,
+  currentUser,
+  theme,
+  onTheme,
+  onClose,
+  onProfileSaved,
+}: {
+  locale: Locale;
+  currentUser: CurrentUser | null;
+  theme: AppTheme;
+  onTheme: (theme: AppTheme) => void;
+  onClose: () => void;
+  onProfileSaved: (user: CurrentUser) => void;
+}) {
   const text = UI[locale];
   const [displayName, setDisplayName] = useState(localStorage.getItem("fastoj.displayName") ?? currentUser?.username ?? "FastOJ User");
   const [username, setUsername] = useState(currentUser?.username ?? "");
@@ -242,14 +279,14 @@ function SettingsPage({ locale, currentUser, onClose, onProfileSaved }: { locale
         <button className="icon-button close-button tip" data-tip={locale === "zh" ? "关闭" : "Close"} onClick={onClose}>
           <IconGlyph>x</IconGlyph>
         </button>
-        <p className="eyebrow">Account</p>
+        <p className="eyebrow">{locale === "zh" ? "账号" : "Account"}</p>
         <h1>{text.settingsTitle}</h1>
         <p className="muted">{text.settingsCopy}</p>
         <div className="account-profile">
           <div className="avatar-preview">{avatarUrl ? <img src={avatarUrl} alt="" /> : displayName.slice(0, 1).toUpperCase()}</div>
           <div>
             <strong>{displayName || username}</strong>
-            <span>{currentUser?.role === "admin" ? "Admin" : "User"}</span>
+            <span>{currentUser?.role === "admin" ? (locale === "zh" ? "管理员" : "Admin") : (locale === "zh" ? "用户" : "User")}</span>
           </div>
         </div>
         <div className="settings-grid">
@@ -264,6 +301,17 @@ function SettingsPage({ locale, currentUser, onClose, onProfileSaved }: { locale
           <input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} />
           {text.compactMode}
         </label>
+        <div className="theme-settings">
+          <span>{locale === "zh" ? "界面主题" : "Theme"}</span>
+          <div className="segmented theme-segmented" role="group" aria-label={locale === "zh" ? "界面主题" : "Theme"}>
+            <button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => onTheme("light")}>
+              {locale === "zh" ? "浅色" : "Light"}
+            </button>
+            <button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => onTheme("dark")}>
+              {locale === "zh" ? "深色" : "Dark"}
+            </button>
+          </div>
+        </div>
         <button className="primary" onClick={save}>{text.saveSettings}</button>
         {saved ? <p className="muted">{saved}</p> : null}
       </section>
@@ -284,9 +332,9 @@ function DifficultyDropdown({
   const [open, setOpen] = useState(false);
   const options = [
     { value: "", label: text.allDifficulty },
-    { value: "easy", label: "Easy" },
-    { value: "medium", label: "Medium" },
-    { value: "hard", label: "Hard" },
+    { value: "easy", label: localizeDifficulty("easy", locale) },
+    { value: "medium", label: localizeDifficulty("medium", locale) },
+    { value: "hard", label: localizeDifficulty("hard", locale) },
   ];
   const selected = options.find((item) => item.value === value) ?? options[0];
   return (
@@ -397,6 +445,12 @@ function LibraryPage({
     const saved = localStorage.getItem("fastoj.libraryLayout");
     return saved === "list" || saved === "card" ? saved : "card";
   });
+  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("fastoj.librarySidebarOpen") !== "false");
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("fastoj.librarySidebarWidth") ?? 218);
+    return clamp(Number.isFinite(saved) ? saved : 218, 176, 320);
+  });
+  const [sidebarResizing, setSidebarResizing] = useState(false);
 
   useEffect(() => {
     setTags(selectedTag);
@@ -407,10 +461,34 @@ function LibraryPage({
     localStorage.setItem("fastoj.libraryLayout", layout);
   }, [layout]);
 
+  useEffect(() => {
+    localStorage.setItem("fastoj.librarySidebarOpen", String(sidebarOpen));
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("fastoj.librarySidebarWidth", String(sidebarWidth));
+  }, [sidebarWidth]);
+
   const trimmedKeyword = keyword.trim();
-  const needsLocalizedSearch = locale === "zh" && /[^\x00-\x7F]/.test(trimmedKeyword);
-  const filters: ProblemFilters = { keyword: needsLocalizedSearch ? "" : keyword, difficulty, tags, page };
-  const problemsQuery = useQuery({ queryKey: ["problems", filters], queryFn: () => api.problems(filters) });
+  const needsLocalizedSearch = locale === "zh" && Array.from(trimmedKeyword).some((char) => char.charCodeAt(0) > 127);
+  const filters: ProblemFilters = { keyword: needsLocalizedSearch ? "" : keyword, difficulty, tags: canonicalTagQuery(tags, locale), page };
+  const problemsQuery = useQuery({
+    queryKey: ["problems", filters, needsLocalizedSearch],
+    queryFn: async () => {
+      if (!needsLocalizedSearch) return api.problems(filters);
+      const localizedFilters = { ...filters, page: 1, page_size: 100 };
+      const [firstPage, secondPage] = await Promise.all([
+        api.problems(localizedFilters),
+        api.problems({ ...localizedFilters, page: 2 }),
+      ]);
+      const seen = new Set<string>();
+      return [...firstPage, ...secondPage].filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+    },
+  });
   const problems = (problemsQuery.data ?? []).filter((problem) => matchesLocalizedProblem(problem, locale, keyword));
   const aiCount = problems.filter((problem) => getProblemMode(problem).isAiPractice).length;
   const functionCount = problems.filter((problem) => getProblemMode(problem).supportsFunction).length;
@@ -426,27 +504,72 @@ function LibraryPage({
     setPage(1);
   }
 
+  function startSidebarResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    setSidebarResizing(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (moveEvent: PointerEvent) => {
+      setSidebarWidth(clamp(startWidth + moveEvent.clientX - startX, 176, 320));
+    };
+    const onUp = () => {
+      setSidebarResizing(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  const libraryStyle = {
+    "--library-sidebar": sidebarOpen ? `${sidebarWidth}px` : "46px",
+  } as React.CSSProperties;
+
   return (
-    <main className="library-page">
+    <main className={`library-page ${sidebarOpen ? "" : "library-sidebar-collapsed"} ${sidebarResizing ? "is-resizing" : ""}`} style={libraryStyle}>
       <aside className="library-sidebar">
-        <div className="filter-group">
-          <strong>{text.filters}</strong>
-          <input placeholder={text.keyword} value={keyword} onChange={(event) => { setKeyword(event.target.value); setPage(1); }} />
-          <DifficultyDropdown value={difficulty} locale={locale} onChange={(value) => { setDifficulty(value); setPage(1); }} />
-          <input placeholder={text.tagsPlaceholder} value={tags} onChange={(event) => { setTags(event.target.value); setPage(1); }} />
-          <button title={text.resetFilters} onClick={resetFilters}>{text.resetFilters}</button>
+        <div className="library-sidebar-header">
+          <button
+            className="icon-button library-sidebar-toggle"
+            aria-label={sidebarOpen ? (locale === "zh" ? "收起筛选" : "Collapse filters") : (locale === "zh" ? "展开筛选" : "Expand filters")}
+            aria-expanded={sidebarOpen}
+            onClick={() => setSidebarOpen((value) => !value)}
+          >
+            <PanelToggleIcon open={sidebarOpen} side="left" />
+          </button>
+          <strong className="library-sidebar-title" aria-hidden={!sidebarOpen}>{text.filters}</strong>
         </div>
-        <div className="side-metrics">
-          <Metric label={text.currentProblems} value={problems.length} />
-          <Metric label={text.functionMode} value={functionCount} />
-          <Metric label={text.aiAlgorithms} value={aiCount} />
-          <Metric label={text.averageAc} value={`${averageAc}%`} />
+        <div className="library-sidebar-content" aria-hidden={!sidebarOpen}>
+          <div className="filter-group">
+            <input placeholder={text.keyword} value={keyword} onChange={(event) => { setKeyword(event.target.value); setPage(1); }} tabIndex={sidebarOpen ? 0 : -1} />
+            <DifficultyDropdown value={difficulty} locale={locale} onChange={(value) => { setDifficulty(value); setPage(1); }} />
+            <input placeholder={text.tagsPlaceholder} value={tags} onChange={(event) => { setTags(event.target.value); setPage(1); }} tabIndex={sidebarOpen ? 0 : -1} />
+            <button title={text.resetFilters} onClick={resetFilters} tabIndex={sidebarOpen ? 0 : -1}>{text.resetFilters}</button>
+          </div>
+          <div className="side-metrics">
+            <Metric label={text.currentProblems} value={problems.length} />
+            <Metric label={text.functionMode} value={functionCount} />
+            <Metric label={text.aiAlgorithms} value={aiCount} />
+            <Metric label={text.averageAc} value={`${averageAc}%`} />
+          </div>
         </div>
+        <span className="library-sidebar-rail" aria-hidden={sidebarOpen}>{text.filters}</span>
+        <div
+          className="library-sidebar-resize"
+          role="separator"
+          aria-label={locale === "zh" ? "调整筛选栏宽度" : "Resize filters"}
+          title={locale === "zh" ? "拖动调整筛选栏宽度" : "Drag to resize filters"}
+          onPointerDown={(event) => sidebarOpen && startSidebarResize(event)}
+        />
       </aside>
       <section className="library-main">
         <div className="library-header">
           <div>
-            <p className="eyebrow">Problem set</p>
+            <p className="eyebrow">{locale === "zh" ? "题库集合" : "Problem set"}</p>
             <h1>{text.library}</h1>
             <p className="muted">{text.libraryCopy}</p>
           </div>
@@ -505,17 +628,17 @@ function ProblemModeBadges({ problem, locale }: { problem: ProblemListItem; loca
 function ProblemCard({ problem, locale, active, onSelect }: { problem: ProblemListItem; locale: Locale; active: boolean; onSelect: () => void }) {
   const displayProblem = localizedProblem(problem, locale);
   const text = UI[locale];
-  const titleLayout = measureTrainingText(`${displayProblem.title} ${displayProblem.tags.join(" ")}`, 280, "14px Inter, system-ui, sans-serif", 18);
+  const titleLayout = measureTrainingText(`${displayProblem.title} ${displayProblem.tags.join(" ")}`, 260, "13px Inter, system-ui, sans-serif", 17);
   return (
     <button
       className={active ? "problem-card active" : "problem-card"}
       title={locale === "zh" ? `打开 ${displayProblem.title}` : `Open ${displayProblem.title}`}
       onClick={onSelect}
-      style={{ minHeight: Math.max(128, titleLayout.height + 92) }}
+      style={{ minHeight: Math.max(92, titleLayout.height + 54) }}
     >
-      <span className={`difficulty ${displayProblem.difficulty.toLowerCase()}`}>{displayProblem.difficulty}</span>
+      <span className={`difficulty ${displayProblem.difficulty.toLowerCase()}`}>{localizeDifficulty(displayProblem.difficulty, locale)}</span>
       <strong>{displayProblem.title}</strong>
-      <span className="tag-line">{displayProblem.tags.join(" / ") || text.noTags}</span>
+      <span className="tag-line">{localizeTags(displayProblem.tags, locale).join(" / ") || text.noTags}</span>
       <span className="mode-line">
         <ProblemModeBadges problem={displayProblem} locale={locale} />
       </span>
@@ -537,8 +660,8 @@ function ProblemRow({ problem, locale, active, onSelect }: { problem: ProblemLis
         <strong>{displayProblem.title}</strong>
         <small>{displayProblem.slug}</small>
       </span>
-      <span className={`difficulty ${displayProblem.difficulty.toLowerCase()}`}>{displayProblem.difficulty}</span>
-      <span className="problem-row-tags" aria-label={text.tags}>{displayProblem.tags.join(" / ") || text.noTags}</span>
+      <span className={`difficulty ${displayProblem.difficulty.toLowerCase()}`}>{localizeDifficulty(displayProblem.difficulty, locale)}</span>
+      <span className="problem-row-tags" aria-label={text.tags}>{localizeTags(displayProblem.tags, locale).join(" / ") || text.noTags}</span>
       <span className="mode-line problem-row-modes" aria-label={text.modes}>
         <ProblemModeBadges problem={displayProblem} locale={locale} />
       </span>
@@ -650,12 +773,14 @@ function ValidationReport({ draft, locale }: { draft: ProblemDraft; locale: Loca
 function Workspace({
   problemId,
   locale,
+  theme,
   onBackToLibrary,
   onRequireAuth,
   authenticated,
 }: {
   problemId: string | null;
   locale: Locale;
+  theme: AppTheme;
   onBackToLibrary: () => void;
   onRequireAuth: () => void;
   authenticated: boolean;
@@ -691,7 +816,7 @@ function Workspace({
   const displayProblem = localizedProblem(problem, locale);
   const modeInfo = getProblemMode(problem);
   const draftKey = `${language}.${judgeMode}`;
-  const functionBlocked = judgeMode === "function" && Boolean(modeInfo.functionSpec?.dynamic) && language !== "python";
+  const functionBlocked = false;
 
   useEffect(() => { localStorage.setItem("fastoj.leftOpen", String(leftOpen)); }, [leftOpen]);
   useEffect(() => { localStorage.setItem("fastoj.rightOpen", String(rightOpen)); }, [rightOpen]);
@@ -699,6 +824,21 @@ function Workspace({
   useEffect(() => { localStorage.setItem("fastoj.rightWidth", String(rightWidth)); }, [rightWidth]);
   useEffect(() => { localStorage.setItem("fastoj.aiModel", aiModel); }, [aiModel]);
   useEffect(() => { if (problemId) setRecentProblemId(problemId); }, [problemId, setRecentProblemId]);
+
+  function editorCodeFor(targetLanguage: string, targetMode: JudgeMode): string {
+    if (!problemId || !problem) return "";
+    const starter = buildStarter(problem, targetLanguage, targetMode, locale);
+    const draft = getDraft(problemId, `${targetLanguage}.${targetMode}`);
+    if (targetMode === "function" && targetLanguage !== "python" && draft.trim()) {
+      if (/^\s*(import\s+\w+\s*\n\s*)*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/.test(draft)) return starter;
+      const stalePythonStarters = [
+        buildStarter(problem, "python", "function", "en").trim(),
+        buildStarter(problem, "python", "function", "zh").trim(),
+      ];
+      if (stalePythonStarters.includes(draft.trim())) return starter;
+    }
+    return draft || starter;
+  }
 
   useEffect(() => {
     activeProblemIdRef.current = problemId;
@@ -716,14 +856,13 @@ function Workspace({
     if (!problemId || !problem) return;
     const nextMode = modeInfo.defaultMode;
     setJudgeMode(nextMode);
-    const key = `${language}.${nextMode}`;
-    setCode(getDraft(problemId, key) || buildStarter(problem, language, nextMode));
-  }, [problemId, problem?.slug]);
+    setCode(editorCodeFor(language, nextMode));
+  }, [problemId, problem?.slug, locale]);
 
   useEffect(() => {
     if (!problemId || !problem) return;
-    setCode(getDraft(problemId, draftKey) || buildStarter(problem, language, judgeMode));
-  }, [language, judgeMode]);
+    setCode(editorCodeFor(language, judgeMode));
+  }, [language, judgeMode, locale]);
 
   function updateCode(next: string) {
     setCode(next);
@@ -786,6 +925,7 @@ function Workspace({
     clearCopilotState();
     setSubmission(null);
     setDetailTab("judge");
+    setLeftOpen(true);
     setRightOpen(true);
     setEvents([{ type: "pending", status: "pending", progress: 0 }]);
     try {
@@ -947,8 +1087,8 @@ function Workspace({
           <p className="eyebrow">{text.workbench}</p>
           <h1>{displayProblem?.title ?? text.loadingProblem}</h1>
           <div className="chips">
-            {problem ? <span className={`difficulty ${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span> : null}
-            {problem?.tags.map((tag) => <span key={tag}>{tag}</span>)}
+            {problem ? <span className={`difficulty ${problem.difficulty.toLowerCase()}`}>{localizeDifficulty(problem.difficulty, locale)}</span> : null}
+            {problem?.tags.map((tag) => <span key={tag}>{localizeTag(tag, locale)}</span>)}
             {problem ? <span>{problem.time_limit}ms / {problem.memory_limit}MB</span> : null}
           </div>
         </div>
@@ -960,7 +1100,21 @@ function Workspace({
           {leftOpen ? (
             <>
               <ProblemStatement problem={problem} locale={locale} />
-              <ProblemVisual problem={problem} locale={locale} />
+              <DetailDock
+                detailTab={detailTab}
+                setDetailTab={setDetailTab}
+                problem={problem}
+                solution={solutionsQuery.data?.[0]}
+                events={events}
+                submission={submission}
+                theme={theme}
+                trail={trailQuery.data ?? []}
+                problemId={problemId}
+                locale={locale}
+                authenticated={authenticated}
+                onRequireAuth={onRequireAuth}
+              />
+              <ProblemGuidance problem={problem} locale={locale} />
             </>
           ) : null}
         </aside>
@@ -981,16 +1135,16 @@ function Workspace({
               {LANGUAGES.map((item) => <option key={item}>{item}</option>)}
             </select>
             <AIModelDropdown value={aiModel} locale={locale} onChange={setAiModel} />
-            <button className="icon-button tip" data-tip={text.resetTemplate} onClick={() => setCode(buildStarter(problem, language, judgeMode))}><IconGlyph>R</IconGlyph></button>
+            <button className="icon-button tip" data-tip={text.resetTemplate} onClick={() => setCode(buildStarter(problem, language, judgeMode, locale))}><IconGlyph>R</IconGlyph></button>
             <button className="icon-button run-action tip" data-tip={text.runTitle} onClick={() => judge(true)} disabled={functionBlocked}><IconGlyph>▶</IconGlyph></button>
             <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)} disabled={functionBlocked}><IconGlyph>↑</IconGlyph></button>
           </div>
           <FunctionFrame problem={problem} mode={judgeMode} language={language} blocked={functionBlocked} locale={locale} />
-          <CodeEditor language={language} value={code} onChange={updateCode} />
+          <CodeEditor language={language} value={code} onChange={updateCode} theme={theme} />
         </section>
 
         <div className="panel-edge right-edge">
-          <div className="resize-handle" role="separator" aria-label={locale === "zh" ? "调整结果面板宽度" : "Resize result panel"} title={locale === "zh" ? "拖动调整结果宽度" : "Drag to resize result"} onPointerDown={(event) => rightOpen && startResize("right", event)} />
+          <div className="resize-handle" role="separator" aria-label={locale === "zh" ? "调整 AI 辅助面板宽度" : "Resize AI panel"} title={locale === "zh" ? "拖动调整 AI 辅助宽度" : "Drag to resize AI panel"} onPointerDown={(event) => rightOpen && startResize("right", event)} />
           <button className="edge-toggle" title={rightOpen ? text.collapseRight : text.expandRight} onClick={() => setRightOpen((value) => !value)}>
             <PanelToggleIcon open={rightOpen} side="right" />
           </button>
@@ -998,27 +1152,9 @@ function Workspace({
 
         <aside className="result-sidebar feature-frame result-frame">
           {rightOpen ? (
-            <>
-              <div className="ai-region">
-                <AICopilotPanel submission={submission} explain={explain} review={review} hint={hint} chatLines={chatLines} error={aiError} onExplain={explainSubmission} onReview={reviewSubmission} onHint={requestHint} onChat={sendChat} locale={locale} />
-              </div>
-              <section className="detail-dock judge-region">
-                <div className="tabs" role="tablist" aria-label={locale === "zh" ? "工作台详情" : "Workbench details"}>
-                  <TabButton tab="cases" active={detailTab} onClick={setDetailTab}>{text.publicCases}</TabButton>
-                  <TabButton tab="solution" active={detailTab} onClick={setDetailTab}>{text.solution}</TabButton>
-                  <TabButton tab="judge" active={detailTab} onClick={setDetailTab}>{text.judge}</TabButton>
-                  <TabButton tab="trail" active={detailTab} onClick={setDetailTab}>{text.trail}</TabButton>
-                  <TabButton tab="discussion" active={detailTab} onClick={setDetailTab}>{text.discussion}</TabButton>
-                </div>
-                <div className="detail-panel">
-                  {detailTab === "cases" ? <SampleCases problem={problem} locale={locale} /> : null}
-                  {detailTab === "solution" ? <OfficialSolution solution={solutionsQuery.data?.[0]} locale={locale} /> : null}
-                  {detailTab === "judge" ? <JudgeTimeline events={events} submission={submission} /> : null}
-                  {detailTab === "trail" ? <SubmissionTrail submissions={trailQuery.data ?? []} locale={locale} /> : null}
-                  {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} onRequireAuth={onRequireAuth} /> : null}
-                </div>
-              </section>
-            </>
+            <div className="ai-region">
+              <AICopilotPanel submission={submission} explain={explain} review={review} hint={hint} chatLines={chatLines} error={aiError} onExplain={explainSubmission} onReview={reviewSubmission} onHint={requestHint} onChat={sendChat} locale={locale} />
+            </div>
           ) : null}
         </aside>
       </section>
@@ -1036,6 +1172,54 @@ function TabButton({ tab, active, onClick, children }: { tab: DetailTab; active:
   return <button title={String(children)} className={active === tab ? "active" : ""} role="tab" aria-selected={active === tab} onClick={() => onClick(tab)}>{children}</button>;
 }
 
+function DetailDock({
+  detailTab,
+  setDetailTab,
+  problem,
+  solution,
+  events,
+  submission,
+  theme,
+  trail,
+  problemId,
+  locale,
+  authenticated,
+  onRequireAuth,
+}: {
+  detailTab: DetailTab;
+  setDetailTab: (tab: DetailTab) => void;
+  problem?: ProblemDetail;
+  solution?: { explanation: string; code: string; language: string };
+  events: JudgeEvent[];
+  submission: SubmissionDetail | null;
+  theme: AppTheme;
+  trail: SubmissionDetail[];
+  problemId: string;
+  locale: Locale;
+  authenticated: boolean;
+  onRequireAuth: () => void;
+}) {
+  const text = UI[locale];
+  return (
+    <section className="detail-dock statement-detail-dock judge-region">
+      <div className="tabs" role="tablist" aria-label={locale === "zh" ? "题目详情" : "Problem details"}>
+        <TabButton tab="cases" active={detailTab} onClick={setDetailTab}>{text.publicCases}</TabButton>
+        <TabButton tab="solution" active={detailTab} onClick={setDetailTab}>{text.solution}</TabButton>
+        <TabButton tab="judge" active={detailTab} onClick={setDetailTab}>{text.judge}</TabButton>
+        <TabButton tab="trail" active={detailTab} onClick={setDetailTab}>{text.trail}</TabButton>
+        <TabButton tab="discussion" active={detailTab} onClick={setDetailTab}>{text.discussion}</TabButton>
+      </div>
+      <div className="detail-panel">
+        {detailTab === "cases" ? <SampleCases problem={problem} locale={locale} /> : null}
+        {detailTab === "solution" ? <OfficialSolution problem={problem} solution={solution} locale={locale} /> : null}
+        {detailTab === "judge" ? <JudgeTimeline events={events} submission={submission} theme={theme} /> : null}
+        {detailTab === "trail" ? <SubmissionTrail submissions={trail} locale={locale} /> : null}
+        {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} onRequireAuth={onRequireAuth} /> : null}
+      </div>
+    </section>
+  );
+}
+
 function ProblemStatement({ problem, locale }: { problem?: ProblemDetail; locale: Locale }) {
   const text = UI[locale];
   const displayProblem = localizedProblem(problem, locale);
@@ -1044,9 +1228,21 @@ function ProblemStatement({ problem, locale }: { problem?: ProblemDetail; locale
     <article className="prose-panel">
       <p>{displayProblem.description}</p>
       <p className="muted">{text.acceptance} {percent(displayProblem.ac_rate)}%, {text.submissions} {displayProblem.total_submissions}</p>
-      <h3>{text.officialHint}</h3>
-      <p>{displayProblem.hint ?? text.noHint}</p>
     </article>
+  );
+}
+
+function ProblemGuidance({ problem, locale }: { problem?: ProblemDetail; locale: Locale }) {
+  const text = UI[locale];
+  const displayProblem = localizedProblem(problem, locale);
+  return (
+    <section className="problem-guidance">
+      <ProblemVisual problem={problem} locale={locale} />
+      <article className="prose-panel hint-panel">
+        <h3>{text.officialHint}</h3>
+        <p>{displayProblem?.hint ?? text.noHint}</p>
+      </article>
+    </section>
   );
 }
 
@@ -1067,15 +1263,27 @@ function ProblemVisual({ problem, locale }: { problem?: ProblemDetail; locale: L
   );
 }
 
+function functionSignaturePreview(starter: string, language: string, fallback: string): string {
+  const lines = starter.split("\n").map((line) => line.trim()).filter(Boolean);
+  const line = lines.find((item) => {
+    if (item.startsWith("#") || item.startsWith("using ") || item.startsWith("import ") || item.startsWith("class ")) return false;
+    if (language === "java") return /^(public|private|protected)\s+/.test(item);
+    if (language === "golang") return item.startsWith("func ");
+    if (language === "javascript" || language === "typescript") return item.startsWith("function ");
+    return item.includes("(") && item.includes(")");
+  });
+  return (line ?? fallback).replace(/\s*\{\s*$/, "");
+}
+
 function FunctionFrame({ problem, mode, language, blocked, locale }: { problem?: ProblemDetail; mode: JudgeMode; language: string; blocked: boolean; locale: Locale }) {
   const text = UI[locale];
   if (mode !== "function") return <div className="function-frame">{text.acmFrame}</div>;
   const spec = getFunctionSpec(problem);
   if (!spec) return <div className="function-frame warning">{text.noFunctionFrame}</div>;
-  const starter = buildStarter(problem, language, "function");
+  const starter = buildStarter(problem, language, "function", locale);
   const signature = language === "python"
     ? spec.signature
-    : starter.split("\n").find((line) => /(function|vector<|double |int |String |func |class Solution)/.test(line.trim()))?.trim() ?? spec.signature;
+    : functionSignaturePreview(starter, language, spec.signature);
   return (
     <div className={blocked ? "function-frame warning" : "function-frame"}>
       <strong>{signature}</strong>
@@ -1091,7 +1299,7 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
     <div className="case-grid">
       {problem.sample_testcases.map((testcase, index) => (
         <article className="sample-card" key={`${testcase.input}-${index}`}>
-          <h3>Example {index + 1}</h3>
+          <h3>{locale === "zh" ? "示例" : "Example"} {index + 1}</h3>
           <div className="sample-row">
             <span>{text.input}</span>
             <pre>{testcase.input}</pre>
@@ -1125,12 +1333,26 @@ function sampleExplanation(slug: string, index: number, locale: Locale): string 
   return (locale === "zh" ? zh : en)[slug]?.[index] ?? fallback;
 }
 
-function OfficialSolution({ solution, locale }: { solution?: { explanation: string; code: string; language: string }; locale: Locale }) {
-  if (!solution) return <p className="muted">{UI[locale].noSolution}</p>;
+function OfficialSolution({ problem, solution, locale }: { problem?: ProblemDetail; solution?: { explanation: string; code: string; language: string }; locale: Locale }) {
+  if (!solution) {
+    const displayProblem = localizedProblem(problem, locale);
+    const tags = localizeTags(displayProblem?.tags.filter((tag) => tag !== "Hot 100"), locale).join(" / ");
+    return (
+      <article className="prose-panel solution-fallback">
+        <h3>{locale === "zh" ? "题解思路" : "Solution approach"}</h3>
+        <p>{displayProblem?.hint ?? UI[locale].noSolution}</p>
+        <p className="muted">
+          {locale === "zh"
+            ? `建议先根据 ${tags || "题目标签"} 选择核心数据结构或状态定义，再用公开样例逐步核对边界。`
+            : `Start from ${tags || "the listed tags"}, choose the core data structure or state definition, then validate edge cases with the public samples.`}
+        </p>
+      </article>
+    );
+  }
   return (
     <article className="prose-panel">
       <p>{solution.explanation}</p>
-      <CodeBlock code={solution.code} language={solution.language} />
+      {solution.code.trim() ? <CodeBlock code={solution.code} language={solution.language} /> : null}
     </article>
   );
 }
@@ -1319,7 +1541,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       <main className="settings-page">
         <section className="settings-card">
           <button className="icon-button close-button tip" data-tip={text.back} onClick={onBack}><IconGlyph>x</IconGlyph></button>
-          <p className="eyebrow">Admin</p>
+          <p className="eyebrow">{text.title}</p>
           <h1>{text.title}</h1>
           <p className="muted">{text.noAccess}</p>
         </section>
@@ -1432,7 +1654,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     <main className="admin-page">
       <section className="admin-shell">
         <button className="icon-button close-button tip" data-tip={text.back} onClick={onBack}><IconGlyph>x</IconGlyph></button>
-        <p className="eyebrow">Admin</p>
+        <p className="eyebrow">{text.title}</p>
         <h1>{text.title}</h1>
         <p className="muted">{text.copy}</p>
         <section className="admin-panel problem-agent-panel">
@@ -1674,11 +1896,18 @@ function App() {
   const [view, setView] = useState<View>(recentProblemId ? "workbench" : "library");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [locale, setLocale] = useState<Locale>(() => (localStorage.getItem("fastoj.locale") === "en" ? "en" : "zh"));
+  const [theme, setTheme] = useState<AppTheme>(() => (localStorage.getItem("fastoj.theme") === "light" ? "light" : "dark"));
   const [authenticated, setAuthenticated] = useState(Boolean(localStorage.getItem("fastoj.jwt")));
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [graphTag, setGraphTag] = useState("");
   const problemsQuery = useQuery({ queryKey: ["problems", "graph"], queryFn: () => api.problems({}) });
   const problems = useMemo(() => problemsQuery.data ?? [], [problemsQuery.data]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    localStorage.setItem("fastoj.theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!authenticated) {
@@ -1722,16 +1951,17 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <AuthBar view={view} authenticated={authenticated} currentUser={currentUser} locale={locale} onView={setView} onAuth={openAuth} onLogout={logout} onLocale={toggleLocale} />
+    <div className="app-shell" data-theme={theme}>
+      <AuthBar view={view} authenticated={authenticated} currentUser={currentUser} locale={locale} theme={theme} onView={setView} onAuth={openAuth} onLogout={logout} onLocale={toggleLocale} onTheme={setTheme} />
       {view === "auth" ? <AuthPage mode={authMode} locale={locale} onMode={setAuthMode} onDone={() => { setAuthenticated(true); setView("library"); }} /> : null}
-      {view === "settings" ? <SettingsPage locale={locale} currentUser={currentUser} onClose={() => setView("library")} onProfileSaved={setCurrentUser} /> : null}
+      {view === "settings" ? <SettingsPage locale={locale} currentUser={currentUser} theme={theme} onTheme={setTheme} onClose={() => setView("library")} onProfileSaved={setCurrentUser} /> : null}
       {view === "admin" ? <AdminPage locale={locale} currentUser={currentUser} onBack={() => setView("library")} /> : null}
       {view === "library" ? <LibraryPage selectedId={selectedId} selectedTag={graphTag} locale={locale} onSelect={openProblem} onGraph={() => setView("graph")} /> : null}
       {view === "workbench" ? (
         <Workspace
           problemId={selectedId}
           locale={locale}
+          theme={theme}
           onBackToLibrary={() => setView("library")}
           authenticated={authenticated}
           onRequireAuth={() => {

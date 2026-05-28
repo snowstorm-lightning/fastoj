@@ -1,4 +1,5 @@
 import logging
+import json
 from typing import Any
 
 from backend.models import SubmissionResult, TestCase
@@ -78,7 +79,7 @@ class JudgeService:
                     expected = testcase.output.strip()  # type: ignore[arg-type]
                     actual = result.get("output", "").strip()
 
-                    if expected == actual:
+                    if _outputs_match(actual, expected):
                         total_score += testcase.score  # type: ignore[assignment]
                     else:
                         final_result = SubmissionResult.WA
@@ -102,3 +103,12 @@ class JudgeService:
             "score": total_score,
             "error_message": error_message,
         }
+
+
+def _outputs_match(actual_output: str, expected_output: str) -> bool:
+    if actual_output == expected_output:
+        return True
+    try:
+        return json.loads(actual_output) == json.loads(expected_output)
+    except json.JSONDecodeError:
+        return False

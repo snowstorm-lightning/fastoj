@@ -326,8 +326,8 @@ class SandboxExecutor:
             "cpp": "g++ solution.cpp -o solution || exit 42; ./solution",
             "java": "javac Solution.java || exit 42; java Solution",
             "javascript": "node solution.js",
-            "typescript": "ts-node solution.ts",
-            "golang": "go run solution.go",
+            "typescript": "tsc solution.ts --target es2020 --module commonjs --noImplicitAny false --outDir out || exit 42; node out/solution.js",
+            "golang": "GOCACHE=/tmp/go-build HOME=/tmp go run solution.go",
         }
         return commands.get(language, f"python3 {code_file}")
 

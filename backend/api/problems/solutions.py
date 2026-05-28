@@ -19,6 +19,11 @@ ZH_EXPLANATIONS = {
     "scaled-dot-product-attention": "先计算 query 与每个 key 的点积并除以 sqrt(d)，再做稳定 softmax 得到权重，最后用权重加权 value 向量。",
     "softmax-cross-entropy": "对 logits 减去最大值后计算 softmax，取目标类别概率的负对数作为交叉熵损失。",
     "attention-mask-apply": "先把 mask 为 0 的位置排除在 softmax 之外，只在可见位置归一化概率，被屏蔽位置输出 0。",
+    "maximum-subarray": "使用 Kadane 算法维护以当前位置结尾的最大子数组和，同时更新全局最优答案。",
+    "group-anagrams": "互为字母异位词的字符串排序后键相同。按这个键分组，再对组内和组间做稳定排序，得到确定输出。",
+    "merge-intervals": "先按区间左端点排序。新区间和结果末尾重叠时合并右端点，否则开启一个新区间。",
+    "climbing-stairs": "到达第 n 阶的方法数等于到达第 n-1 阶和第 n-2 阶的方法数之和，可用滚动变量维护。",
+    "container-with-most-water": "用双指针从两端开始计算面积。面积受较短边限制，因此每次移动较短边尝试找到更优解。",
 }
 
 ZH_EXPLANATIONS["longest-substring-without-repeating-characters"] = ZH_EXPLANATIONS[

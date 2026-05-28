@@ -23,6 +23,7 @@ type VisualSpec = {
 };
 
 const TODO = "    # TODO: implement your solution here\n";
+const TODO_ZH = "TODO: 在这里实现你的解法";
 
 const FUNCTION_SPECS: Record<string, FunctionSpec> = {
   "two-sum": {
@@ -162,6 +163,16 @@ export const ACM_STARTERS: Record<string, string> = {
   c: "#include <stdio.h>\n\nint main(void) {\n    /* TODO: parse stdin and print the answer */\n    return 0;\n}\n",
 };
 
+const ACM_STARTERS_ZH: Record<string, string> = {
+  python: "import sys\n\n# 读取标准输入，并输出题目要求的精确答案。\ndata = sys.stdin.read().strip()\n# TODO: 解析输入并完成求解\nprint(data)\n",
+  cpp: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    // TODO: 解析标准输入并输出答案\n    return 0;\n}\n",
+  java: "import java.io.*;\nimport java.util.*;\n\nclass Main {\n    public static void main(String[] args) throws Exception {\n        // TODO: 解析标准输入并输出答案\n    }\n}\n",
+  javascript: "const fs = require('fs');\nconst input = fs.readFileSync(0, 'utf8').trim();\n// TODO: 解析输入并完成求解\nconsole.log(input);\n",
+  typescript: "const fs = require('fs');\nconst input = fs.readFileSync(0, 'utf8').trim();\n// TODO: 解析输入并完成求解\nconsole.log(input);\n",
+  golang: "package main\n\nimport \"fmt\"\n\nfunc main() {\n    // TODO: 解析标准输入并输出答案\n    fmt.Println(\"\")\n}\n",
+  c: "#include <stdio.h>\n\nint main(void) {\n    /* TODO: 解析标准输入并输出答案 */\n    return 0;\n}\n",
+};
+
 const FUNCTION_STARTERS: Record<string, Partial<Record<string, string>>> = {
   "two-sum": {
     cpp: "#include <bits/stdc++.h>\nusing namespace std;\n\nvector<int> two_sum(vector<int> nums, int target) {\n    // TODO\n    return {};\n}\n",
@@ -243,6 +254,355 @@ const FUNCTION_STARTERS: Record<string, Partial<Record<string, string>>> = {
 FUNCTION_STARTERS["longest-substring-without-repeating-characters"] =
   FUNCTION_STARTERS["longest-substring-without-repeating"];
 
+type ParameterSpec = {
+  name: string;
+  annotation: string;
+};
+
+type ParsedFunctionSignature = {
+  functionName: string;
+  params: ParameterSpec[];
+  returnType: string;
+};
+
+function splitTopLevel(text: string, separator: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let depth = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if ("([{".includes(char)) depth += 1;
+    else if (")]}".includes(char) && depth > 0) depth -= 1;
+    else if (char === separator && depth === 0) {
+      parts.push(text.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+function parseFunctionSignature(signature: string): ParsedFunctionSignature {
+  const cleaned = signature.replace(/:\s*$/, "").trim();
+  const match = cleaned.match(/^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([\s\S]*?)\)\s*(?:->\s*(.+))?$/);
+  if (!match) {
+    return { functionName: "solve", params: [], returnType: "None" };
+  }
+  const params = splitTopLevel(match[2], ",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !part.startsWith("*"))
+    .map((part) => {
+      const left = part.split("=", 1)[0].trim();
+      const [rawName, rawAnnotation] = left.split(":").map((item) => item.trim());
+      return { name: rawName, annotation: rawAnnotation || "Any" };
+    })
+    .filter((param) => param.name !== "self" && param.name !== "cls" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(param.name));
+  return {
+    functionName: match[1],
+    params,
+    returnType: (match[3] ?? "None").trim(),
+  };
+}
+
+function toCamelCase(name: string): string {
+  return name.replace(/_([a-zA-Z0-9])/g, (_, char: string) => char.toUpperCase());
+}
+
+function compactAnnotation(annotation: string): string {
+  return annotation.trim().replace(/\s+/g, " ");
+}
+
+function withoutTopLevelNone(annotation: string): { annotation: string; nullable: boolean } {
+  const parts = splitTopLevel(compactAnnotation(annotation), "|").map((part) => part.trim()).filter(Boolean);
+  const concrete = parts.filter((part) => !["none", "null"].includes(part.toLowerCase()));
+  return {
+    annotation: concrete[0] ?? "None",
+    nullable: concrete.length !== parts.length,
+  };
+}
+
+function listInner(annotation: string): string | null {
+  const { annotation: concrete } = withoutTopLevelNone(annotation);
+  const match = concrete.match(/^(?:list|List|Sequence|tuple|Tuple)\[(.*)\]$/);
+  return match ? match[1].trim() : null;
+}
+
+function isNoneType(annotation: string): boolean {
+  return ["none", "null", "void"].includes(compactAnnotation(annotation).toLowerCase());
+}
+
+function tsType(annotation: string): string {
+  const { annotation: concrete, nullable } = withoutTopLevelNone(annotation);
+  const inner = listInner(concrete);
+  let type: string;
+  if (inner) {
+    const innerType = tsType(inner);
+    type = innerType.includes("|") ? `Array<${innerType}>` : `${innerType}[]`;
+  } else {
+    const key = concrete.toLowerCase();
+    if (key === "int" || key === "float") type = "number";
+    else if (key === "bool") type = "boolean";
+    else if (key === "str") type = "string";
+    else if (isNoneType(key)) type = "void";
+    else if (key === "list") type = "unknown[]";
+    else type = "unknown";
+  }
+  return nullable && type !== "void" ? `${type} | null` : type;
+}
+
+function jsDefault(annotation: string): string {
+  const { annotation: concrete, nullable } = withoutTopLevelNone(annotation);
+  if (nullable || isNoneType(concrete)) return "null";
+  if (listInner(concrete) || concrete.toLowerCase() === "list") return "[]";
+  const key = concrete.toLowerCase();
+  if (key === "bool") return "false";
+  if (key === "str") return "\"\"";
+  if (key === "dict") return "{}";
+  return "0";
+}
+
+function cppType(annotation: string): string {
+  const { annotation: concrete, nullable } = withoutTopLevelNone(annotation);
+  const inner = listInner(concrete);
+  let type: string;
+  if (inner) type = `vector<${cppType(inner)}>`;
+  else {
+    const key = concrete.toLowerCase();
+    if (key === "int") type = "int";
+    else if (key === "float") type = "double";
+    else if (key === "bool") type = "bool";
+    else if (key === "str") type = "string";
+    else if (isNoneType(key)) type = "void";
+    else if (key === "list") type = "vector<int>";
+    else type = "int";
+  }
+  return nullable && type !== "void" ? `optional<${type}>` : type;
+}
+
+function cppDefault(annotation: string): string {
+  const type = cppType(annotation);
+  if (type === "void") return "";
+  if (type === "bool") return "false";
+  if (type === "string") return "\"\"";
+  if (type === "double") return "0.0";
+  if (type.startsWith("optional<")) return "nullopt";
+  if (type.startsWith("vector<")) return "{}";
+  return "0";
+}
+
+function javaType(annotation: string): string {
+  const { annotation: concrete, nullable } = withoutTopLevelNone(annotation);
+  const inner = listInner(concrete);
+  if (inner) return `${javaType(inner)}[]`;
+  const key = concrete.toLowerCase();
+  if (key === "int") return nullable ? "Integer" : "int";
+  if (key === "float") return nullable ? "Double" : "double";
+  if (key === "bool") return nullable ? "Boolean" : "boolean";
+  if (key === "str") return "String";
+  if (isNoneType(key)) return "void";
+  if (key === "list") return "Object[]";
+  return "Object";
+}
+
+function javaDefault(type: string): string {
+  if (type === "void") return "";
+  if (type === "boolean") return "false";
+  if (type === "int") return "0";
+  if (type === "double") return "0.0";
+  if (type === "String") return "\"\"";
+  if (type.endsWith("[][]")) return `new ${type.replaceAll("[]", "")}[0][0]`;
+  if (type.endsWith("[]")) return `new ${type.slice(0, -2)}[0]`;
+  return "null";
+}
+
+function goType(annotation: string): string {
+  const { annotation: concrete, nullable } = withoutTopLevelNone(annotation);
+  const inner = listInner(concrete);
+  let type: string;
+  if (inner) type = `[]${goType(inner)}`;
+  else {
+    const key = concrete.toLowerCase();
+    if (key === "int") type = "int";
+    else if (key === "float") type = "float64";
+    else if (key === "bool") type = "bool";
+    else if (key === "str") type = "string";
+    else if (isNoneType(key)) type = "";
+    else if (key === "list") type = "[]interface{}";
+    else type = "interface{}";
+  }
+  return nullable && type && !type.startsWith("[]") ? `*${type}` : type;
+}
+
+function goDefault(annotation: string): string {
+  const type = goType(annotation);
+  if (!type) return "";
+  if (type === "bool") return "false";
+  if (type === "string") return "\"\"";
+  if (type === "float64") return "0.0";
+  if (type.startsWith("[]")) return `${type}{}`;
+  if (type.startsWith("*") || type === "interface{}") return "nil";
+  return "0";
+}
+
+function cScalarType(annotation: string): string {
+  const { annotation: concrete } = withoutTopLevelNone(annotation);
+  const key = concrete.toLowerCase();
+  if (key === "float") return "double";
+  if (key === "str") return "const char*";
+  if (key === "bool") return "int";
+  if (key === "int") return "int";
+  if (isNoneType(key)) return "void";
+  return "int";
+}
+
+function cValueType(annotation: string): string {
+  const type = cScalarType(annotation);
+  return type === "const char*" ? "char*" : type;
+}
+
+function cListInner(annotation: string): string | null {
+  const inner = listInner(annotation);
+  if (inner) return inner;
+  const { annotation: concrete } = withoutTopLevelNone(annotation);
+  return concrete.toLowerCase() === "list" ? "int" : null;
+}
+
+function cPointerType(baseType: string, dimensions: number): string {
+  return `${baseType}${"*".repeat(dimensions)}`;
+}
+
+function cParams(params: ParameterSpec[]): string {
+  return params.flatMap((param) => {
+    const firstInner = cListInner(param.annotation);
+    const secondInner = firstInner ? cListInner(firstInner) : null;
+    if (firstInner && secondInner) {
+      const nullable = withoutTopLevelNone(secondInner).nullable;
+      return nullable
+        ? [`${cPointerType(cValueType(secondInner), 2)} ${param.name}`, `int** ${param.name}_is_null`, `int ${param.name}_rows`, `int* ${param.name}_cols`]
+        : [`${cPointerType(cValueType(secondInner), 2)} ${param.name}`, `int ${param.name}_rows`, `int* ${param.name}_cols`];
+    }
+    if (firstInner) {
+      const nullable = withoutTopLevelNone(firstInner).nullable;
+      return nullable
+        ? [`${cPointerType(cValueType(firstInner), 1)} ${param.name}`, `int* ${param.name}_is_null`, `int ${param.name}_len`]
+        : [`${cPointerType(cValueType(firstInner), 1)} ${param.name}`, `int ${param.name}_len`];
+    }
+    if (withoutTopLevelNone(param.annotation).nullable) {
+      return [`${cScalarType(param.annotation)} ${param.name}`, `int ${param.name}_is_null`];
+    }
+    return [`${cScalarType(param.annotation)} ${param.name}`];
+  }).join(", ");
+}
+
+function cReturnSignature(parsed: ParsedFunctionSignature, functionName: string): { signature: string; defaultBody: string } {
+  const params = cParams(parsed.params);
+  const firstInner = cListInner(parsed.returnType);
+  const secondInner = firstInner ? cListInner(firstInner) : null;
+  if (firstInner && secondInner) {
+    const base = cValueType(secondInner);
+    const returnType = cPointerType(base, 2);
+    const nullable = withoutTopLevelNone(secondInner).nullable;
+    const returnParams = nullable
+      ? "int* return_size, int** return_column_sizes, int*** return_nulls"
+      : "int* return_size, int** return_column_sizes";
+    const allParams = params ? `${params}, ${returnParams}` : returnParams;
+    return {
+      signature: `${returnType} ${functionName}(${allParams})`,
+      defaultBody: nullable
+        ? "    *return_size = 0;\n    *return_column_sizes = NULL;\n    *return_nulls = NULL;\n    return NULL;"
+        : "    *return_size = 0;\n    *return_column_sizes = NULL;\n    return NULL;",
+    };
+  }
+  if (firstInner) {
+    const base = cValueType(firstInner);
+    const returnType = cPointerType(base, 1);
+    const nullable = withoutTopLevelNone(firstInner).nullable;
+    const returnParams = nullable ? "int* return_size, int** return_nulls" : "int* return_size";
+    const allParams = params ? `${params}, ${returnParams}` : returnParams;
+    return {
+      signature: `${returnType} ${functionName}(${allParams})`,
+      defaultBody: nullable
+        ? "    *return_size = 0;\n    *return_nulls = NULL;\n    return NULL;"
+        : "    *return_size = 0;\n    return NULL;",
+    };
+  }
+  const returnType = cScalarType(parsed.returnType);
+  if (returnType === "void") return { signature: `void ${functionName}(${params || "void"})`, defaultBody: "" };
+  const nullable = withoutTopLevelNone(parsed.returnType).nullable;
+  if (nullable) {
+    const allParams = params ? `${params}, int* return_is_null` : "int* return_is_null";
+    const defaultValue = returnType === "double" ? "0.0" : returnType === "const char*" ? "\"\"" : "0";
+    return { signature: `${returnType} ${functionName}(${allParams})`, defaultBody: `    *return_is_null = 1;\n    return ${defaultValue};` };
+  }
+  const defaultValue = returnType === "double" ? "0.0" : returnType === "const char*" ? "\"\"" : "0";
+  return { signature: `${returnType} ${functionName}(${params || "void"})`, defaultBody: `    return ${defaultValue};` };
+}
+
+function localizeFunctionStarter(starter: string, locale: Locale): string {
+  if (locale !== "zh") return starter;
+  return starter
+    .replace(/# TODO: implement your solution here/g, `# ${TODO_ZH}`)
+    .replace(/\/\/ TODO(?:: implement your solution here)?/g, `// ${TODO_ZH}`)
+    .replace(/\/\* TODO(?:: implement your solution here)? \*\//g, `/* ${TODO_ZH} */`);
+}
+
+function buildDynamicFunctionStarter(spec: FunctionSpec, language: string, locale: Locale): string {
+  const parsed = parseFunctionSignature(spec.signature);
+  const snakeName = parsed.functionName;
+  const camelName = toCamelCase(snakeName);
+  const todoLine = locale === "zh" ? TODO_ZH : "TODO";
+  if (language === "python") return localizeFunctionStarter(spec.starter, locale);
+  if (language === "javascript") {
+    return `function ${camelName}(${parsed.params.map((param) => param.name).join(", ")}) {\n  // ${todoLine}\n  return ${jsDefault(parsed.returnType)};\n}\n`;
+  }
+  if (language === "typescript") {
+    const params = parsed.params.map((param) => `${param.name}: ${tsType(param.annotation)}`).join(", ");
+    const returnType = tsType(parsed.returnType);
+    const returnLine = returnType === "void" ? "" : `\n  return ${jsDefault(parsed.returnType)};`;
+    return `function ${camelName}(${params}): ${returnType} {\n  // ${todoLine}${returnLine}\n}\n`;
+  }
+  if (language === "cpp") {
+    const params = parsed.params.map((param) => `${cppType(param.annotation)} ${param.name}`).join(", ");
+    const returnType = cppType(parsed.returnType);
+    const defaultValue = cppDefault(parsed.returnType);
+    const returnLine = returnType === "void" ? "" : `\n    return ${defaultValue};`;
+    return `#include <bits/stdc++.h>\nusing namespace std;\n\n${returnType} ${snakeName}(${params}) {\n    // ${todoLine}${returnLine}\n}\n`;
+  }
+  if (language === "java") {
+    const params = parsed.params.map((param) => `${javaType(param.annotation)} ${param.name}`).join(", ");
+    const returnType = javaType(parsed.returnType);
+    const defaultValue = javaDefault(returnType);
+    const returnLine = returnType === "void" ? "" : `\n        return ${defaultValue};`;
+    return `class Solution {\n    public ${returnType} ${camelName}(${params}) {\n        // ${todoLine}${returnLine}\n    }\n}\n`;
+  }
+  if (language === "golang") {
+    const params = parsed.params.map((param) => `${param.name} ${goType(param.annotation)}`).join(", ");
+    const returnType = goType(parsed.returnType);
+    const defaultValue = goDefault(parsed.returnType);
+    const returnSuffix = returnType ? ` ${returnType}` : "";
+    const returnLine = returnType ? `\n\treturn ${defaultValue}` : "";
+    return `package main\n\nfunc ${camelName}(${params})${returnSuffix} {\n\t// ${todoLine}${returnLine}\n}\n`;
+  }
+  if (language === "c") {
+    const { signature, defaultBody } = cReturnSignature(parsed, snakeName);
+    const returnLine = defaultBody ? `\n${defaultBody}` : "";
+    return `#include <stdlib.h>\n\n${signature} {\n    // ${todoLine}${returnLine}\n}\n`;
+  }
+  return localizeFunctionStarter(spec.starter, locale);
+}
+
+function defaultReturnForSignature(signature: string): string {
+  const returnType = signature.split("->")[1]?.trim().toLowerCase() ?? "";
+  if (returnType.startsWith("bool")) return "False";
+  if (returnType.startsWith("int")) return "0";
+  if (returnType.startsWith("float")) return "0.0";
+  if (returnType.startsWith("str")) return "\"\"";
+  if (returnType.startsWith("dict")) return "{}";
+  if (returnType.startsWith("list")) return "[]";
+  return "None";
+}
+
 const VISUALS: Record<string, VisualSpec> = {
   "two-sum": {
     title: { zh: "哈希表扫描", en: "Hash Table Scan" },
@@ -320,7 +680,7 @@ export function getFunctionSpec(problem?: AnyProblem | null): FunctionSpec | nul
         zh: "按函数签名补全函数体；测试数据使用 JSON-line 参数输入。",
         en: "Complete the function body. Test data is provided as JSON-line arguments.",
       },
-      starter: `${signature}:\n${TODO}    return None\n`,
+      starter: `${signature}:\n${TODO}    return ${defaultReturnForSignature(signature)}\n`,
       dynamic: true,
     };
   }
@@ -340,14 +700,16 @@ export function getProblemMode(problem?: AnyProblem | null) {
   };
 }
 
-function sampleComment(problem: AnyProblem | null | undefined, language: string): string {
+function sampleComment(problem: AnyProblem | null | undefined, language: string, locale: Locale): string {
   const sample = problem?.sample_testcases?.[0];
   if (!sample) return "";
+  const inputLabel = locale === "zh" ? "示例输入：" : "Sample input:";
+  const outputLabel = locale === "zh" ? "示例输出：" : "Sample output:";
   const lines = [
-    "Sample input:",
+    inputLabel,
     sample.input,
     "",
-    "Sample output:",
+    outputLabel,
     sample.output,
   ].join("\n");
   if (language === "python") return `# ${lines.replaceAll("\n", "\n# ")}\n\n`;
@@ -357,10 +719,14 @@ function sampleComment(problem: AnyProblem | null | undefined, language: string)
   return "";
 }
 
-export function buildStarter(problem: AnyProblem | null | undefined, language: string, mode: JudgeMode): string {
+export function buildStarter(problem: AnyProblem | null | undefined, language: string, mode: JudgeMode, locale: Locale = "en"): string {
   const spec = getFunctionSpec(problem);
-  if (mode === "function" && spec) return FUNCTION_STARTERS[problem?.slug ?? ""]?.[language] ?? spec.starter;
-  return `${sampleComment(problem, language)}${ACM_STARTERS[language] ?? ""}`;
+  if (mode === "function" && spec) {
+    const fixedStarter = FUNCTION_STARTERS[problem?.slug ?? ""]?.[language];
+    return localizeFunctionStarter(fixedStarter ?? buildDynamicFunctionStarter(spec, language, locale), locale);
+  }
+  const starter = locale === "zh" ? ACM_STARTERS_ZH[language] : ACM_STARTERS[language];
+  return `${sampleComment(problem, language, locale)}${starter ?? ""}`;
 }
 
 export function getLocalizedFunctionDescription(problem: AnyProblem | null | undefined, locale: Locale): string | null {

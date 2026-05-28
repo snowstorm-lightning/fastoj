@@ -23,6 +23,7 @@ export type ProblemFilters = {
   difficulty?: string;
   tags?: string;
   page?: number;
+  page_size?: number;
 };
 
 export type AIModelProfile = "default" | "deepseek" | "qwen-local";
@@ -277,6 +278,7 @@ export const api = {
     if (filters.difficulty) params.set("difficulty", filters.difficulty);
     if (filters.tags) params.set("tags", filters.tags);
     params.set("page", String(filters.page ?? 1));
+    if (filters.page_size) params.set("page_size", String(filters.page_size));
     return request(`/api/v1/problems?${params}`, { method: "GET" }, (data: any) =>
       problemListItemSchema.array().parse(data.data ?? []),
     );
