@@ -61,6 +61,7 @@ class JudgeTaskConsumer:
                 language=submission.language,
                 use_hidden=task.get("use_hidden", True),
                 db=db,
+                run_testcases=task.get("run_testcases"),
             )
 
             # Update submission with results

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const testCaseResultSchema = z.object({
   id: z.string(),
-  testcase_id: z.string(),
+  testcase_id: z.string().nullable().optional(),
   status: z.string(),
   input: z.string().nullable().optional(),
   expected_output: z.string().nullable().optional(),
@@ -125,6 +125,7 @@ export const aiChatSchema = z.object({
 export type ProblemListItem = z.infer<typeof problemListItemSchema>;
 export type ProblemDetail = z.infer<typeof problemDetailSchema>;
 export type SubmissionDetail = z.infer<typeof submissionDetailSchema>;
+export type TestCaseResult = z.infer<typeof testCaseResultSchema>;
 export type AIExplain = z.infer<typeof aiExplainSchema>;
 export type AIReview = z.infer<typeof aiReviewSchema>;
 export type AIHint = z.infer<typeof aiHintSchema>;

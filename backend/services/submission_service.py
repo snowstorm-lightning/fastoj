@@ -27,6 +27,8 @@ class SubmissionService:
         self, submission_data: SubmissionCreate, user_id: str, ip_address: str | None = None
     ) -> Submission:
         """Create a new submission and queue it for judging."""
+        if submission_data.run_testcases:
+            raise ValueError("Custom run testcases are only supported for public runs")
         # Verify problem exists
         if not Language.is_supported(submission_data.language):
             raise ValueError(f"Unsupported language: {submission_data.language}")
@@ -83,7 +85,12 @@ class SubmissionService:
         self.db.commit()
         self.db.refresh(submission)
 
-        self._queue_or_judge_now(submission, use_hidden=False, judge_code=judge_code)
+        self._queue_or_judge_now(
+            submission,
+            use_hidden=False,
+            judge_code=judge_code,
+            run_testcases=[{"input": item.input} for item in (submission_data.run_testcases or [])] or None,
+        )
 
         return submission
 
@@ -97,7 +104,13 @@ class SubmissionService:
             )
         return submission_data.code
 
-    def _queue_or_judge_now(self, submission: Submission, use_hidden: bool, judge_code: str | None = None) -> None:
+    def _queue_or_judge_now(
+        self,
+        submission: Submission,
+        use_hidden: bool,
+        judge_code: str | None = None,
+        run_testcases: list[dict[str, str]] | None = None,
+    ) -> None:
         """Queue a judge task, or execute it inline when Redis/worker is unavailable."""
         task = {
             "submission_id": str(submission.id),
@@ -106,6 +119,8 @@ class SubmissionService:
             "language": submission.language,
             "use_hidden": use_hidden,
         }
+        if run_testcases and not use_hidden:
+            task["run_testcases"] = run_testcases
 
         if settings.JUDGE_ASYNC:
             try:
@@ -129,6 +144,7 @@ class SubmissionService:
             language=submission.language,
             use_hidden=use_hidden,
             db=self.db,
+            run_testcases=run_testcases,
         )
         self.update_submission_status(
             str(submission.id),
@@ -275,7 +291,7 @@ class SubmissionService:
             testcase_results=[
                 TestCaseResultResponse(
                     id=str(r.id),
-                    testcase_id=str(r.testcase_id),
+                    testcase_id=str(r.testcase_id) if r.testcase_id else None,
                     status=r.status.value,
                     input=r.input,  # type: ignore[arg-type]
                     expected_output=r.expected_output,  # type: ignore[arg-type]
@@ -284,6 +300,6 @@ class SubmissionService:
                     memory_used=r.memory_used,  # type: ignore[arg-type]
                     is_hidden=r.is_hidden,  # type: ignore[arg-type]
                 )
-                for r in submission.testcase_results
+                for r in sorted(submission.testcase_results, key=lambda item: item.created_at or datetime.min)
             ],
         )

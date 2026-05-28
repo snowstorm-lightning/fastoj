@@ -141,7 +141,7 @@ class TestCaseResult(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     submission_id = Column(UUID(as_uuid=True), ForeignKey("submissions.id"), nullable=False, index=True)
-    testcase_id = Column(UUID(as_uuid=True), ForeignKey("testcases.id"), nullable=False)
+    testcase_id = Column(UUID(as_uuid=True), ForeignKey("testcases.id"), nullable=True)
     status = Column(SQLEnum(SubmissionResult), nullable=False)  # type: ignore[var-annotated]
     input = Column(Text, nullable=True)
     expected_output = Column(Text, nullable=True)

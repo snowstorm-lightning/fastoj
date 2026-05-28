@@ -24,9 +24,10 @@ for that.
   summaries. Hidden testcase input, expected output, and actual output are not
   returned to users or sent to the AI provider.
 - **The frontend is a real product surface.** It includes a searchable problem
-  library, card/list layouts, a three-column workbench, judge timeline, AI drawer,
-  submission trail, local discussion, settings, admin screens, and a training
-  graph.
+  library, card/list layouts, a three-column workbench, editable public-run
+  inputs with official-solution expected output generation, output diffing,
+  judge timeline, AI drawer, submission trail, local discussion, settings,
+  admin screens, and a training graph.
 - **It is ready for provider experiments.** The AI layer uses an
   OpenAI-compatible profile, with examples for hosted DeepSeek-style APIs and a
   local Qwen/llama.cpp server.
@@ -35,8 +36,9 @@ for that.
 
 1. **Problem library** - search, filter by tag/difficulty, switch between visual
    cards and a dense OJ-style list, and jump into recommended practice.
-2. **Workbench** - read the statement, edit in Monaco, run public cases, submit
-   for full judging, and watch status move from pending to result.
+2. **Workbench** - read the statement, edit in Monaco, run editable public
+   inputs, compare official expected output with your output, submit for full
+   judging, and watch status move from pending to result.
 3. **AI Copilot** - request progressive hints, failed-submission explanations,
    code review, and contextual chat in the active UI language.
 4. **Training graph** - browse knowledge nodes and return to the library with the
@@ -48,13 +50,13 @@ for that.
 
 | Problem Library | Coding Workbench |
 | --- | --- |
-| ![FastOJ problem library with filters, problem cards, mode badges, and acceptance stats](docs/screenshots/library-en.png) | ![FastOJ workbench with statement panel, Monaco editor, function mode controls, and AI judge copilot](docs/screenshots/workbench-en.png) |
-| Searchable practice catalog with filters, card/list layouts, mode badges, and training metrics. | Focused coding surface with the statement, starter frame, public-run controls, result area, and AI Copilot in one view. |
+| ![FastOJ problem library with filters, problem cards, mode badges, and acceptance stats](docs/screenshots/library-en.png) | ![FastOJ workbench with statement panel, Monaco editor, adjustable editor/result split, editable run inputs, official expected output, output diff, and AI judge copilot](docs/screenshots/workbench-en.png) |
+| Searchable practice catalog with filters, card/list layouts, mode badges, and training metrics. | Focused coding surface with the statement, starter frame, adjustable editor/result split, editable sample input, official expected output, your output, diff, and AI Copilot in one view. |
 
 | Training Graph | Auth Flow |
 | --- | --- |
-| ![FastOJ knowledge graph with topic cards and progress counts](docs/screenshots/graph-en.png) | ![FastOJ login screen with account form and product proof chips](docs/screenshots/auth-en.png) |
-| Topic map built with React Flow; clicking a node returns to the library with a tag filter applied. | Dedicated login/register screen that keeps account, submissions, drafts, and AI feedback tied together. |
+| ![FastOJ knowledge graph with topic cards and progress counts](docs/screenshots/graph-en.png) | ![FastOJ login and registration screen with account form, confirm password, product proof chips, and auth dialogs](docs/screenshots/auth-en.png) |
+| Topic map built with React Flow; clicking a node returns to the library with a tag filter applied. | Dedicated login/register screen with confirm password and clear success/error dialogs that keeps account, submissions, drafts, and AI feedback tied together. |
 
 ## Quick Start
 

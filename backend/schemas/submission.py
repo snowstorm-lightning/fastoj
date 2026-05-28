@@ -4,11 +4,17 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class RunTestCaseInput(BaseModel):
+    input: str = Field(..., max_length=32768)
+    expected_output: str | None = Field(default="", max_length=32768)
+
+
 class SubmissionCreate(BaseModel):
     problem_id: str
     code: str = Field(..., max_length=65536)
     language: str
     judge_mode: Literal["acm", "function"] = "acm"
+    run_testcases: list[RunTestCaseInput] | None = Field(default=None, max_length=8)
 
 
 class SubmissionRun(BaseModel):
@@ -19,7 +25,7 @@ class SubmissionRun(BaseModel):
 
 class TestCaseResultResponse(BaseModel):
     id: str
-    testcase_id: str
+    testcase_id: str | None = None
     status: str
     input: str | None = None
     expected_output: str | None = None

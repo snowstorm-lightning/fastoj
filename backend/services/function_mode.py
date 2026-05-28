@@ -2405,11 +2405,11 @@ def _wrap_dynamic_c(code: str, function_signature: str) -> str:
         if nullable:
             call_args.append("&result_nulls")
         result_setup = (
-            f"    int result_len = 0;\n"
-            f"    int *result_cols = NULL;\n"
+            "    int result_len = 0;\n"
+            "    int *result_cols = NULL;\n"
         )
         if nullable:
-            result_setup += f"    int **result_nulls = NULL;\n"
+            result_setup += "    int **result_nulls = NULL;\n"
         result_block = result_setup + (
             f"    {function_return} result = {parsed.function_name}({', '.join(call_args)});\n"
             f"    {_c_matrix_printer(return_type, base_kind, nullable)}(result, {'result_nulls, ' if nullable else ''}result_len, result_cols);\n"
@@ -2422,11 +2422,9 @@ def _wrap_dynamic_c(code: str, function_signature: str) -> str:
         call_args.append("&result_len")
         if nullable:
             call_args.append("&result_nulls")
-        result_setup = (
-            f"    int result_len = 0;\n"
-        )
+        result_setup = "    int result_len = 0;\n"
         if nullable:
-            result_setup += f"    int *result_nulls = NULL;\n"
+            result_setup += "    int *result_nulls = NULL;\n"
         result_block = result_setup + (
             f"    {function_return} result = {parsed.function_name}({', '.join(call_args)});\n"
             f"    {_c_array_printer(return_type, base_kind, nullable)}(result, {'result_nulls, ' if nullable else ''}result_len);\n"

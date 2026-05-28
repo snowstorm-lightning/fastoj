@@ -729,6 +729,25 @@ export function buildStarter(problem: AnyProblem | null | undefined, language: s
   return `${sampleComment(problem, language, locale)}${starter ?? ""}`;
 }
 
+function normalizedCode(code: string): string {
+  return code.replace(/\r\n/g, "\n").trim();
+}
+
+export function isStarterCode(problem: AnyProblem | null | undefined, language: string, mode: JudgeMode, code: string): boolean {
+  const normalized = normalizedCode(code);
+  if (!normalized) return false;
+  return (["en", "zh"] as const).some((locale) => normalizedCode(buildStarter(problem, language, mode, locale)) === normalized);
+}
+
+export function isLikelyStaleAcmDraft(problem: AnyProblem | null | undefined, language: string, code: string): boolean {
+  if (isStarterCode(problem, language, "acm", code)) return true;
+  if (language !== "python") return false;
+  const normalized = normalizedCode(code);
+  return /\bimport\s+sys\b/.test(normalized)
+    && /sys\.stdin\.read\(\)\.strip\(\)/.test(normalized)
+    && /\bprint\(\s*data\s*\)/.test(normalized);
+}
+
 export function getLocalizedFunctionDescription(problem: AnyProblem | null | undefined, locale: Locale): string | null {
   return getFunctionSpec(problem)?.description[locale] ?? null;
 }

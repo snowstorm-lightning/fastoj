@@ -49,7 +49,7 @@ export function JudgeTimeline({
     if (!term) return;
     term.clear();
     events.forEach((event) => term.writeln(`[${event.type}] ${event.result ?? event.status ?? ""} ${event.message ?? ""}`));
-    submission?.testcase_results.forEach((item, index) => {
+    (submission?.testcase_results ?? []).forEach((item, index) => {
       term.writeln(`case ${index + 1}: ${item.status} ${item.execute_time ?? 0}ms`);
     });
   }, [events, submission]);

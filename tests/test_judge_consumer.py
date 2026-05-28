@@ -28,9 +28,10 @@ def test_consumer_prefers_task_code_for_function_mode(monkeypatch):
             return fake_submission
 
     class FakeJudgeTask:
-        def execute(self, *, submission_id, problem_id, code, language, use_hidden, db):
+        def execute(self, *, submission_id, problem_id, code, language, use_hidden, db, run_testcases=None):
             captured["code"] = code
             captured["use_hidden"] = use_hidden
+            captured["run_testcases"] = run_testcases
             return {
                 "result": SubmissionResult.AC,
                 "error_message": None,
@@ -55,4 +56,4 @@ def test_consumer_prefers_task_code_for_function_mode(monkeypatch):
         message_id="m1",
     )
 
-    assert captured == {"code": "wrapped judge harness", "use_hidden": False}
+    assert captured == {"code": "wrapped judge harness", "use_hidden": False, "run_testcases": None}

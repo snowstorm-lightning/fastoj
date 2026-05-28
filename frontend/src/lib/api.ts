@@ -288,11 +288,27 @@ export const api = {
       problemDetailSchema.parse(data.data),
     );
   },
-  async submit(problem_id: string, language: string, code: string, runOnly = false, judge_mode: JudgeMode = "acm") {
+  async submit(
+    problem_id: string,
+    language: string,
+    code: string,
+    runOnly = false,
+    judge_mode: JudgeMode = "acm",
+    run_testcases?: Array<{ input: string }>,
+  ) {
     return request(runOnly ? "/api/v1/submissions/run" : "/api/v1/submissions", {
       method: "POST",
-      body: JSON.stringify({ problem_id, language, code, judge_mode }),
-    }, (data) => submissionDetailSchema.partial({ testcase_results: true }).parse(data));
+      body: JSON.stringify({
+        problem_id,
+        language,
+        code,
+        judge_mode,
+        ...(runOnly && run_testcases?.length ? { run_testcases } : {}),
+      }),
+    }, (data) => {
+      const parsed = submissionDetailSchema.partial({ testcase_results: true }).parse(data);
+      return { ...parsed, testcase_results: parsed.testcase_results ?? [] };
+    });
   },
   async submission(id: string): Promise<SubmissionDetail> {
     return request(`/api/v1/submissions/${id}`, { method: "GET" }, (data) =>

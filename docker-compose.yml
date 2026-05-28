@@ -6,8 +6,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-fastoj}
       POSTGRES_USER: ${POSTGRES_USER:-fastoj}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fastoj_secret}
-    ports:
-      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,8 +19,6 @@ services:
   redis:
     image: redis:7-alpine
     container_name: fastoj-redis
-    ports:
-      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -38,7 +34,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8010:8000"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-fastoj}:${POSTGRES_PASSWORD:-fastoj_secret}@postgres:5432/${POSTGRES_DB:-fastoj}
       - REDIS_URL=redis://redis:6379/0

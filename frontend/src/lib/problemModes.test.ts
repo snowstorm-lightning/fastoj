@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildStarter, getProblemMode } from "./problemModes";
+import { buildStarter, getProblemMode, isLikelyStaleAcmDraft } from "./problemModes";
 
 const twoSum = {
   id: "1",
@@ -128,5 +128,22 @@ describe("problem mode metadata", () => {
     const starter = buildStarter(twoSum, "cpp", "function", "zh");
     expect(starter).toContain("TODO: 在这里实现你的解法");
     expect(starter).not.toContain("implement your solution here");
+  });
+
+  it("identifies stale ACM templates cached under function mode", () => {
+    const majority = {
+      ...twoSum,
+      id: "4",
+      title: "Majority Element",
+      slug: "majority-element",
+      mode: "function",
+      function_signature: "def majority_element(nums: list[int]) -> int",
+      sample_testcases: [{ input: "[3,2,3]", output: "3" }],
+    };
+    const staleAcm = buildStarter(majority, "python", "acm", "zh");
+    const functionStarter = buildStarter(majority, "python", "function", "zh");
+
+    expect(isLikelyStaleAcmDraft(majority, "python", staleAcm)).toBe(true);
+    expect(isLikelyStaleAcmDraft(majority, "python", functionStarter)).toBe(false);
   });
 });

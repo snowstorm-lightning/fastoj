@@ -47,7 +47,7 @@ async def create_submission(
             finished_at=submission.finished_at.isoformat() if submission.finished_at else None,
         )
     except ValueError as e:
-        if "Unsupported language" in str(e) or "Function mode" in str(e):
+        if "Unsupported language" in str(e) or "Function mode" in str(e) or "Custom run" in str(e):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

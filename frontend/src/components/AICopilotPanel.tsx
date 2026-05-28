@@ -98,18 +98,6 @@ export function AICopilotPanel({
       </details>
 
       <details className="copilot-details">
-        <summary>{locale === "zh" ? "公开用例对比" : "Public Case Comparison"}</summary>
-        {explain?.public_case_analysis.length ? explain.public_case_analysis.map((item) => (
-          <div className="case-card" key={item.case_index}>
-            <strong>{locale === "zh" ? "用例" : "Case"} {item.case_index}</strong>
-            <p>{item.observation}</p>
-            <code>{locale === "zh" ? "期望" : "expected"}: {item.expected_summary}</code>
-            <code>{locale === "zh" ? "实际" : "actual"}: {item.actual_summary}</code>
-          </div>
-        )) : <p className="muted">{locale === "zh" ? "这里只展示公开用例细节。" : "Only public testcase details will appear here."}</p>}
-      </details>
-
-      <details className="copilot-details">
         <summary>{locale === "zh" ? "边界检查" : "Boundary Checks"}</summary>
         <List items={explain?.edge_cases_to_check ?? review?.edge_cases_to_check ?? []} locale={locale} />
       </details>

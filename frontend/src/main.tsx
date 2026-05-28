@@ -28,6 +28,7 @@ import {
   getLocalizedFunctionDescription,
   getProblemMode,
   getVisualSpec,
+  isLikelyStaleAcmDraft,
   type JudgeMode,
 } from "./lib/problemModes";
 import {
@@ -47,6 +48,7 @@ import { AICopilotPanel } from "./components/AICopilotPanel";
 import { CodeBlock } from "./components/CodeBlock";
 import { CodeEditor } from "./components/CodeEditor";
 import { JudgeTimeline, type JudgeEvent } from "./components/JudgeTimeline";
+import { RunResultPanel, type EditableRunCase, type RunSnapshot } from "./components/RunResultPanel";
 import { SubmissionTrail } from "./components/SubmissionTrail";
 import { TrainingGraph } from "./components/TrainingGraph";
 
@@ -68,6 +70,33 @@ const AI_MODEL_OPTIONS: Array<{ value: AIModelProfile; zh: string; en: string; d
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const percent = (value: number) => Math.round(clamp(value, 0, 1) * 100);
+const MAX_RUN_CASES = 8;
+const DEFAULT_LEFT_PANEL_WIDTH = 390;
+const DEFAULT_RIGHT_PANEL_WIDTH = 430;
+const DEFAULT_EDITOR_HEIGHT = 390;
+const SIDE_PANEL_SNAP_WIDTH = 140;
+const SIDE_PANEL_DRAG_MIN = 56;
+const EDITOR_MIN_HEIGHT = 260;
+const EDITOR_MAX_HEIGHT = 720;
+
+function runCasesFromProblem(problem?: ProblemDetail): EditableRunCase[] {
+  const samples = problem?.sample_testcases ?? [];
+  if (!samples.length) return [{ id: "case-1", input: "", expected_output: "" }];
+  return samples.slice(0, MAX_RUN_CASES).map((item, index) => ({
+    id: `sample-${problem?.id ?? "problem"}-${index + 1}`,
+    input: item.input,
+    expected_output: item.output,
+  }));
+}
+
+function ensureRunCases(cases: EditableRunCase[]): EditableRunCase[] {
+  const source = cases.length ? cases : [{ id: "case-1", input: "", expected_output: "" }];
+  return source.slice(0, MAX_RUN_CASES).map((item, index) => ({
+    id: item.id || `case-${index + 1}`,
+    input: item.input,
+    expected_output: item.expected_output,
+  }));
+}
 
 function IconGlyph({ children }: { children: React.ReactNode }) {
   return <span className="icon-glyph" aria-hidden="true">{children}</span>;
@@ -163,7 +192,9 @@ function AuthPage({
   const [username, setUsername] = useState("demo");
   const [email, setEmail] = useState("demo@example.com");
   const [password, setPassword] = useState("demo123456");
+  const [confirmPassword, setConfirmPassword] = useState("demo123456");
   const [message, setMessage] = useState<string>(text.authMessage);
+  const [dialog, setDialog] = useState<{ title: string; message: string; tone: "error" | "success"; onConfirm?: () => void } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -172,6 +203,11 @@ function AuthPage({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (mode === "register" && password !== confirmPassword) {
+      setMessage(text.passwordMismatch);
+      setDialog({ title: text.authDialogTitle, message: text.passwordMismatch, tone: "error" });
+      return;
+    }
     setBusy(true);
     try {
       if (mode === "register") {
@@ -179,9 +215,20 @@ function AuthPage({
       }
       await api.login(username, password);
       setMessage(text.authSuccess);
-      onDone();
+      if (mode === "register") {
+        setDialog({
+          title: text.registerSuccessTitle,
+          message: text.registerSuccessMessage,
+          tone: "success",
+          onConfirm: onDone,
+        });
+      } else {
+        onDone();
+      }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : text.authFailure);
+      const errorMessage = error instanceof Error ? error.message : text.authFailure;
+      setMessage(errorMessage);
+      setDialog({ title: text.authDialogTitle, message: errorMessage, tone: "error" });
     } finally {
       setBusy(false);
     }
@@ -192,12 +239,12 @@ function AuthPage({
       <section className="auth-card">
         <div className="auth-copy">
           <p className="eyebrow">{locale === "zh" ? "FastOJ 账号" : "FastOJ Account"}</p>
-          <h1>{mode === "login" ? text.loginTitle : text.registerTitle}</h1>
+          <h1>{text.authPanelTitle}</h1>
           <p>{text.accountCopy}</p>
           <div className="auth-proof">
-            <span>{locale === "zh" ? "Docker 沙箱" : "Docker sandbox"}</span>
-            <span>{locale === "zh" ? "Redis 队列" : "Redis Streams"}</span>
-            <span>{locale === "zh" ? "隐藏用例隔离" : "Hidden case isolation"}</span>
+            <span>{locale === "zh" ? "题库练习" : "Problem practice"}</span>
+            <span>{locale === "zh" ? "智能反馈" : "Smart feedback"}</span>
+            <span>{locale === "zh" ? "公平评测" : "Fair judging"}</span>
           </div>
         </div>
         <form className="auth-form" onSubmit={submit}>
@@ -208,11 +255,31 @@ function AuthPage({
           <label>{text.username}<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" /></label>
           {mode === "register" ? <label>{text.email}<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" /></label> : null}
           <label>{text.password}<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>
+          {mode === "register" ? <label>{text.confirmPassword}<input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" /></label> : null}
           <button className="primary auth-submit" disabled={busy}>
             {busy ? text.processing : mode === "login" ? text.loginContinue : text.registerContinue}
           </button>
           <p className="muted">{message}</p>
         </form>
+        {dialog ? (
+          <div className="auth-dialog-backdrop" role="presentation">
+            <div className={`auth-dialog ${dialog.tone}`} role="alertdialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+              <h2 id="auth-dialog-title">{dialog.title}</h2>
+              <p>{dialog.message}</p>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  const onConfirm = dialog.onConfirm;
+                  setDialog(null);
+                  onConfirm?.();
+                }}
+              >
+                {text.dialogConfirm}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   );
@@ -792,11 +859,15 @@ function Workspace({
   const [aiModel, setAiModel] = useState<AIModelProfile>(() => (localStorage.getItem("fastoj.aiModel") as AIModelProfile | null) ?? "default");
   const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("fastoj.leftOpen") !== "false");
   const [rightOpen, setRightOpen] = useState(() => localStorage.getItem("fastoj.rightOpen") !== "false");
-  const [leftWidth, setLeftWidth] = useState(() => Number(localStorage.getItem("fastoj.leftWidth") ?? 390));
-  const [rightWidth, setRightWidth] = useState(() => Number(localStorage.getItem("fastoj.rightWidth") ?? 430));
-  const [resizing, setResizing] = useState<"left" | "right" | null>(null);
+  const [leftWidth, setLeftWidth] = useState(() => Number(localStorage.getItem("fastoj.leftWidth") ?? DEFAULT_LEFT_PANEL_WIDTH));
+  const [rightWidth, setRightWidth] = useState(() => Number(localStorage.getItem("fastoj.rightWidth") ?? DEFAULT_RIGHT_PANEL_WIDTH));
+  const [editorHeight, setEditorHeight] = useState(() => clamp(Number(localStorage.getItem("fastoj.editorHeight") ?? DEFAULT_EDITOR_HEIGHT), EDITOR_MIN_HEIGHT, EDITOR_MAX_HEIGHT));
+  const [resizing, setResizing] = useState<"left" | "right" | "editor" | null>(null);
   const [submission, setSubmission] = useState<SubmissionDetail | null>(null);
   const [events, setEvents] = useState<JudgeEvent[]>([]);
+  const [runCases, setRunCases] = useState<EditableRunCase[]>([]);
+  const [activeRunCase, setActiveRunCase] = useState(0);
+  const [runSnapshot, setRunSnapshot] = useState<RunSnapshot | null>(null);
   const [explain, setExplain] = useState<AIExplain | null>(null);
   const [review, setReview] = useState<AIReview | null>(null);
   const [hint, setHint] = useState<AIHint | null>(null);
@@ -805,6 +876,7 @@ function Workspace({
   const [detailTab, setDetailTab] = useState<DetailTab>("cases");
   const activeProblemIdRef = useRef<string | null>(problemId);
   const activeSubmissionIdRef = useRef<string | null>(null);
+  const judgeRequestRef = useRef(0);
   const pollRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -822,6 +894,7 @@ function Workspace({
   useEffect(() => { localStorage.setItem("fastoj.rightOpen", String(rightOpen)); }, [rightOpen]);
   useEffect(() => { localStorage.setItem("fastoj.leftWidth", String(leftWidth)); }, [leftWidth]);
   useEffect(() => { localStorage.setItem("fastoj.rightWidth", String(rightWidth)); }, [rightWidth]);
+  useEffect(() => { localStorage.setItem("fastoj.editorHeight", String(editorHeight)); }, [editorHeight]);
   useEffect(() => { localStorage.setItem("fastoj.aiModel", aiModel); }, [aiModel]);
   useEffect(() => { if (problemId) setRecentProblemId(problemId); }, [problemId, setRecentProblemId]);
 
@@ -829,6 +902,8 @@ function Workspace({
     if (!problemId || !problem) return "";
     const starter = buildStarter(problem, targetLanguage, targetMode, locale);
     const draft = getDraft(problemId, `${targetLanguage}.${targetMode}`);
+    if (!draft.trim()) return starter;
+    if (targetMode === "function" && isLikelyStaleAcmDraft(problem, targetLanguage, draft)) return starter;
     if (targetMode === "function" && targetLanguage !== "python" && draft.trim()) {
       if (/^\s*(import\s+\w+\s*\n\s*)*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/.test(draft)) return starter;
       const stalePythonStarters = [
@@ -837,7 +912,13 @@ function Workspace({
       ];
       if (stalePythonStarters.includes(draft.trim())) return starter;
     }
-    return draft || starter;
+    return draft;
+  }
+
+  function resetEditorTemplate() {
+    const starter = buildStarter(problem, language, judgeMode, locale);
+    setCode(starter);
+    if (problemId) setDraft(problemId, draftKey, starter);
   }
 
   useEffect(() => {
@@ -846,11 +927,23 @@ function Workspace({
     stopStatusStream();
     setSubmission(null);
     setEvents([]);
+    setRunSnapshot(null);
+    setActiveRunCase(0);
     clearCopilotState();
     setDetailTab("cases");
   }, [problemId]);
 
   useEffect(() => () => stopStatusStream(), []);
+
+  useEffect(() => {
+    if (!problem) {
+      setRunCases([]);
+      setActiveRunCase(0);
+      return;
+    }
+    setRunCases(runCasesFromProblem(problem));
+    setActiveRunCase(0);
+  }, [problem?.id]);
 
   useEffect(() => {
     if (!problemId || !problem) return;
@@ -878,15 +971,53 @@ function Workspace({
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = side === "left" ? leftWidth : rightWidth;
+    const maxWidth = side === "left" ? 860 : 820;
+    const defaultWidth = side === "left" ? DEFAULT_LEFT_PANEL_WIDTH : DEFAULT_RIGHT_PANEL_WIDTH;
+    let latestWidth = startWidth;
     setResizing(side);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
     const onMove = (moveEvent: PointerEvent) => {
       const delta = side === "left" ? moveEvent.clientX - startX : startX - moveEvent.clientX;
-      const next = clamp(startWidth + delta, side === "left" ? 260 : 320, side === "left" ? 680 : 700);
+      const next = clamp(startWidth + delta, SIDE_PANEL_DRAG_MIN, maxWidth);
+      latestWidth = next;
       if (side === "left") setLeftWidth(next);
       else setRightWidth(next);
     };
     const onUp = () => {
+      if (latestWidth <= SIDE_PANEL_SNAP_WIDTH) {
+        if (side === "left") {
+          setLeftOpen(false);
+          setLeftWidth(defaultWidth);
+        } else {
+          setRightOpen(false);
+          setRightWidth(defaultWidth);
+        }
+      }
       setResizing(null);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  function startEditorResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = editorHeight;
+    setResizing("editor");
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (moveEvent: PointerEvent) => {
+      setEditorHeight(clamp(startHeight + moveEvent.clientY - startY, EDITOR_MIN_HEIGHT, EDITOR_MAX_HEIGHT));
+    };
+    const onUp = () => {
+      setResizing(null);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -919,23 +1050,30 @@ function Workspace({
       onRequireAuth();
       return;
     }
+    const requestId = judgeRequestRef.current + 1;
+    judgeRequestRef.current = requestId;
     const requestProblemId = problemId;
+    const panelCases = runOnly ? ensureRunCases(runCases) : runCasesFromProblem(problem);
+    const runPayload = runOnly
+      ? panelCases.map((item) => ({ input: item.input }))
+      : undefined;
     stopStatusStream();
     activeSubmissionIdRef.current = null;
     clearCopilotState();
     setSubmission(null);
+    setRunSnapshot({ submissionId: "", code, cases: panelCases, kind: runOnly ? "run" : "submit" });
     setDetailTab("judge");
     setLeftOpen(true);
-    setRightOpen(true);
     setEvents([{ type: "pending", status: "pending", progress: 0 }]);
     try {
-      const created = await api.submit(problemId, language, code, runOnly, judgeMode);
-      if (activeProblemIdRef.current !== requestProblemId) return;
+      const created = await api.submit(problemId, language, code, runOnly, judgeMode, runPayload);
+      if (activeProblemIdRef.current !== requestProblemId || judgeRequestRef.current !== requestId) return;
       activeSubmissionIdRef.current = created.id;
+      setRunSnapshot({ submissionId: created.id, code, cases: panelCases, kind: runOnly ? "run" : "submit" });
       setSubmission(created as SubmissionDetail);
       connectStatus(created.id);
     } catch (error) {
-      if (activeProblemIdRef.current !== requestProblemId) return;
+      if (activeProblemIdRef.current !== requestProblemId || judgeRequestRef.current !== requestId) return;
       if (isUnauthorized(error)) {
         localStorage.removeItem("fastoj.jwt");
         setEvents([{ type: "error", status: "finished", result: "se", message: text.authExpired }]);
@@ -1062,6 +1200,35 @@ function Workspace({
     }
   }
 
+  function updateRunCase(index: number, value: string) {
+    setRunCases((items) => (
+      items.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, input: value, expected_output: "" } : item
+      ))
+    ));
+  }
+
+  function addRunCase() {
+    if (runCases.length >= MAX_RUN_CASES) return;
+    setRunCases((items) => [...items, { id: `custom-${Date.now()}`, input: "", expected_output: "" }]);
+    setActiveRunCase(runCases.length);
+  }
+
+  function removeRunCase(index: number) {
+    const nextLength = Math.max(1, runCases.length - 1);
+    setRunCases((items) => {
+      const next = items.filter((_, itemIndex) => itemIndex !== index);
+      return next.length ? next : [{ id: `custom-${Date.now()}`, input: "", expected_output: "" }];
+    });
+    setActiveRunCase(Math.max(0, Math.min(index, nextLength - 1)));
+  }
+
+  function resetRunCases() {
+    setRunCases(runCasesFromProblem(problem));
+    setActiveRunCase(0);
+    setRunSnapshot(null);
+  }
+
   if (!problemId) {
     return (
       <main className="empty-workspace">
@@ -1077,6 +1244,9 @@ function Workspace({
   const gridStyle = {
     "--left-panel": leftOpen ? `${leftWidth}px` : "18px",
     "--right-panel": rightOpen ? `${rightWidth}px` : "18px",
+  } as React.CSSProperties;
+  const codingStyle = {
+    "--editor-height": `${editorHeight}px`,
   } as React.CSSProperties;
 
   return (
@@ -1114,7 +1284,6 @@ function Workspace({
                 authenticated={authenticated}
                 onRequireAuth={onRequireAuth}
               />
-              <ProblemGuidance problem={problem} locale={locale} />
             </>
           ) : null}
         </aside>
@@ -1125,7 +1294,7 @@ function Workspace({
           <div className="resize-handle" role="separator" aria-label={locale === "zh" ? "调整题面面板宽度" : "Resize statement panel"} title={locale === "zh" ? "拖动调整题面宽度" : "Drag to resize statement"} onPointerDown={(event) => leftOpen && startResize("left", event)} />
         </div>
 
-        <section className="coding-panel feature-frame code-frame">
+        <section className="coding-panel feature-frame code-frame" style={codingStyle}>
           <div className="editor-toolbar">
             <button className={`mode-toggle ${judgeMode === "function" ? "active function-mode" : "active acm-mode"}`} title={!modeInfo.supportsFunction ? text.modeAcmOnlyTitle : judgeMode === "function" ? text.modeFunctionTitle : text.modeAcmTitle} disabled={!modeInfo.supportsFunction} onClick={toggleJudgeMode}>
               <span className="mode-dot" />
@@ -1135,12 +1304,34 @@ function Workspace({
               {LANGUAGES.map((item) => <option key={item}>{item}</option>)}
             </select>
             <AIModelDropdown value={aiModel} locale={locale} onChange={setAiModel} />
-            <button className="icon-button tip" data-tip={text.resetTemplate} onClick={() => setCode(buildStarter(problem, language, judgeMode, locale))}><IconGlyph>R</IconGlyph></button>
+            <button className="icon-button tip" data-tip={text.resetTemplate} onClick={resetEditorTemplate}><IconGlyph>R</IconGlyph></button>
             <button className="icon-button run-action tip" data-tip={text.runTitle} onClick={() => judge(true)} disabled={functionBlocked}><IconGlyph>▶</IconGlyph></button>
             <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)} disabled={functionBlocked}><IconGlyph>↑</IconGlyph></button>
           </div>
           <FunctionFrame problem={problem} mode={judgeMode} language={language} blocked={functionBlocked} locale={locale} />
           <CodeEditor language={language} value={code} onChange={updateCode} theme={theme} />
+          <div
+            className="editor-result-resizer"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={locale === "zh" ? "调整代码编辑器高度" : "Resize code editor height"}
+            title={locale === "zh" ? "拖动调整代码编辑器高度" : "Drag to resize editor height"}
+            onPointerDown={startEditorResize}
+          />
+          <RunResultPanel
+            locale={locale}
+            cases={runCases}
+            activeIndex={activeRunCase}
+            submission={submission}
+            snapshot={runSnapshot}
+            canRun={Boolean(problem) && !functionBlocked}
+            onActiveIndex={setActiveRunCase}
+            onChangeInput={updateRunCase}
+            onAddCase={addRunCase}
+            onRemoveCase={removeRunCase}
+            onResetCases={resetRunCases}
+            onRun={() => judge(true)}
+          />
         </section>
 
         <div className="panel-edge right-edge">
@@ -1296,25 +1487,28 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
   const text = UI[locale];
   if (!problem) return <p className="muted">{text.loadingCases}</p>;
   return (
-    <div className="case-grid">
-      {problem.sample_testcases.map((testcase, index) => (
-        <article className="sample-card" key={`${testcase.input}-${index}`}>
-          <h3>{locale === "zh" ? "示例" : "Example"} {index + 1}</h3>
-          <div className="sample-row">
-            <span>{text.input}</span>
-            <pre>{testcase.input}</pre>
-          </div>
-          <div className="sample-row">
-            <span>{text.output}</span>
-            <pre>{testcase.output}</pre>
-          </div>
-          <div className="sample-row">
-            <span>{text.explanation}</span>
-            <p>{sampleExplanation(problem.slug, index, locale)}</p>
-          </div>
-        </article>
-      ))}
-    </div>
+    <>
+      <div className="case-grid">
+        {problem.sample_testcases.map((testcase, index) => (
+          <article className="sample-card" key={`${testcase.input}-${index}`}>
+            <h3>{locale === "zh" ? "示例" : "Example"} {index + 1}</h3>
+            <div className="sample-row">
+              <span>{text.input}</span>
+              <pre>{testcase.input}</pre>
+            </div>
+            <div className="sample-row">
+              <span>{text.output}</span>
+              <pre>{testcase.output}</pre>
+            </div>
+            <div className="sample-row">
+              <span>{text.explanation}</span>
+              <p>{sampleExplanation(problem.slug, index, locale)}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+      <ProblemGuidance problem={problem} locale={locale} />
+    </>
   );
 }
 

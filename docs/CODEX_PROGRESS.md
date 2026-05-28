@@ -1,5 +1,19 @@
 # Codex Progress
 
+## 2026-05-29 Workbench Run Panel And Auth Feedback
+
+- [x] Added a LeetCode-style run result panel below the editor with editable public inputs, official-solution generated expected output, actual output, and red-highlighted diff lines for mismatches.
+- [x] Changed public-run custom cases so clients submit only input; the judge ignores client-provided expected output and generates it server-side from an official/reference solution, with public-sample fallback only for already visible samples.
+- [x] Added backend support for public-only custom run cases while keeping hidden testcase inputs, expected outputs, actual outputs, and hidden progress metadata out of API/WebSocket responses.
+- [x] Added registration confirm-password validation, clearer auth error dialogs, and a registration-success dialog before entering the problem library.
+- [x] Moved visual problem guidance and official hints after public sample cards so they do not interrupt sample input/output reading.
+- [x] Added an adjustable editor/result height splitter, increased the default editor height, widened left/right resize hit areas, and made side panels snap closed on pointer release near the edge.
+- [x] Removed the duplicated AI Copilot public-case comparison block and made the right AI container flow with expanded detail content.
+- [x] Fixed custom runs for Majority Element by adding a sandboxed reference generator, and made official function-solution wrapping use the function-signature fallback.
+- [x] Fixed stale ACM starter drafts appearing in Python function mode; function mode now restores the function starter when an ACM template was cached under the function draft key.
+- [x] Updated English and Chinese README page descriptions for the current auth and workbench behavior. Screenshot PNG regeneration was attempted but blocked by the current WSL/browser environment.
+- [x] Verification passed for the touched surface: `uv run ruff check .` passed, targeted backend judge/function-mode tests passed, frontend build passed, frontend tests passed, Docker API/worker rebuild and health passed, and a real Majority Element custom-run smoke returned `ac` with generated expected output.
+
 ## 2026-05-26 Linux/WSL Deployment Pass
 
 - [x] Verified current WSL toolchain: Docker Desktop Linux engine 29.2.1, Docker Compose v5.1.0, `uv 0.10.10`, Node v24.13.1, and npm 11.14.1.

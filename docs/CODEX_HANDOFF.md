@@ -1,10 +1,27 @@
 # Codex Handoff
 
-Updated: 2026-05-26
+Updated: 2026-05-29
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-05-29 Workbench Run Panel And Auth Feedback
+
+- Workbench public runs now support editable public run inputs. The new result panel below Monaco shows sample input, official/reference generated expected output, the user's actual output, and line-level diffs with mismatches highlighted.
+- Backend public runs accept a bounded `run_testcases` payload containing input only, ignore any client-provided expected output, and persist those results without a testcase foreign key. Hidden/full-submit behavior still uses stored testcases only and no hidden input/expected/actual output is returned.
+- Custom public-run expected output is generated server-side by running the official solution in the sandbox when available. `next-permutation`, `diameter-of-binary-tree`, and `maximum-depth-of-binary-tree` also have built-in Python reference generators; exact public sample input can fall back to already visible public sample output.
+- Hidden-case WebSocket progress was tightened so full-submit hidden phases do not expose current testcase names, counts, or last-case status metadata.
+- The result panel is safe by construction: output/diff content is rendered as text nodes, not injected HTML.
+- The editor/result split in the center panel is now vertically resizable, defaults to a taller editor, and persists editor height in localStorage.
+- Left/right workbench sidebars now have wider resize hit areas, larger resize ranges, and snap closed only after pointer release when dragged near the edge.
+- The left detail dock now places visual guidance and official hints after the public sample cards rather than between sample content.
+- The AI Copilot panel now omits the duplicated public-case comparison block; detailed input/expected/actual/diff comparison lives in the run result panel, while AI focuses on cause, suspicious code, boundary checks, and next action. The right AI container also grows with expanded detail content.
+- Custom runs for Majority Element now use a built-in sandboxed reference generator, and official function-solution wrapping uses the same function-signature fallback exposed by the problem API.
+- Python function mode now detects stale ACM starter drafts cached under the function-mode draft key and restores the function starter; resetting the template also persists the corrected draft.
+- Auth now has registration confirm-password validation plus clear success/error dialogs. Registration success shows a dialog before entering the library.
+- README and README.zh-CN page descriptions were updated for the current workbench/auth behavior. Screenshot PNG regeneration was attempted but blocked because the available WSL/browser paths had no runnable browser binary and Windows interop failed with `UtilBindVsockAnyPort`.
+- Verification on 2026-05-29: `uv run ruff check .` passed; targeted backend tests for judge/function-mode behavior passed; `cd frontend && npm run build` passed; `cd frontend && npm test` passed; `docker compose up --build -d api worker` passed; API health returned `{"status":"healthy","app":"FastOJ"}` at `http://127.0.0.1:8010/api/v1/health`; a real custom-run smoke for Majority Element `[1,2,2]` returned `expected_output: 2`, `actual_output: 2`, and `result: ac`.
 
 ## 2026-05-26 Linux/WSL Deployment Pass
 
