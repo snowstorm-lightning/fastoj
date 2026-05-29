@@ -27,11 +27,22 @@ export type ProblemFilters = {
 };
 
 export type AIModelProfile = "default" | "deepseek" | "qwen-local";
+export type AIProfile = {
+  value: AIModelProfile;
+  label_zh: string;
+  label_en: string;
+  detail_zh: string;
+  detail_en: string;
+  configured: boolean;
+  available: boolean;
+  reason?: string | null;
+  checked_at?: string | null;
+};
 export type ProblemAgentRequest = {
   topic: string;
   difficulty: "easy" | "medium" | "hard";
   tags: string[];
-  mode: "function" | "acm";
+  mode: "function" | "acm" | "both";
   target_language: string;
   locale: "zh" | "en";
   model_profile: AIModelProfile;
@@ -55,10 +66,61 @@ export type ProblemDraft = {
   tags: string[];
   mode: string;
   status: string;
+  input_format?: string | null;
+  output_format?: string | null;
+  function_signature?: string | null;
+  time_limit?: number;
+  memory_limit?: number;
+  hint?: string | null;
+  official_solution_language?: string;
+  official_solution_code?: string;
+  official_solution_explanation?: string;
+  time_complexity?: string | null;
+  space_complexity?: string | null;
   validation_summary?: Record<string, unknown>;
   validation_report?: Record<string, any>;
   testcases?: Array<Record<string, any>>;
+  steps?: AgentStep[];
   approved_problem_id?: string | null;
+};
+export type ProblemDraftUpdatePayload = {
+  title?: string;
+  slug?: string;
+  description?: string;
+  difficulty?: string;
+  tags?: string[];
+  mode?: string;
+  input_format?: string | null;
+  output_format?: string | null;
+  function_signature?: string | null;
+  time_limit?: number;
+  memory_limit?: number;
+  hint?: string | null;
+  official_solution_language?: string;
+  official_solution_code?: string;
+  official_solution_explanation?: string;
+  time_complexity?: string | null;
+  space_complexity?: string | null;
+  testcases?: Array<Record<string, unknown>>;
+};
+export type AdminTestCase = {
+  id: string;
+  problem_id: string;
+  input: string;
+  output: string;
+  is_hidden: boolean;
+  is_sample: boolean;
+  score: number;
+  order: number;
+  created_at?: string | null;
+};
+export type AdminTestCasePayload = {
+  input: string;
+  output: string;
+  is_hidden: boolean;
+  is_sample: boolean;
+  score: number;
+  order?: number | null;
 };
 export type CurrentUser = {
   id: string;
@@ -105,7 +167,10 @@ const SENSITIVE_ERROR_TEXT = /\b(hidden|testcases?|expected|actual|input|output|
 const SAFE_BACKEND_ERROR_TEXT = [
   /^DeepSeek profile is not configured\./,
   /^AI provider returned HTTP \d{3} for model [A-Za-z0-9._:-]+\.$/,
+  /^AI provider returned HTTP \d{3}\.$/,
   /^AI provider is unreachable at https?:\/\/[A-Za-z0-9.:/_-]+\/?[A-Za-z0-9./_-]*\./,
+  /^AI provider is unreachable\./,
+  /^AI provider is unavailable\./,
   /^AI provider returned an invalid chat-completions response\.$/,
   /^AI provider is disabled\./,
 ];
@@ -214,6 +279,9 @@ export const api = {
       body: JSON.stringify(payload),
     }, (data: any) => data);
   },
+  async aiProfiles(): Promise<AIProfile[]> {
+    return request("/api/v1/ai/profiles", { method: "GET" }, (data: any) => data ?? []);
+  },
   async adminOverview(filters: AdminOverviewFilters = {}) {
     const params = new URLSearchParams();
     if (filters.userQuery) params.set("user_query", filters.userQuery);
@@ -240,11 +308,32 @@ export const api = {
       body: JSON.stringify(payload),
     }, (data: any) => data);
   },
+  async adminDeleteProblem(problemId: string) {
+    return request(`/api/v1/admin/problems/${problemId}`, { method: "DELETE" }, (data: any) => data);
+  },
   async adminUpsertSolution(problemId: string, payload: Record<string, unknown>) {
     return request(`/api/v1/admin/problems/${problemId}/solutions`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }, (data: any) => data);
+  },
+  async adminProblemTestcases(problemId: string): Promise<AdminTestCase[]> {
+    return request(`/api/v1/admin/problems/${problemId}/testcases`, { method: "GET" }, (data: any) => data.data ?? []);
+  },
+  async adminCreateTestcase(problemId: string, payload: AdminTestCasePayload): Promise<AdminTestCase> {
+    return request(`/api/v1/admin/problems/${problemId}/testcases`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, (data: any) => data.data);
+  },
+  async adminUpdateTestcase(testcaseId: string, payload: Partial<AdminTestCasePayload>): Promise<AdminTestCase> {
+    return request(`/api/v1/admin/testcases/${testcaseId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }, (data: any) => data.data);
+  },
+  async adminDeleteTestcase(testcaseId: string) {
+    return request(`/api/v1/admin/testcases/${testcaseId}`, { method: "DELETE" }, (data: any) => data);
   },
   async adminCreateProblemDraft(payload: ProblemAgentRequest) {
     return request("/api/v1/admin/agent/problem-drafts", {
@@ -262,6 +351,12 @@ export const api = {
   },
   async adminProblemDraft(draftId: string): Promise<ProblemDraft> {
     return request(`/api/v1/admin/problem-drafts/${draftId}`, { method: "GET" }, (data: any) => data);
+  },
+  async adminUpdateProblemDraft(draftId: string, payload: ProblemDraftUpdatePayload): Promise<ProblemDraft> {
+    return request(`/api/v1/admin/problem-drafts/${draftId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }, (data: any) => data);
   },
   async adminAgentRun(runId: string) {
     return request(`/api/v1/admin/agent/runs/${runId}`, { method: "GET" }, (data: any) => data);

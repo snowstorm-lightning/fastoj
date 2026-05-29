@@ -99,6 +99,10 @@ def test_outputs_match_json_equivalent_lists():
     assert _outputs_match("[0,1]", "[0, 1]")
 
 
+def test_outputs_match_accepts_raw_string_against_json_string_literal():
+    assert _outputs_match("qiu qiu", '"qiu qiu"')
+
+
 def test_outputs_match_rejects_different_values():
     assert not _outputs_match("[1,0]", "[0, 1]")
 

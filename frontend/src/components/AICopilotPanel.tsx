@@ -18,6 +18,8 @@ type Props = {
   hint: AIHint | null;
   chatLines: ChatLine[];
   error: string | null;
+  disabled?: boolean;
+  disabledReason?: string | null;
   onExplain: () => void;
   onReview: () => void;
   onHint: (level: 1 | 2 | 3) => void;
@@ -41,6 +43,8 @@ export function AICopilotPanel({
   hint,
   chatLines,
   error,
+  disabled = false,
+  disabledReason = null,
   onExplain,
   onReview,
   onHint,
@@ -65,6 +69,7 @@ export function AICopilotPanel({
         <span>{locale === "zh" ? "AI 判题助手" : "AI Judge Copilot"}</span>
         <strong title={current.description}>{current.label}</strong>
       </div>
+      {disabled && disabledReason ? <div className="recoverable-error">{disabledReason}</div> : null}
       {error ? <div className="recoverable-error">{error}</div> : null}
 
       <section>
@@ -108,11 +113,11 @@ export function AICopilotPanel({
       </details>
 
       <div className="copilot-actions">
-        <button title={locale === "zh" ? "解释最近一次判题结果" : "Explain latest judge result"} onClick={onExplain} disabled={!submission}>{locale === "zh" ? "解释" : "Explain"}</button>
-        <button title={locale === "zh" ? "审查最近一次提交代码" : "Review latest submitted code"} onClick={onReview} disabled={!submission}>{locale === "zh" ? "审查" : "Review"}</button>
-        <button title={locale === "zh" ? "轻提示" : "Light hint"} onClick={() => onHint(1)}>{locale === "zh" ? "提示 1" : "Hint 1"}</button>
-        <button title={locale === "zh" ? "方向提示" : "Directional hint"} onClick={() => onHint(2)}>{locale === "zh" ? "提示 2" : "Hint 2"}</button>
-        <button title={locale === "zh" ? "强提示" : "Strong hint"} onClick={() => onHint(3)}>{locale === "zh" ? "提示 3" : "Hint 3"}</button>
+        <button title={locale === "zh" ? "解释最近一次判题结果" : "Explain latest judge result"} onClick={onExplain} disabled={disabled || !submission}>{locale === "zh" ? "解释" : "Explain"}</button>
+        <button title={locale === "zh" ? "审查最近一次提交代码" : "Review latest submitted code"} onClick={onReview} disabled={disabled || !submission}>{locale === "zh" ? "审查" : "Review"}</button>
+        <button title={locale === "zh" ? "轻提示" : "Light hint"} onClick={() => onHint(1)} disabled={disabled}>{locale === "zh" ? "提示 1" : "Hint 1"}</button>
+        <button title={locale === "zh" ? "方向提示" : "Directional hint"} onClick={() => onHint(2)} disabled={disabled}>{locale === "zh" ? "提示 2" : "Hint 2"}</button>
+        <button title={locale === "zh" ? "强提示" : "Strong hint"} onClick={() => onHint(3)} disabled={disabled}>{locale === "zh" ? "提示 3" : "Hint 3"}</button>
       </div>
 
       <section className="ai-chat-box">
@@ -127,8 +132,8 @@ export function AICopilotPanel({
           )) : <p className="muted">{locale === "zh" ? "运行或提交后，可以继续追问 AI。" : "Run or submit, then continue with follow-up questions."}</p>}
         </div>
         <form className="ai-chat-form" onSubmit={submitChat}>
-          <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={placeholder} />
-          <button className="primary" disabled={!draft.trim()}>{locale === "zh" ? "发送" : "Send"}</button>
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={placeholder} disabled={disabled} />
+          <button className="primary" disabled={disabled || !draft.trim()}>{locale === "zh" ? "发送" : "Send"}</button>
         </form>
       </section>
     </aside>

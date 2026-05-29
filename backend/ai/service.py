@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from backend.ai.config import AIConfig
+from backend.ai.profiles import resolve_ai_config
 from backend.ai.prompts import chat, explain_submission, hint, review_code
 from backend.ai.providers import AIProviderUnavailableError, BaseAIProvider, build_provider
 from backend.ai.schemas import AIChatResponse, AIExplainResponse, AIHintResponse, AIReviewResponse
@@ -24,7 +24,7 @@ RESULT_TO_VERDICT = {
 class AIService:
     def __init__(self, db: Session, provider: BaseAIProvider | None = None, model_profile: str | None = None):
         self.db = db
-        self.config = AIConfig.from_settings(model_profile)
+        self.config = resolve_ai_config(model_profile)
         self.provider = provider or build_provider(self.config)
 
     def explain_submission(self, submission_id: str, current_user: User, locale: str = "en") -> AIExplainResponse:

@@ -7,8 +7,10 @@ import {
   api,
   isUnauthorized,
   makeJudgeSocket,
+  type AdminTestCase,
   type AgentStep,
   type AIModelProfile,
+  type AIProfile,
   type CurrentUser,
   type ProblemDraft,
   type ProblemFilters,
@@ -59,14 +61,73 @@ type DetailTab = "cases" | "solution" | "judge" | "trail" | "discussion";
 type AuthMode = "login" | "register";
 type LibraryLayout = "card" | "list";
 type AppTheme = "light" | "dark";
+type ProblemAuthoringMode = "function" | "acm" | "both";
 type DiscussionPost = { id: string; author: string; body: string; createdAt: string };
 type AIChatLine = { id: string; role: "user" | "assistant"; message: string; suggestions?: string[] };
+type DraftEditCase = {
+  input: string;
+  output: string;
+  explanation: string;
+  is_hidden: boolean;
+  is_sample: boolean;
+  order: number;
+};
+type DraftEditState = {
+  title: string;
+  slug: string;
+  description: string;
+  difficulty: "easy" | "medium" | "hard";
+  tags: string;
+  mode: ProblemAuthoringMode;
+  input_format: string;
+  output_format: string;
+  function_signature: string;
+  time_limit: string;
+  memory_limit: string;
+  hint: string;
+  official_solution_language: string;
+  official_solution_code: string;
+  official_solution_explanation: string;
+  time_complexity: string;
+  space_complexity: string;
+  testcases: DraftEditCase[];
+};
 
-const AI_MODEL_OPTIONS: Array<{ value: AIModelProfile; zh: string; en: string; detailZh: string; detailEn: string }> = [
-  { value: "default", zh: "自动选择", en: "Auto route", detailZh: "使用服务器默认 AI 配置", detailEn: "Use the server default AI profile" },
-  { value: "deepseek", zh: "DeepSeek 云端", en: "DeepSeek Cloud", detailZh: "调用 DeepSeek 兼容接口", detailEn: "Use the DeepSeek-compatible API" },
-  { value: "qwen-local", zh: "Qwen 本地", en: "Local Qwen", detailZh: "连接本机兼容 OpenAI 接口的服务", detailEn: "Use a local OpenAI-compatible Qwen server" },
-];
+const AI_PROFILE_FALLBACKS: Record<AIModelProfile, AIProfile> = {
+  default: {
+    value: "default",
+    label_zh: "自动选择",
+    label_en: "Auto route",
+    detail_zh: "使用服务器当前可用的 AI 配置",
+    detail_en: "Use the currently available server AI profile",
+    configured: false,
+    available: false,
+    reason: null,
+    checked_at: null,
+  },
+  deepseek: {
+    value: "deepseek",
+    label_zh: "DeepSeek 云端",
+    label_en: "DeepSeek Cloud",
+    detail_zh: "调用 DeepSeek 兼容接口",
+    detail_en: "Use the DeepSeek-compatible API",
+    configured: false,
+    available: false,
+    reason: null,
+    checked_at: null,
+  },
+  "qwen-local": {
+    value: "qwen-local",
+    label_zh: "Qwen 本地",
+    label_en: "Local Qwen",
+    detail_zh: "连接本机兼容 OpenAI 接口的服务",
+    detail_en: "Use a local OpenAI-compatible Qwen server",
+    configured: false,
+    available: false,
+    reason: null,
+    checked_at: null,
+  },
+};
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const percent = (value: number) => Math.round(clamp(value, 0, 1) * 100);
@@ -78,6 +139,42 @@ const SIDE_PANEL_SNAP_WIDTH = 140;
 const SIDE_PANEL_DRAG_MIN = 56;
 const EDITOR_MIN_HEIGHT = 260;
 const EDITOR_MAX_HEIGHT = 720;
+
+function displayNameStorageKey(userId?: string | null) {
+  return userId ? `fastoj.displayName.${userId}` : null;
+}
+
+function displayNameForUser(user?: Pick<CurrentUser, "id" | "username"> | null) {
+  const key = displayNameStorageKey(user?.id);
+  const saved = key ? localStorage.getItem(key)?.trim() : "";
+  return saved || user?.username || "FastOJ User";
+}
+
+function saveDisplayNameForUser(user: Pick<CurrentUser, "id"> | null | undefined, displayName: string) {
+  const key = displayNameStorageKey(user?.id);
+  if (!key) return;
+  const trimmed = displayName.trim();
+  if (trimmed) {
+    localStorage.setItem(key, trimmed);
+  } else {
+    localStorage.removeItem(key);
+  }
+}
+
+function localizedAuthError(message: string, text: (typeof UI)[Locale]) {
+  const normalized = message.trim();
+  if (!normalized) return text.authFailure;
+  if (normalized === "Login failed" || normalized === "Incorrect username or password") {
+    return text.authInvalidCredentials;
+  }
+  if (normalized === "Username or email already registered") {
+    return text.authAlreadyRegistered;
+  }
+  if (normalized.startsWith("Validation failed:")) {
+    return text.authInvalidFields;
+  }
+  return normalized;
+}
 
 function runCasesFromProblem(problem?: ProblemDetail): EditableRunCase[] {
   const samples = problem?.sample_testcases ?? [];
@@ -189,10 +286,10 @@ function AuthPage({
   onDone: () => void;
 }) {
   const text = UI[locale];
-  const [username, setUsername] = useState("demo");
-  const [email, setEmail] = useState("demo@example.com");
-  const [password, setPassword] = useState("demo123456");
-  const [confirmPassword, setConfirmPassword] = useState("demo123456");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState<string>(text.authMessage);
   const [dialog, setDialog] = useState<{ title: string; message: string; tone: "error" | "success"; onConfirm?: () => void } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -226,7 +323,7 @@ function AuthPage({
         onDone();
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : text.authFailure;
+      const errorMessage = localizedAuthError(error instanceof Error ? error.message : "", text);
       setMessage(errorMessage);
       setDialog({ title: text.authDialogTitle, message: errorMessage, tone: "error" });
     } finally {
@@ -247,15 +344,15 @@ function AuthPage({
             <span>{locale === "zh" ? "公平评测" : "Fair judging"}</span>
           </div>
         </div>
-        <form className="auth-form" onSubmit={submit}>
+        <form className="auth-form" onSubmit={submit} autoComplete="off">
           <div className="auth-tabs" role="tablist" aria-label={locale === "zh" ? "认证方式" : "Authentication mode"}>
             <button type="button" className={mode === "login" ? "active" : ""} onClick={() => onMode("login")}>{text.login}</button>
             <button type="button" className={mode === "register" ? "active" : ""} onClick={() => onMode("register")}>{text.register}</button>
           </div>
-          <label>{text.username}<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" /></label>
-          {mode === "register" ? <label>{text.email}<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" /></label> : null}
-          <label>{text.password}<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>
-          {mode === "register" ? <label>{text.confirmPassword}<input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" /></label> : null}
+          <label>{text.username}<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" /></label>
+          {mode === "register" ? <label>{text.email}<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="off" /></label> : null}
+          <label>{text.password}<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="off" /></label>
+          {mode === "register" ? <label>{text.confirmPassword}<input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="off" /></label> : null}
           <button className="primary auth-submit" disabled={busy}>
             {busy ? text.processing : mode === "login" ? text.loginContinue : text.registerContinue}
           </button>
@@ -301,7 +398,7 @@ function SettingsPage({
   onProfileSaved: (user: CurrentUser) => void;
 }) {
   const text = UI[locale];
-  const [displayName, setDisplayName] = useState(localStorage.getItem("fastoj.displayName") ?? currentUser?.username ?? "FastOJ User");
+  const [displayName, setDisplayName] = useState(() => displayNameForUser(currentUser));
   const [username, setUsername] = useState(currentUser?.username ?? "");
   const [email, setEmail] = useState(currentUser?.email ?? "");
   const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatar_url ?? "");
@@ -311,14 +408,13 @@ function SettingsPage({
   const [saved, setSaved] = useState("");
 
   useEffect(() => {
-    setDisplayName(localStorage.getItem("fastoj.displayName") ?? currentUser?.username ?? "FastOJ User");
+    setDisplayName(displayNameForUser(currentUser));
     setUsername(currentUser?.username ?? "");
     setEmail(currentUser?.email ?? "");
     setAvatarUrl(currentUser?.avatar_url ?? "");
   }, [currentUser?.id, currentUser?.username, currentUser?.email, currentUser?.avatar_url]);
 
   async function save() {
-    localStorage.setItem("fastoj.displayName", displayName);
     localStorage.setItem("fastoj.compactMode", String(compact));
     const payload: Record<string, unknown> = {
       username: username.trim(),
@@ -331,6 +427,7 @@ function SettingsPage({
     }
     try {
       const updated = await api.updateMe(payload);
+      saveDisplayNameForUser(updated, displayName);
       onProfileSaved(updated);
       setCurrentPassword("");
       setNewPassword("");
@@ -350,9 +447,9 @@ function SettingsPage({
         <h1>{text.settingsTitle}</h1>
         <p className="muted">{text.settingsCopy}</p>
         <div className="account-profile">
-          <div className="avatar-preview">{avatarUrl ? <img src={avatarUrl} alt="" /> : displayName.slice(0, 1).toUpperCase()}</div>
+          <div className="avatar-preview">{avatarUrl ? <img src={avatarUrl} alt="" /> : (displayName.trim() || username || "F").slice(0, 1).toUpperCase()}</div>
           <div>
-            <strong>{displayName || username}</strong>
+            <strong>{displayName.trim() || username || "FastOJ User"}</strong>
             <span>{currentUser?.role === "admin" ? (locale === "zh" ? "管理员" : "Admin") : (locale === "zh" ? "用户" : "User")}</span>
           </div>
         </div>
@@ -436,19 +533,42 @@ function DifficultyDropdown({
   );
 }
 
+function aiProfileLabel(profile: AIProfile, locale: Locale) {
+  return locale === "zh" ? profile.label_zh : profile.label_en;
+}
+
+function aiProfileDetail(profile: AIProfile, locale: Locale) {
+  return locale === "zh" ? profile.detail_zh : profile.detail_en;
+}
+
+function aiUnavailableText(locale: Locale, reason?: string | null) {
+  const base = locale === "zh" ? "AI 未配置或不可用" : "AI is not configured or unavailable";
+  return reason ? `${base}: ${reason}` : `${base}.`;
+}
+
+function preferredAIProfile(profiles: AIProfile[]): AIModelProfile | null {
+  const available = profiles.filter((profile) => profile.available);
+  return available.find((profile) => profile.value === "default")?.value ?? available[0]?.value ?? null;
+}
+
 function AIModelDropdown({
   value,
   locale,
   onChange,
+  profiles,
+  disabledReason,
 }: {
   value: AIModelProfile;
   locale: Locale;
   onChange: (value: AIModelProfile) => void;
+  profiles: AIProfile[];
+  disabledReason?: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const selected = AI_MODEL_OPTIONS.find((item) => item.value === value) ?? AI_MODEL_OPTIONS[0];
-  const label = locale === "zh" ? selected.zh : selected.en;
-  const detail = locale === "zh" ? selected.detailZh : selected.detailEn;
+  const options = profiles.filter((profile) => profile.available);
+  const selected = options.find((item) => item.value === value) ?? AI_PROFILE_FALLBACKS[value] ?? AI_PROFILE_FALLBACKS.default;
+  const label = disabledReason ? (locale === "zh" ? "AI 不可用" : "AI unavailable") : aiProfileLabel(selected, locale);
+  const detail = disabledReason ?? aiProfileDetail(selected, locale);
   return (
     <div
       className={`custom-select ai-model-picker ${open ? "open" : ""}`}
@@ -456,7 +576,7 @@ function AIModelDropdown({
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
     >
-      <button type="button" className="custom-select-button model-select-button" title={detail} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="custom-select-button model-select-button" title={detail} disabled={Boolean(disabledReason)} onClick={() => setOpen((current) => !current)}>
         <span className="model-spark" aria-hidden="true">✦</span>
         <span className="model-copy">
           <strong>{label}</strong>
@@ -465,9 +585,9 @@ function AIModelDropdown({
         <span aria-hidden="true">⌄</span>
       </button>
       <div className="custom-select-menu model-select-menu" role="listbox">
-        {AI_MODEL_OPTIONS.map((item) => {
-          const itemLabel = locale === "zh" ? item.zh : item.en;
-          const itemDetail = locale === "zh" ? item.detailZh : item.detailEn;
+        {options.map((item) => {
+          const itemLabel = aiProfileLabel(item, locale);
+          const itemDetail = aiProfileDetail(item, locale);
           return (
             <button
               type="button"
@@ -485,6 +605,12 @@ function AIModelDropdown({
             </button>
           );
         })}
+        {!options.length ? (
+          <button type="button" disabled>
+            <span>{locale === "zh" ? "无可用模型" : "No available model"}</span>
+            <small>{disabledReason ?? (locale === "zh" ? "请检查 AI 配置" : "Check AI configuration")}</small>
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -761,6 +887,7 @@ function validationLabel(name: string, locale: Locale): string {
     function_testcase_inputs: { zh: "函数用例参数格式", en: "Function testcase input shape" },
     input_format: { zh: "输入格式", en: "Input format" },
     output_format: { zh: "输出格式", en: "Output format" },
+    testcase_count: { zh: "用例数量", en: "Testcase count" },
     public_sample_count: { zh: "公开样例数量", en: "Public sample count" },
     hidden_testcase_count: { zh: "隐藏用例数量", en: "Hidden testcase count" },
     non_empty_outputs: { zh: "期望输出非空", en: "Non-empty expected outputs" },
@@ -769,9 +896,104 @@ function validationLabel(name: string, locale: Locale): string {
   return labels[name]?.[locale] ?? name;
 }
 
+function draftStatusLabel(status: string, locale: Locale): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    validated: { zh: "已通过", en: "Validated" },
+    validation_failed: { zh: "校验失败", en: "Validation failed" },
+    approved: { zh: "已发布", en: "Approved" },
+    rejected: { zh: "已拒绝", en: "Rejected" },
+    draft: { zh: "草稿", en: "Draft" },
+  };
+  return labels[status]?.[locale] ?? status;
+}
+
+function draftStatusClass(status: string): string {
+  return `draft-status-${status.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+
+function authoringModeLabel(mode: string, locale: Locale): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    both: { zh: "双模式", en: "both" },
+    function: { zh: "函数模式", en: "function" },
+    acm: { zh: "ACM 模式", en: "acm" },
+  };
+  return labels[mode]?.[locale] ?? mode;
+}
+
+function draftEditFromDraft(draft: ProblemDraft): DraftEditState {
+  return {
+    title: draft.title ?? "",
+    slug: draft.slug ?? "",
+    description: draft.description ?? "",
+    difficulty: ["easy", "medium", "hard"].includes(draft.difficulty) ? draft.difficulty as "easy" | "medium" | "hard" : "medium",
+    tags: (draft.tags ?? []).join(", "),
+    mode: draft.mode === "acm" || draft.mode === "both" ? draft.mode : "function",
+    input_format: draft.input_format ?? "",
+    output_format: draft.output_format ?? "",
+    function_signature: draft.function_signature ?? "",
+    time_limit: String(draft.time_limit ?? 1000),
+    memory_limit: String(draft.memory_limit ?? 256),
+    hint: draft.hint ?? "",
+    official_solution_language: draft.official_solution_language ?? "python",
+    official_solution_code: draft.official_solution_code ?? "",
+    official_solution_explanation: draft.official_solution_explanation ?? "",
+    time_complexity: draft.time_complexity ?? "",
+    space_complexity: draft.space_complexity ?? "",
+    testcases: (draft.testcases ?? []).map((testcase, index) => ({
+      input: String(testcase.input ?? ""),
+      output: String(testcase.output ?? ""),
+      explanation: String(testcase.explanation ?? ""),
+      is_hidden: testcase.is_hidden === true,
+      is_sample: testcase.is_sample === true,
+      order: Number(testcase.order ?? index + 1) || index + 1,
+    })),
+  };
+}
+
+function draftEditPayload(edit: DraftEditState) {
+  return {
+    title: edit.title.trim(),
+    slug: edit.slug.trim(),
+    description: edit.description.trim(),
+    difficulty: edit.difficulty,
+    tags: edit.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+    mode: edit.mode,
+    input_format: edit.input_format.trim() || null,
+    output_format: edit.output_format.trim() || null,
+    function_signature: edit.function_signature.trim() || null,
+    time_limit: Number(edit.time_limit) || 1000,
+    memory_limit: Number(edit.memory_limit) || 256,
+    hint: edit.hint.trim() || null,
+    official_solution_language: edit.official_solution_language.trim() || "python",
+    official_solution_code: edit.official_solution_code,
+    official_solution_explanation: edit.official_solution_explanation.trim(),
+    time_complexity: edit.time_complexity.trim() || null,
+    space_complexity: edit.space_complexity.trim() || null,
+    testcases: edit.testcases.map((testcase, index) => ({
+      input: testcase.input,
+      output: testcase.output,
+      explanation: testcase.explanation.trim() || null,
+      is_hidden: testcase.is_hidden,
+      is_sample: testcase.is_sample,
+      order: Number(testcase.order) || index + 1,
+    })),
+  };
+}
+
+function draftEditKey(edit: DraftEditState): string {
+  return JSON.stringify(draftEditPayload(edit));
+}
+
+function isDraftEditDirty(draft: ProblemDraft | null, edit: DraftEditState | null): boolean {
+  if (!draft || !edit) return false;
+  return draftEditKey(edit) !== draftEditKey(draftEditFromDraft(draft));
+}
+
 function validationStatusMessage(status: string, summary: unknown, locale: Locale): string {
   const report = recordValue(summary);
-  const failedChecks = stringList(report.failed_checks);
+  const failedChecks = stringList(report.failed_checks).length
+    ? stringList(report.failed_checks)
+    : (Array.isArray(report.checks) ? report.checks.map(recordValue).filter((check) => check.passed === false).map((check) => String(check.name ?? "")).filter(Boolean) : []);
   const caseSummary = recordValue(report.case_summary);
   const failedCases = Number(caseSummary.failed ?? 0);
   if (status === "validated" || report.passed === true) {
@@ -786,6 +1008,16 @@ function validationStatusMessage(status: string, summary: unknown, locale: Local
     return locale === "zh" ? `官方解法有 ${failedCases} 个用例未通过。` : `Official solution failed ${failedCases} testcase(s).`;
   }
   return locale === "zh" ? "草稿校验未通过，请查看下方安全摘要。" : "Draft validation failed. Check the safe summary below.";
+}
+
+function draftSaveErrorMessage(error: unknown, locale: Locale): string {
+  const message = error instanceof Error ? error.message : locale === "zh" ? "草稿保存失败。" : "Draft save failed.";
+  const slugMatch = message.match(/Slug already exists:?\s*([A-Za-z0-9-]+)?/i);
+  if (slugMatch && locale === "zh") {
+    const slug = slugMatch[1] ? `：${slugMatch[1]}` : "";
+    return `Slug 已被占用${slug}。请换一个唯一的 slug。`;
+  }
+  return message;
 }
 
 function ValidationReport({ draft, locale }: { draft: ProblemDraft; locale: Locale }) {
@@ -837,10 +1069,69 @@ function ValidationReport({ draft, locale }: { draft: ProblemDraft; locale: Loca
   );
 }
 
+type DraftCaseFilter = "all" | "public" | "hidden" | "failed";
+
+function DraftTestcasePanel({ draft, locale }: { draft: ProblemDraft; locale: Locale }) {
+  const [filter, setFilter] = useState<DraftCaseFilter>("all");
+  const report = recordValue(draft.validation_report ?? draft.validation_summary);
+  const caseResults = Array.isArray(report.case_results) ? report.case_results.map(recordValue) : [];
+  const resultByIndex = new Map(caseResults.map((result) => [Number(result.case_index), result]));
+  const testcases = (draft.testcases ?? []).map(recordValue);
+  const labels = locale === "zh"
+    ? { title: "用例详情", all: "全部", public: "公开", hidden: "隐藏", failed: "失败", input: "输入", output: "预期输出", explanation: "解释", noCases: "没有用例数据。" }
+    : { title: "Testcase details", all: "All", public: "Public", hidden: "Hidden", failed: "Failed", input: "Input", output: "Expected output", explanation: "Explanation", noCases: "No testcase data." };
+  const visibleCases = testcases
+    .map((testcase, index) => ({ testcase, index: index + 1, result: resultByIndex.get(index + 1) }))
+    .filter(({ testcase, result }) => {
+      const hidden = testcase.is_hidden === true;
+      if (filter === "public") return !hidden;
+      if (filter === "hidden") return hidden;
+      if (filter === "failed") return Boolean(result) && result?.passed !== true;
+      return true;
+    });
+  return (
+    <div className="draft-testcases">
+      <div className="testcase-panel-head">
+        <h3>{labels.title}</h3>
+        <div className="testcase-filter-row">
+          {(["all", "public", "hidden", "failed"] as DraftCaseFilter[]).map((item) => (
+            <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>
+              {labels[item]}
+            </button>
+          ))}
+        </div>
+      </div>
+      {visibleCases.length ? visibleCases.map(({ testcase, index, result }) => {
+        const hidden = testcase.is_hidden === true;
+        const passed = result?.passed === true;
+        const statusText = result ? String(result.status ?? (passed ? "ac" : "wa")) : locale === "zh" ? "未运行" : "not run";
+        return (
+          <article className="testcase-card" key={`${index}-${String(testcase.input ?? "")}`}>
+            <div className="testcase-card-head">
+              <strong>{locale === "zh" ? "用例" : "Case"} {index}</strong>
+              <span className={hidden ? "case-chip hidden" : "case-chip public"}>{hidden ? labels.hidden : labels.public}</span>
+              {result ? <span className={passed ? "case-chip passed" : "case-chip failed"}>{statusText}</span> : null}
+            </div>
+            <div className="testcase-code-grid">
+              <label>{labels.input}<pre>{String(testcase.input ?? "")}</pre></label>
+              <label>{labels.output}<pre>{String(testcase.output ?? "")}</pre></label>
+            </div>
+            {testcase.explanation ? (
+              <p className="muted"><strong>{labels.explanation}: </strong>{String(testcase.explanation)}</p>
+            ) : null}
+            {result?.error_message ? <p className="muted">{String(result.error_message)}</p> : null}
+          </article>
+        );
+      }) : <p className="muted">{labels.noCases}</p>}
+    </div>
+  );
+}
+
 function Workspace({
   problemId,
   locale,
   theme,
+  currentUser,
   onBackToLibrary,
   onRequireAuth,
   authenticated,
@@ -848,6 +1139,7 @@ function Workspace({
   problemId: string | null;
   locale: Locale;
   theme: AppTheme;
+  currentUser: CurrentUser | null;
   onBackToLibrary: () => void;
   onRequireAuth: () => void;
   authenticated: boolean;
@@ -883,12 +1175,28 @@ function Workspace({
   const problemQuery = useQuery({ queryKey: ["problem", problemId], queryFn: () => api.problem(problemId ?? ""), enabled: Boolean(problemId) });
   const trailQuery = useQuery({ queryKey: ["submissions", problemId, submission?.id], queryFn: () => api.submissions(problemId ?? ""), enabled: Boolean(problemId && authenticated) });
   const solutionsQuery = useQuery({ queryKey: ["solutions", problemId, language, locale], queryFn: () => api.solutions(problemId ?? "", language, locale), enabled: Boolean(problemId) });
+  const aiProfilesQuery = useQuery({
+    queryKey: ["ai-profiles", currentUser?.id],
+    queryFn: () => api.aiProfiles(),
+    enabled: Boolean(authenticated && currentUser),
+    staleTime: 60_000,
+  });
 
   const problem = problemQuery.data;
   const displayProblem = localizedProblem(problem, locale);
   const modeInfo = getProblemMode(problem);
   const draftKey = `${language}.${judgeMode}`;
   const functionBlocked = false;
+  const aiProfiles = aiProfilesQuery.data ?? [];
+  const aiPreferredProfile = preferredAIProfile(aiProfiles);
+  const aiDisabledReason = !authenticated
+    ? (locale === "zh" ? "请先登录后使用 AI。" : "Sign in to use AI.")
+    : aiProfilesQuery.isLoading
+      ? (locale === "zh" ? "正在检查 AI 模型..." : "Checking AI profiles...")
+      : aiPreferredProfile
+        ? null
+        : aiUnavailableText(locale);
+  const aiReady = Boolean(aiPreferredProfile && !aiDisabledReason);
 
   useEffect(() => { localStorage.setItem("fastoj.leftOpen", String(leftOpen)); }, [leftOpen]);
   useEffect(() => { localStorage.setItem("fastoj.rightOpen", String(rightOpen)); }, [rightOpen]);
@@ -897,6 +1205,13 @@ function Workspace({
   useEffect(() => { localStorage.setItem("fastoj.editorHeight", String(editorHeight)); }, [editorHeight]);
   useEffect(() => { localStorage.setItem("fastoj.aiModel", aiModel); }, [aiModel]);
   useEffect(() => { if (problemId) setRecentProblemId(problemId); }, [problemId, setRecentProblemId]);
+  useEffect(() => {
+    if (!aiProfiles.length) return;
+    if (!aiProfiles.some((profile) => profile.available && profile.value === aiModel)) {
+      const next = preferredAIProfile(aiProfiles);
+      if (next) setAiModel(next);
+    }
+  }, [aiProfiles, aiModel]);
 
   function editorCodeFor(targetLanguage: string, targetMode: JudgeMode): string {
     if (!problemId || !problem) return "";
@@ -1103,6 +1418,16 @@ function Workspace({
         if (activeSubmissionIdRef.current !== submissionId) return;
         setSubmission(detail);
         if (detail.status === "finished") {
+          setEvents((items) => (
+            items.some((item) => item.type === "result" || item.type === "error")
+              ? items
+              : [...items, {
+                  type: detail.result === "se" ? "error" : "result",
+                  status: "finished",
+                  result: detail.result ?? "finished",
+                  message: detail.error_message ?? undefined,
+                }]
+          ));
           window.clearInterval(poll);
           if (pollRef.current === poll) pollRef.current = null;
         }
@@ -1131,6 +1456,10 @@ function Workspace({
 
   async function explainSubmission() {
     if (!submission) return;
+    if (!aiReady) {
+      setAiError(aiDisabledReason ?? aiUnavailableText(locale));
+      return;
+    }
     const submissionId = submission.id;
     const cached = getCachedExplain(`${submissionId}.${aiModel}.${locale}`);
     if (cached) {
@@ -1152,6 +1481,10 @@ function Workspace({
 
   async function reviewSubmission() {
     if (!submission) return;
+    if (!aiReady) {
+      setAiError(aiDisabledReason ?? aiUnavailableText(locale));
+      return;
+    }
     const submissionId = submission.id;
     try {
       setAiError(null);
@@ -1166,6 +1499,10 @@ function Workspace({
 
   async function requestHint(level: 1 | 2 | 3) {
     if (!problemId) return;
+    if (!aiReady) {
+      setAiError(aiDisabledReason ?? aiUnavailableText(locale));
+      return;
+    }
     const requestProblemId = problemId;
     try {
       setAiError(null);
@@ -1179,6 +1516,10 @@ function Workspace({
   }
 
   async function sendChat(message: string) {
+    if (!aiReady) {
+      setAiError(aiDisabledReason ?? aiUnavailableText(locale));
+      return;
+    }
     if (!submission) {
       setAiError(locale === "zh" ? "请先运行或提交一次代码，再开始对话。" : "Run or submit once before starting a chat.");
       return;
@@ -1282,6 +1623,7 @@ function Workspace({
                 problemId={problemId}
                 locale={locale}
                 authenticated={authenticated}
+                currentUser={currentUser}
                 onRequireAuth={onRequireAuth}
               />
             </>
@@ -1303,7 +1645,7 @@ function Workspace({
             <select title={text.pickLanguage} value={language} onChange={(event) => setLanguage(event.target.value)}>
               {LANGUAGES.map((item) => <option key={item}>{item}</option>)}
             </select>
-            <AIModelDropdown value={aiModel} locale={locale} onChange={setAiModel} />
+            <AIModelDropdown value={aiModel} locale={locale} profiles={aiProfiles} disabledReason={aiDisabledReason} onChange={setAiModel} />
             <button className="icon-button tip" data-tip={text.resetTemplate} onClick={resetEditorTemplate}><IconGlyph>R</IconGlyph></button>
             <button className="icon-button run-action tip" data-tip={text.runTitle} onClick={() => judge(true)} disabled={functionBlocked}><IconGlyph>▶</IconGlyph></button>
             <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)} disabled={functionBlocked}><IconGlyph>↑</IconGlyph></button>
@@ -1344,7 +1686,7 @@ function Workspace({
         <aside className="result-sidebar feature-frame result-frame">
           {rightOpen ? (
             <div className="ai-region">
-              <AICopilotPanel submission={submission} explain={explain} review={review} hint={hint} chatLines={chatLines} error={aiError} onExplain={explainSubmission} onReview={reviewSubmission} onHint={requestHint} onChat={sendChat} locale={locale} />
+              <AICopilotPanel submission={submission} explain={explain} review={review} hint={hint} chatLines={chatLines} error={aiError} disabled={!aiReady} disabledReason={aiDisabledReason} onExplain={explainSubmission} onReview={reviewSubmission} onHint={requestHint} onChat={sendChat} locale={locale} />
             </div>
           ) : null}
         </aside>
@@ -1375,6 +1717,7 @@ function DetailDock({
   problemId,
   locale,
   authenticated,
+  currentUser,
   onRequireAuth,
 }: {
   detailTab: DetailTab;
@@ -1388,6 +1731,7 @@ function DetailDock({
   problemId: string;
   locale: Locale;
   authenticated: boolean;
+  currentUser: CurrentUser | null;
   onRequireAuth: () => void;
 }) {
   const text = UI[locale];
@@ -1405,7 +1749,7 @@ function DetailDock({
         {detailTab === "solution" ? <OfficialSolution problem={problem} solution={solution} locale={locale} /> : null}
         {detailTab === "judge" ? <JudgeTimeline events={events} submission={submission} theme={theme} /> : null}
         {detailTab === "trail" ? <SubmissionTrail submissions={trail} locale={locale} /> : null}
-        {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} onRequireAuth={onRequireAuth} /> : null}
+        {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} currentUser={currentUser} onRequireAuth={onRequireAuth} /> : null}
       </div>
     </section>
   );
@@ -1487,7 +1831,7 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
   const text = UI[locale];
   if (!problem) return <p className="muted">{text.loadingCases}</p>;
   return (
-    <>
+    <div className="sample-cases">
       <div className="case-grid">
         {problem.sample_testcases.map((testcase, index) => (
           <article className="sample-card" key={`${testcase.input}-${index}`}>
@@ -1508,7 +1852,7 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
         ))}
       </div>
       <ProblemGuidance problem={problem} locale={locale} />
-    </>
+    </div>
   );
 }
 
@@ -1551,7 +1895,19 @@ function OfficialSolution({ problem, solution, locale }: { problem?: ProblemDeta
   );
 }
 
-function DiscussionPanel({ problemId, locale, authenticated, onRequireAuth }: { problemId: string; locale: Locale; authenticated: boolean; onRequireAuth: () => void }) {
+function DiscussionPanel({
+  problemId,
+  locale,
+  authenticated,
+  currentUser,
+  onRequireAuth,
+}: {
+  problemId: string;
+  locale: Locale;
+  authenticated: boolean;
+  currentUser: CurrentUser | null;
+  onRequireAuth: () => void;
+}) {
   const text = UI[locale];
   const key = `fastoj.discussion.${problemId}`;
   const [body, setBody] = useState("");
@@ -1565,7 +1921,7 @@ function DiscussionPanel({ problemId, locale, authenticated, onRequireAuth }: { 
     const trimmed = body.trim();
     if (!trimmed) return;
     const next = [
-      { id: crypto.randomUUID(), author: localStorage.getItem("fastoj.displayName") ?? "FastOJ User", body: trimmed, createdAt: new Date().toISOString() },
+      { id: crypto.randomUUID(), author: displayNameForUser(currentUser), body: trimmed, createdAt: new Date().toISOString() },
       ...posts,
     ];
     setPosts(next);
@@ -1593,7 +1949,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const text = locale === "zh"
     ? {
       title: "管理后台",
-      copy: "管理题目、官方题解、测试用例和用户权限。隐藏用例只显示数量，不在页面暴露内容。",
+      copy: "管理题目、官方题解、测试用例和用户权限。隐藏用例仅在管理员界面显示。",
       users: "用户",
       problems: "题目与内容",
       noAccess: "当前账号没有管理权限。",
@@ -1614,6 +1970,14 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       approveDraft: "批准发布",
       rejectDraft: "拒绝草稿",
       draftPreview: "草稿预览",
+      draftEdit: "草稿编辑",
+      saveDraft: "保存草稿",
+      revalidateDraft: "保存并重新校验",
+      resetDraftEdit: "取消更改",
+      confirmApproveDraft: "确定发布当前已保存并通过校验的草稿吗？未保存的更改不会被发布。",
+      confirmRejectDraft: "确定拒绝这个草稿吗？",
+      addPublicCase: "新增公开用例",
+      addHiddenCase: "新增隐藏用例",
       validation: "验证报告",
       steps: "执行轨迹",
       searchUsers: "搜索用户名或邮箱",
@@ -1625,18 +1989,43 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       manage: "管理",
       edit: "编辑",
       save: "保存",
+      cancel: "取消",
       previous: "上一页",
       next: "下一页",
       noResults: "没有匹配结果。",
       pageSummary: "第 {page} / {totalPages} 页，共 {total} 条",
       titleLabel: "标题",
+      slugLabel: "Slug",
       descriptionLabel: "描述",
       hintLabel: "提示",
       tagsLabel: "标签（逗号分隔）",
+      modeLabel: "模式",
+      timeLimitLabel: "时间限制",
+      memoryLimitLabel: "内存限制",
+      functionSignatureLabel: "函数签名",
+      inputFormatLabel: "输入格式",
+      outputFormatLabel: "输出格式",
+      officialCodeLabel: "官方解法代码",
+      officialExplanationLabel: "官方解法说明",
+      timeComplexityLabel: "时间复杂度",
+      spaceComplexityLabel: "空间复杂度",
+      testcaseDetails: "用例管理",
+      newTestcase: "新增用例",
+      inputLabel: "输入",
+      outputLabel: "输出",
+      scoreLabel: "分数",
+      orderLabel: "顺序",
+      sample: "样例",
+      add: "新增",
+      delete: "删除",
+      deleteProblem: "删除题目",
+      confirmDeleteProblem: "确定删除“{title}”吗？相关提交记录、题解、测试用例和用例结果都会被删除。",
+      loading: "加载中...",
+      noTestcases: "还没有测试用例。",
     }
     : {
       title: "Admin",
-      copy: "Manage problems, official solutions, test cases, and user permissions. Hidden cases are shown as counts only.",
+      copy: "Manage problems, official solutions, test cases, and user permissions. Hidden cases are visible only to admins.",
       users: "Users",
       problems: "Problems and content",
       noAccess: "This account does not have admin access.",
@@ -1657,6 +2046,14 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       approveDraft: "Approve",
       rejectDraft: "Reject",
       draftPreview: "Draft preview",
+      draftEdit: "Draft editor",
+      saveDraft: "Save draft",
+      revalidateDraft: "Save and revalidate",
+      resetDraftEdit: "Discard changes",
+      confirmApproveDraft: "Publish the current saved and validated draft? Unsaved edits will not be published.",
+      confirmRejectDraft: "Reject this draft?",
+      addPublicCase: "Add public case",
+      addHiddenCase: "Add hidden case",
       validation: "Validation report",
       steps: "Run steps",
       searchUsers: "Search username or email",
@@ -1668,14 +2065,39 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       manage: "Manage",
       edit: "Edit",
       save: "Save",
+      cancel: "Cancel",
       previous: "Previous",
       next: "Next",
       noResults: "No matching results.",
       pageSummary: "Page {page} / {totalPages}, {total} total",
       titleLabel: "Title",
+      slugLabel: "Slug",
       descriptionLabel: "Description",
       hintLabel: "Hint",
       tagsLabel: "Tags, comma separated",
+      modeLabel: "Mode",
+      timeLimitLabel: "Time limit",
+      memoryLimitLabel: "Memory limit",
+      functionSignatureLabel: "Function signature",
+      inputFormatLabel: "Input format",
+      outputFormatLabel: "Output format",
+      officialCodeLabel: "Official solution code",
+      officialExplanationLabel: "Official solution explanation",
+      timeComplexityLabel: "Time complexity",
+      spaceComplexityLabel: "Space complexity",
+      testcaseDetails: "Testcase manager",
+      newTestcase: "New testcase",
+      inputLabel: "Input",
+      outputLabel: "Output",
+      scoreLabel: "Score",
+      orderLabel: "Order",
+      sample: "Sample",
+      add: "Add",
+      delete: "Delete",
+      deleteProblem: "Delete problem",
+      confirmDeleteProblem: "Delete \"{title}\"? Related submissions, solutions, testcases, and testcase results will also be deleted.",
+      loading: "Loading...",
+      noTestcases: "No testcases yet.",
     };
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState("");
@@ -1688,15 +2110,26 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const [problemEdit, setProblemEdit] = useState({ title: "", description: "", tags: "", hint: "" });
+  const [testcaseEdits, setTestcaseEdits] = useState<Record<string, AdminTestCase>>({});
+  const [newTestcase, setNewTestcase] = useState({
+    input: "",
+    output: "",
+    is_hidden: false,
+    is_sample: false,
+    score: "10",
+    order: "",
+  });
   const [agentTopic, setAgentTopic] = useState("array two pointers");
   const [agentTags, setAgentTags] = useState("array,two-pointers");
   const [agentDifficulty, setAgentDifficulty] = useState<"easy" | "medium" | "hard">("medium");
-  const [agentMode, setAgentMode] = useState<"function" | "acm">("function");
+  const [agentMode, setAgentMode] = useState<ProblemAuthoringMode>("both");
   const [agentModel, setAgentModel] = useState<AIModelProfile>("default");
   const [agentConstraints, setAgentConstraints] = useState("");
   const [agentMessage, setAgentMessage] = useState("");
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const [selectedDraft, setSelectedDraft] = useState<ProblemDraft | null>(null);
+  const [draftEdit, setDraftEdit] = useState<DraftEditState | null>(null);
+  const [draftSaveMessage, setDraftSaveMessage] = useState("");
   const overviewQuery = useQuery({
     queryKey: [
       "admin-overview",
@@ -1729,6 +2162,45 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     queryFn: () => api.adminProblemDrafts({ pageSize: 8 }),
     enabled: currentUser?.role === "admin",
   });
+  const testcasesQuery = useQuery({
+    queryKey: ["admin-problem-testcases", selectedProblemId],
+    queryFn: () => api.adminProblemTestcases(selectedProblemId ?? ""),
+    enabled: currentUser?.role === "admin" && Boolean(selectedProblemId),
+  });
+  const adminAiProfilesQuery = useQuery({
+    queryKey: ["ai-profiles", "admin", currentUser?.id],
+    queryFn: () => api.aiProfiles(),
+    enabled: currentUser?.role === "admin",
+    staleTime: 60_000,
+  });
+  const adminAiProfiles = adminAiProfilesQuery.data ?? [];
+  const agentPreferredProfile = preferredAIProfile(adminAiProfiles);
+  const selectedAgentProfile = adminAiProfiles.find((profile) => profile.value === agentModel);
+  const agentModelAvailable = Boolean(selectedAgentProfile?.available);
+  const agentModelUnavailableReason = adminAiProfilesQuery.isLoading
+    ? (locale === "zh" ? "正在检查 AI 模型..." : "Checking AI profiles...")
+    : selectedAgentProfile && !selectedAgentProfile.available
+      ? aiUnavailableText(locale, selectedAgentProfile.reason)
+      : !agentPreferredProfile
+        ? aiUnavailableText(locale)
+        : null;
+  const agentCanGenerate = Boolean(agentPreferredProfile && agentModelAvailable);
+
+  useEffect(() => {
+    const next: Record<string, AdminTestCase> = {};
+    for (const testcase of testcasesQuery.data ?? []) {
+      next[testcase.id] = testcase;
+    }
+    setTestcaseEdits(next);
+  }, [testcasesQuery.data]);
+
+  useEffect(() => {
+    if (!adminAiProfiles.length) return;
+    if (!adminAiProfiles.some((profile) => profile.available && profile.value === agentModel)) {
+      const next = preferredAIProfile(adminAiProfiles);
+      if (next) setAgentModel(next);
+    }
+  }, [adminAiProfiles, agentModel]);
 
   if (currentUser?.role !== "admin") {
     return (
@@ -1753,6 +2225,21 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     await overviewQuery.refetch();
   }
 
+  async function deleteProblem(problemId: string) {
+    const problem = problems.find((item: any) => item.id === problemId);
+    const title = problem?.title ?? problemId;
+    const confirmed = window.confirm(text.confirmDeleteProblem.replace("{title}", title));
+    if (!confirmed) return;
+    await api.adminDeleteProblem(problemId);
+    if (selectedProblemId === problemId) {
+      cancelProblemEdit();
+    }
+    if (problems.length <= 1 && problemPage > 1) {
+      setProblemPage((page) => Math.max(1, page - 1));
+    }
+    await overviewQuery.refetch();
+  }
+
   async function savePythonSolution(problemId: string) {
     await api.adminUpsertSolution(problemId, {
       language: "python",
@@ -1765,6 +2252,10 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   }
 
   async function createAgentDraft() {
+    if (!agentCanGenerate) {
+      setAgentMessage(agentModelUnavailableReason ?? aiUnavailableText(locale));
+      return;
+    }
     setAgentMessage(locale === "zh" ? "正在生成并验证草稿..." : "Generating and validating draft...");
     try {
       const result = await api.adminCreateProblemDraft({
@@ -1779,8 +2270,10 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       });
       const run = await api.adminAgentRun(result.run_id);
       const draft = await api.adminProblemDraft(result.draft_id);
-      setAgentSteps(run.steps ?? []);
+      setAgentSteps(draft.steps?.length ? draft.steps : run.steps ?? []);
       setSelectedDraft(draft);
+      setDraftEdit(draftEditFromDraft(draft));
+      setDraftSaveMessage("");
       setAgentMessage(validationStatusMessage(result.status, result.validation_summary, locale));
       await draftsQuery.refetch();
     } catch (error) {
@@ -1791,21 +2284,102 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   async function loadDraft(draftId: string) {
     const draft = await api.adminProblemDraft(draftId);
     setSelectedDraft(draft);
+    setDraftEdit(draftEditFromDraft(draft));
+    setAgentSteps(draft.steps ?? []);
+    setDraftSaveMessage("");
   }
 
   async function approveSelectedDraft() {
     if (!selectedDraft) return;
-    const draft = await api.adminApproveProblemDraft(selectedDraft.id);
-    setSelectedDraft(draft);
-    await overviewQuery.refetch();
-    await draftsQuery.refetch();
+    if (isDraftEditDirty(selectedDraft, draftEdit)) {
+      setDraftSaveMessage(locale === "zh" ? "请先保存并重新校验当前更改，再批准发布。" : "Save and revalidate the current edits before approving.");
+      return;
+    }
+    if (!window.confirm(text.confirmApproveDraft)) return;
+    try {
+      const draft = await api.adminApproveProblemDraft(selectedDraft.id);
+      setSelectedDraft(draft);
+      setDraftEdit(draftEditFromDraft(draft));
+      setAgentSteps(draft.steps ?? []);
+      setDraftSaveMessage("");
+      await overviewQuery.refetch();
+      await draftsQuery.refetch();
+    } catch (error) {
+      setDraftSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "发布失败。" : "Approval failed.");
+    }
   }
 
   async function rejectSelectedDraft() {
     if (!selectedDraft) return;
-    const draft = await api.adminRejectProblemDraft(selectedDraft.id);
-    setSelectedDraft(draft);
-    await draftsQuery.refetch();
+    if (!window.confirm(text.confirmRejectDraft)) return;
+    try {
+      const draft = await api.adminRejectProblemDraft(selectedDraft.id);
+      setSelectedDraft(draft);
+      setDraftEdit(draftEditFromDraft(draft));
+      setAgentSteps(draft.steps ?? []);
+      setDraftSaveMessage("");
+      await draftsQuery.refetch();
+    } catch (error) {
+      setDraftSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "拒绝失败。" : "Rejection failed.");
+    }
+  }
+
+  function updateDraftEdit(patch: Partial<DraftEditState>) {
+    setDraftEdit((value) => value ? { ...value, ...patch } : value);
+  }
+
+  function updateDraftCase(index: number, patch: Partial<DraftEditCase>) {
+    setDraftEdit((value) => {
+      if (!value) return value;
+      return {
+        ...value,
+        testcases: value.testcases.map((testcase, itemIndex) => (
+          itemIndex === index ? { ...testcase, ...patch } : testcase
+        )),
+      };
+    });
+  }
+
+  function addDraftCase(hidden: boolean) {
+    setDraftEdit((value) => {
+      if (!value) return value;
+      const order = value.testcases.length + 1;
+      return {
+        ...value,
+        testcases: [
+          ...value.testcases,
+          { input: "", output: "", explanation: "", is_hidden: hidden, is_sample: !hidden, order },
+        ],
+      };
+    });
+  }
+
+  function removeDraftCase(index: number) {
+    setDraftEdit((value) => {
+      if (!value) return value;
+      return {
+        ...value,
+        testcases: value.testcases.filter((_, itemIndex) => itemIndex !== index).map((testcase, itemIndex) => ({
+          ...testcase,
+          order: itemIndex + 1,
+        })),
+      };
+    });
+  }
+
+  async function saveSelectedDraftEdit() {
+    if (!selectedDraft || !draftEdit) return;
+    try {
+      const draft = await api.adminUpdateProblemDraft(selectedDraft.id, draftEditPayload(draftEdit));
+      setSelectedDraft(draft);
+      setDraftEdit(draftEditFromDraft(draft));
+      setAgentSteps(draft.steps ?? []);
+      setDraftSaveMessage(locale === "zh" ? "草稿已保存并重新校验。" : "Draft saved and revalidated.");
+      setAgentMessage(validationStatusMessage(draft.status, draft.validation_report ?? draft.validation_summary, locale));
+      await draftsQuery.refetch();
+    } catch (error) {
+      setDraftSaveMessage(draftSaveErrorMessage(error, locale));
+    }
   }
 
   const users = overviewQuery.data?.users ?? [];
@@ -1813,6 +2387,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const userPagination = overviewQuery.data?.pagination?.users ?? { page: userPage, page_size: 8, total: 0, total_pages: 0 };
   const problemPagination = overviewQuery.data?.pagination?.problems ?? { page: problemPage, page_size: 8, total: 0, total_pages: 0 };
   const drafts = draftsQuery.data ?? [];
+  const draftHasUnsavedChanges = isDraftEditDirty(selectedDraft, draftEdit);
   const selectedUser = users.find((user: any) => user.id === selectedUserId) ?? null;
   const selectedProblem = problems.find((problem: any) => problem.id === selectedProblemId) ?? null;
 
@@ -1834,6 +2409,25 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     });
   }
 
+  function cancelProblemEdit() {
+    setSelectedProblemId(null);
+    setProblemEdit({ title: "", description: "", tags: "", hint: "" });
+    setTestcaseEdits({});
+    setNewTestcase({ input: "", output: "", is_hidden: false, is_sample: false, score: "10", order: "" });
+  }
+
+  function updateTestcaseEdit(testcaseId: string, patch: Partial<AdminTestCase>) {
+    setTestcaseEdits((value) => ({
+      ...value,
+      [testcaseId]: { ...value[testcaseId], ...patch },
+    }));
+  }
+
+  async function refreshProblemTestcases() {
+    await testcasesQuery.refetch();
+    await overviewQuery.refetch();
+  }
+
   async function saveProblemEdit() {
     if (!selectedProblemId) return;
     await updateProblem(selectedProblemId, {
@@ -1842,6 +2436,39 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       tags: problemEdit.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
       hint: problemEdit.hint,
     });
+  }
+
+  async function createProblemTestcase() {
+    if (!selectedProblemId) return;
+    await api.adminCreateTestcase(selectedProblemId, {
+      input: newTestcase.input,
+      output: newTestcase.output,
+      is_hidden: newTestcase.is_hidden,
+      is_sample: newTestcase.is_sample,
+      score: Number(newTestcase.score) || 0,
+      order: newTestcase.order.trim() ? Number(newTestcase.order) : null,
+    });
+    setNewTestcase({ input: "", output: "", is_hidden: false, is_sample: false, score: "10", order: "" });
+    await refreshProblemTestcases();
+  }
+
+  async function saveProblemTestcase(testcaseId: string) {
+    const testcase = testcaseEdits[testcaseId];
+    if (!testcase) return;
+    await api.adminUpdateTestcase(testcaseId, {
+      input: testcase.input,
+      output: testcase.output,
+      is_hidden: testcase.is_hidden,
+      is_sample: testcase.is_sample,
+      score: Number(testcase.score) || 0,
+      order: Number(testcase.order) || 0,
+    });
+    await refreshProblemTestcases();
+  }
+
+  async function deleteProblemTestcase(testcaseId: string) {
+    await api.adminDeleteTestcase(testcaseId);
+    await refreshProblemTestcases();
   }
 
   return (
@@ -1867,30 +2494,44 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
             </label>
             <label>{locale === "zh" ? "标签" : "Tags"}<input value={agentTags} onChange={(event) => setAgentTags(event.target.value)} /></label>
             <label>{locale === "zh" ? "模式" : "Mode"}
-              <select value={agentMode} onChange={(event) => setAgentMode(event.target.value as "function" | "acm")}>
-                <option value="function">function</option>
-                <option value="acm">acm</option>
+              <select value={agentMode} onChange={(event) => setAgentMode(event.target.value as ProblemAuthoringMode)}>
+                <option value="both">{authoringModeLabel("both", locale)}</option>
+                <option value="function">{authoringModeLabel("function", locale)}</option>
+                <option value="acm">{authoringModeLabel("acm", locale)}</option>
               </select>
             </label>
             <label>{locale === "zh" ? "模型" : "Model"}
               <select value={agentModel} onChange={(event) => setAgentModel(event.target.value as AIModelProfile)}>
-                <option value="default">default</option>
-                <option value="deepseek">deepseek</option>
-                <option value="qwen-local">qwen-local</option>
+                {(adminAiProfiles.length ? adminAiProfiles : [AI_PROFILE_FALLBACKS.default]).map((profile) => (
+                  <option key={profile.value} value={profile.value} disabled={!profile.available}>
+                    {aiProfileLabel(profile, locale)}{profile.available ? "" : ` (${locale === "zh" ? "不可用" : "unavailable"})`}
+                  </option>
+                ))}
               </select>
             </label>
             <label>{locale === "zh" ? "额外约束" : "Constraints"}<input value={agentConstraints} onChange={(event) => setAgentConstraints(event.target.value)} /></label>
-            <button className="primary" onClick={createAgentDraft}>{text.generateDraft}</button>
+            <button className="primary" onClick={createAgentDraft} disabled={!agentCanGenerate}>{text.generateDraft}</button>
           </div>
+          {agentModelUnavailableReason ? <p className="muted model-unavailable-note">{agentModelUnavailableReason}</p> : null}
           {agentMessage ? <p className="muted">{agentMessage}</p> : null}
           <div className="agent-workspace">
             <div className="agent-drafts">
-              {drafts.map((draft) => (
-                <button key={draft.id} className={selectedDraft?.id === draft.id ? "active" : ""} onClick={() => loadDraft(draft.id)}>
-                  <strong>{draft.title}</strong>
-                  <span>{draft.status} / {draft.mode}</span>
-                </button>
-              ))}
+              {drafts.map((draft) => {
+                const statusClass = draftStatusClass(draft.status);
+                return (
+                  <button
+                    key={draft.id}
+                    className={`draft-row ${statusClass} ${selectedDraft?.id === draft.id ? "active" : ""}`}
+                    onClick={() => loadDraft(draft.id)}
+                  >
+                    <strong>{draft.title}</strong>
+                    <span className="draft-status-line">
+                      <span className={`draft-status-chip ${statusClass}`}>{draftStatusLabel(draft.status, locale)}</span>
+                      <span>{authoringModeLabel(draft.mode, locale)}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <div className="agent-preview">
               <h3>{text.steps}</h3>
@@ -1905,13 +2546,88 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
               <h3>{text.draftPreview}</h3>
               {selectedDraft ? (
                 <>
-                  <strong>{selectedDraft.title}</strong>
-                  <span>{selectedDraft.slug} / {selectedDraft.status}</span>
-                  <p>{selectedDraft.description}</p>
+                  <div className="testcase-panel-head">
+                    <div>
+                      <strong>{selectedDraft.title}</strong>
+                      <span className="muted">{selectedDraft.slug} / {authoringModeLabel(selectedDraft.mode, locale)} / {draftStatusLabel(selectedDraft.status, locale)}</span>
+                    </div>
+                    <span className={`draft-status-chip ${draftStatusClass(selectedDraft.status)}`}>{draftStatusLabel(selectedDraft.status, locale)}</span>
+                  </div>
+                  {draftSaveMessage ? <p className="muted">{draftSaveMessage}</p> : null}
+                  {draftEdit ? (
+                    <div className="draft-edit-panel">
+                      <div className="testcase-panel-head">
+                        <h3>{text.draftEdit}</h3>
+                        <button className="primary" disabled={selectedDraft.status === "approved"} onClick={saveSelectedDraftEdit}>{text.revalidateDraft}</button>
+                      </div>
+                      <div className="admin-edit-grid draft-edit-grid">
+                        <label>{text.titleLabel}<input value={draftEdit.title} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ title: event.target.value })} /></label>
+                        <label>{text.slugLabel}<input value={draftEdit.slug} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ slug: event.target.value })} /></label>
+                        <label>{text.modeLabel}
+                          <select value={draftEdit.mode} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ mode: event.target.value as ProblemAuthoringMode })}>
+                            <option value="both">{authoringModeLabel("both", locale)}</option>
+                            <option value="function">{authoringModeLabel("function", locale)}</option>
+                            <option value="acm">{authoringModeLabel("acm", locale)}</option>
+                          </select>
+                        </label>
+                        <label>{locale === "zh" ? "难度" : "Difficulty"}
+                          <select value={draftEdit.difficulty} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ difficulty: event.target.value as "easy" | "medium" | "hard" })}>
+                            <option value="easy">easy</option>
+                            <option value="medium">medium</option>
+                            <option value="hard">hard</option>
+                          </select>
+                        </label>
+                        <label>{text.tagsLabel}<input value={draftEdit.tags} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ tags: event.target.value })} /></label>
+                        <label>{text.functionSignatureLabel}<input value={draftEdit.function_signature} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ function_signature: event.target.value })} /></label>
+                        <label>{text.timeLimitLabel}<input type="number" min="100" value={draftEdit.time_limit} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ time_limit: event.target.value })} /></label>
+                        <label>{text.memoryLimitLabel}<input type="number" min="16" value={draftEdit.memory_limit} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ memory_limit: event.target.value })} /></label>
+                        <label>{text.descriptionLabel}<textarea value={draftEdit.description} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ description: event.target.value })} /></label>
+                        <label>{text.hintLabel}<textarea value={draftEdit.hint} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ hint: event.target.value })} /></label>
+                        <label>{text.inputFormatLabel}<textarea value={draftEdit.input_format} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ input_format: event.target.value })} /></label>
+                        <label>{text.outputFormatLabel}<textarea value={draftEdit.output_format} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ output_format: event.target.value })} /></label>
+                        <label>{text.officialCodeLabel}<textarea value={draftEdit.official_solution_code} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ official_solution_code: event.target.value })} /></label>
+                        <label>{text.officialExplanationLabel}<textarea value={draftEdit.official_solution_explanation} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ official_solution_explanation: event.target.value })} /></label>
+                        <label>{text.timeComplexityLabel}<input value={draftEdit.time_complexity} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ time_complexity: event.target.value })} /></label>
+                        <label>{text.spaceComplexityLabel}<input value={draftEdit.space_complexity} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ space_complexity: event.target.value })} /></label>
+                      </div>
+                      <div className="testcase-panel-head">
+                        <h3>{text.testcaseDetails}</h3>
+                        <div className="agent-actions">
+                          <button disabled={selectedDraft.status === "approved"} onClick={() => addDraftCase(false)}>{text.addPublicCase}</button>
+                          <button disabled={selectedDraft.status === "approved"} onClick={() => addDraftCase(true)}>{text.addHiddenCase}</button>
+                        </div>
+                      </div>
+                      <div className="admin-testcase-list">
+                        {draftEdit.testcases.map((testcase, index) => (
+                          <article className="testcase-card admin-testcase-card" key={`${index}-${testcase.order}`}>
+                            <div className="testcase-card-head">
+                              <strong>{locale === "zh" ? "用例" : "Case"} {index + 1}</strong>
+                              <span className={testcase.is_hidden ? "case-chip hidden" : "case-chip public"}>{testcase.is_hidden ? text.hidden : text.public}</span>
+                              {testcase.is_sample ? <span className="case-chip sample">{text.sample}</span> : null}
+                            </div>
+                            <div className="testcase-edit-grid">
+                              <label>{text.inputLabel}<textarea value={testcase.input} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { input: event.target.value })} /></label>
+                              <label>{text.outputLabel}<textarea value={testcase.output} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { output: event.target.value })} /></label>
+                              <label>{text.orderLabel}<input type="number" min="1" value={testcase.order} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { order: Number(event.target.value) || index + 1 })} /></label>
+                              <label>{locale === "zh" ? "解释" : "Explanation"}<input value={testcase.explanation} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { explanation: event.target.value })} /></label>
+                              <label className="checkbox-label"><input type="checkbox" checked={testcase.is_hidden} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { is_hidden: event.target.checked, is_sample: event.target.checked ? false : testcase.is_sample })} />{text.hidden}</label>
+                              <label className="checkbox-label"><input type="checkbox" checked={testcase.is_sample} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { is_sample: event.target.checked, is_hidden: event.target.checked ? false : testcase.is_hidden })} />{text.sample}</label>
+                            </div>
+                            <div className="agent-actions">
+                              <button disabled={selectedDraft.status === "approved"} onClick={() => removeDraftCase(index)}>{text.delete}</button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <h3>{text.validation}</h3>
                   <ValidationReport draft={selectedDraft} locale={locale} />
+                  <DraftTestcasePanel draft={selectedDraft} locale={locale} />
                   <div className="agent-actions">
-                    <button className="primary" disabled={selectedDraft.status !== "validated"} onClick={approveSelectedDraft}>{text.approveDraft}</button>
+                    <button className="primary" disabled={selectedDraft.status === "approved" || !draftEdit} onClick={saveSelectedDraftEdit}>{text.revalidateDraft}</button>
+                    <button disabled={!draftHasUnsavedChanges} onClick={() => selectedDraft && setDraftEdit(draftEditFromDraft(selectedDraft))}>{text.resetDraftEdit}</button>
+                    <button className="primary" disabled={selectedDraft.status !== "validated" || draftHasUnsavedChanges} onClick={approveSelectedDraft}>{text.approveDraft}</button>
                     <button disabled={selectedDraft.status === "approved" || selectedDraft.status === "rejected"} onClick={rejectSelectedDraft}>{text.rejectDraft}</button>
                   </div>
                 </>
@@ -2052,7 +2768,9 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 <button onClick={() => savePythonSolution(problem.id)} disabled={problem.solution_count > 0}>
                   {problem.solution_count} {text.solutions}
                 </button>
-                <button onClick={() => selectedProblemId === problem.id ? setSelectedProblemId(null) : chooseProblem(problem)}>{text.edit}</button>
+                <button onClick={() => selectedProblemId === problem.id ? cancelProblemEdit() : chooseProblem(problem)}>
+                  {selectedProblemId === problem.id ? text.cancel : text.edit}
+                </button>
               </article>
             )) : <p className="muted">{text.noResults}</p>}
             <div className="admin-pagination">
@@ -2061,8 +2779,17 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
             </div>
             {selectedProblem ? (
               <div className="admin-edit-panel problem-edit-panel">
-                <h3>{selectedProblem.title}</h3>
-                <span className="muted">{selectedProblem.slug} · {selectedProblem.mode} · {selectedProblem.testcase_count} {text.cases} · {selectedProblem.hidden_testcase_count} {text.hidden}</span>
+                <div className="admin-edit-panel-header">
+                  <div>
+                    <h3>{selectedProblem.title}</h3>
+                    <span className="muted">{selectedProblem.slug} · {selectedProblem.mode} · {selectedProblem.testcase_count} {text.cases} · {selectedProblem.hidden_testcase_count} {text.hidden}</span>
+                  </div>
+                  <div className="agent-actions">
+                    <button className="primary" onClick={saveProblemEdit}>{text.save}</button>
+                    <button onClick={cancelProblemEdit}>{text.cancel}</button>
+                    <button className="danger" onClick={() => deleteProblem(selectedProblem.id)}>{text.deleteProblem}</button>
+                  </div>
+                </div>
                 <div className="admin-edit-grid">
                   <label>{text.titleLabel}<input value={problemEdit.title} onChange={(event) => setProblemEdit((value) => ({ ...value, title: event.target.value }))} /></label>
                   <label>{text.tagsLabel}<input value={problemEdit.tags} onChange={(event) => setProblemEdit((value) => ({ ...value, tags: event.target.value }))} /></label>
@@ -2071,9 +2798,57 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 </div>
                 <div className="agent-actions">
                   <button className="primary" onClick={saveProblemEdit}>{text.save}</button>
+                  <button onClick={cancelProblemEdit}>{text.cancel}</button>
                   <button onClick={() => updateProblem(selectedProblem.id, { is_public: !selectedProblem.is_public })}>
                     {selectedProblem.is_public ? text.private : text.public}
                   </button>
+                  <button className="danger" onClick={() => deleteProblem(selectedProblem.id)}>{text.deleteProblem}</button>
+                </div>
+                <div className="testcase-manager">
+                  <div className="testcase-panel-head">
+                    <h3>{text.testcaseDetails}</h3>
+                    <span className="muted">{testcasesQuery.isLoading ? text.loading : `${testcasesQuery.data?.length ?? 0} ${text.cases}`}</span>
+                  </div>
+                  <div className="testcase-create-panel">
+                    <strong>{text.newTestcase}</strong>
+                    <div className="testcase-edit-grid">
+                      <label>{text.inputLabel}<textarea value={newTestcase.input} onChange={(event) => setNewTestcase((value) => ({ ...value, input: event.target.value }))} /></label>
+                      <label>{text.outputLabel}<textarea value={newTestcase.output} onChange={(event) => setNewTestcase((value) => ({ ...value, output: event.target.value }))} /></label>
+                      <label>{text.scoreLabel}<input type="number" min="0" value={newTestcase.score} onChange={(event) => setNewTestcase((value) => ({ ...value, score: event.target.value }))} /></label>
+                      <label>{text.orderLabel}<input type="number" min="0" value={newTestcase.order} onChange={(event) => setNewTestcase((value) => ({ ...value, order: event.target.value }))} /></label>
+                      <label className="checkbox-label"><input type="checkbox" checked={newTestcase.is_hidden} onChange={(event) => setNewTestcase((value) => ({ ...value, is_hidden: event.target.checked }))} />{text.hidden}</label>
+                      <label className="checkbox-label"><input type="checkbox" checked={newTestcase.is_sample} onChange={(event) => setNewTestcase((value) => ({ ...value, is_sample: event.target.checked }))} />{text.sample}</label>
+                    </div>
+                    <div className="agent-actions">
+                      <button className="primary" onClick={createProblemTestcase}>{text.add}</button>
+                    </div>
+                  </div>
+                  <div className="admin-testcase-list">
+                    {(testcasesQuery.data ?? []).length ? (testcasesQuery.data ?? []).map((testcase) => {
+                      const edit = testcaseEdits[testcase.id] ?? testcase;
+                      return (
+                        <article className="testcase-card admin-testcase-card" key={testcase.id}>
+                          <div className="testcase-card-head">
+                            <strong>{locale === "zh" ? "用例" : "Case"} {edit.order}</strong>
+                            <span className={edit.is_hidden ? "case-chip hidden" : "case-chip public"}>{edit.is_hidden ? text.hidden : text.public}</span>
+                            {edit.is_sample ? <span className="case-chip sample">{text.sample}</span> : null}
+                          </div>
+                          <div className="testcase-edit-grid">
+                            <label>{text.inputLabel}<textarea value={edit.input} onChange={(event) => updateTestcaseEdit(testcase.id, { input: event.target.value })} /></label>
+                            <label>{text.outputLabel}<textarea value={edit.output} onChange={(event) => updateTestcaseEdit(testcase.id, { output: event.target.value })} /></label>
+                            <label>{text.scoreLabel}<input type="number" min="0" value={edit.score} onChange={(event) => updateTestcaseEdit(testcase.id, { score: Number(event.target.value) || 0 })} /></label>
+                            <label>{text.orderLabel}<input type="number" min="0" value={edit.order} onChange={(event) => updateTestcaseEdit(testcase.id, { order: Number(event.target.value) || 0 })} /></label>
+                            <label className="checkbox-label"><input type="checkbox" checked={edit.is_hidden} onChange={(event) => updateTestcaseEdit(testcase.id, { is_hidden: event.target.checked })} />{text.hidden}</label>
+                            <label className="checkbox-label"><input type="checkbox" checked={edit.is_sample} onChange={(event) => updateTestcaseEdit(testcase.id, { is_sample: event.target.checked })} />{text.sample}</label>
+                          </div>
+                          <div className="agent-actions">
+                            <button className="primary" onClick={() => saveProblemTestcase(testcase.id)}>{text.save}</button>
+                            <button onClick={() => deleteProblemTestcase(testcase.id)}>{text.delete}</button>
+                          </div>
+                        </article>
+                      );
+                    }) : <p className="muted">{testcasesQuery.isLoading ? text.loading : text.noTestcases}</p>}
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -2108,15 +2883,30 @@ function App() {
       setCurrentUser(null);
       return;
     }
+    let cancelled = false;
+    const authToken = localStorage.getItem("fastoj.jwt");
+    if (!authToken) {
+      setCurrentUser(null);
+      setAuthenticated(false);
+      setView("auth");
+      return;
+    }
     api.me()
-      .then(setCurrentUser)
+      .then((user) => {
+        if (!cancelled && localStorage.getItem("fastoj.jwt") === authToken) {
+          setCurrentUser(user);
+        }
+      })
       .catch((error) => {
-        if (isUnauthorized(error)) {
+        if (!cancelled && isUnauthorized(error) && localStorage.getItem("fastoj.jwt") === authToken) {
           localStorage.removeItem("fastoj.jwt");
           setAuthenticated(false);
           setView("auth");
         }
       });
+    return () => {
+      cancelled = true;
+    };
   }, [authenticated]);
 
   function openProblem(id: string) {
@@ -2156,6 +2946,7 @@ function App() {
           problemId={selectedId}
           locale={locale}
           theme={theme}
+          currentUser={currentUser}
           onBackToLibrary={() => setView("library")}
           authenticated={authenticated}
           onRequireAuth={() => {

@@ -30,6 +30,29 @@ class QueueService:
             self.redis_client.close()
             self.redis_client = None
 
+    def worker_heartbeat_key(self) -> str:
+        return f"{settings.JUDGE_WORKER_HEARTBEAT_KEY}:{self.consumer_name}"
+
+    def mark_worker_alive(self) -> None:
+        """Publish a short-lived worker heartbeat for API fallback decisions."""
+        self.connect()
+        self.redis_client.set(  # type: ignore[union-attr]
+            self.worker_heartbeat_key(),
+            "1",
+            ex=settings.JUDGE_WORKER_HEARTBEAT_TTL_SECONDS,
+        )
+
+    def clear_worker_alive(self) -> None:
+        """Clear this worker heartbeat on graceful shutdown."""
+        self.connect()
+        self.redis_client.delete(self.worker_heartbeat_key())  # type: ignore[union-attr]
+
+    def has_live_worker(self) -> bool:
+        """Return whether any judge worker heartbeat is currently alive."""
+        self.connect()
+        pattern = f"{settings.JUDGE_WORKER_HEARTBEAT_KEY}:*"
+        return any(True for _key in self.redis_client.scan_iter(match=pattern, count=10))  # type: ignore[union-attr]
+
     def push_task(self, task_data: dict[str, Any]) -> str:
         """Push a task to the Redis Stream queue."""
         self.connect()

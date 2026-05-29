@@ -1,11 +1,22 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.api.auth import get_current_user
 from backend.core.database import get_db
-from backend.models import Difficulty, Problem, Solution, TestCase, User
+from backend.models import (
+    Difficulty,
+    Problem,
+    ProblemDraft,
+    Solution,
+    Submission,
+    TestCase,
+    TestCaseResult,
+    User,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -37,7 +48,17 @@ class AdminTestCaseUpdate(BaseModel):
     output: str | None = None
     is_hidden: bool | None = None
     is_sample: bool | None = None
-    score: int | None = None
+    score: int | None = Field(default=None, ge=0)
+    order: int | None = Field(default=None, ge=0)
+
+
+class AdminTestCaseCreate(BaseModel):
+    input: str
+    output: str
+    is_hidden: bool = False
+    is_sample: bool = False
+    score: int = Field(default=10, ge=0)
+    order: int | None = Field(default=None, ge=0)
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
@@ -192,6 +213,62 @@ def update_problem(
     return {"success": True}
 
 
+@router.delete("/problems/{problem_id}")
+def delete_problem(
+    problem_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+
+    testcases = db.query(TestCase).filter(TestCase.problem_id == problem.id).all()
+    submissions = db.query(Submission).filter(Submission.problem_id == problem.id).all()
+    solutions = db.query(Solution).filter(Solution.problem_id == problem.id).all()
+    linked_drafts = db.query(ProblemDraft).filter(ProblemDraft.approved_problem_id == problem.id).all()
+
+    testcase_results: list[TestCaseResult] = []
+    seen_result_ids: set[str] = set()
+
+    def collect_results(results: list[TestCaseResult]) -> None:
+        for result in results:
+            result_id = str(result.id)
+            if result_id in seen_result_ids:
+                continue
+            seen_result_ids.add(result_id)
+            testcase_results.append(result)
+
+    for submission in submissions:
+        collect_results(db.query(TestCaseResult).filter(TestCaseResult.submission_id == submission.id).all())
+    for testcase in testcases:
+        collect_results(db.query(TestCaseResult).filter(TestCaseResult.testcase_id == testcase.id).all())
+
+    for draft in linked_drafts:
+        draft.approved_problem_id = None
+    for result in testcase_results:
+        db.delete(result)
+    for submission in submissions:
+        db.delete(submission)
+    for solution in solutions:
+        db.delete(solution)
+    for testcase in testcases:
+        db.delete(testcase)
+    db.delete(problem)
+    db.commit()
+    return {
+        "success": True,
+        "deleted": {
+            "problems": 1,
+            "testcases": len(testcases),
+            "submissions": len(submissions),
+            "testcase_results": len(testcase_results),
+            "solutions": len(solutions),
+            "draft_links_cleared": len(linked_drafts),
+        },
+    }
+
+
 @router.put("/problems/{problem_id}/solutions")
 def upsert_solution(
     problem_id: str,
@@ -215,6 +292,59 @@ def upsert_solution(
     return {"success": True}
 
 
+@router.get("/problems/{problem_id}/testcases")
+def list_testcases(
+    problem_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    testcases = (
+        db.query(TestCase)
+        .filter(TestCase.problem_id == problem.id)
+        .order_by(TestCase.order.asc(), TestCase.created_at.asc())
+        .all()
+    )
+    return {"success": True, "data": [_testcase_response(testcase) for testcase in testcases]}
+
+
+@router.post("/problems/{problem_id}/testcases", status_code=status.HTTP_201_CREATED)
+def create_testcase(
+    problem_id: str,
+    payload: AdminTestCaseCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    order = payload.order
+    if order is None:
+        latest = (
+            db.query(TestCase)
+            .filter(TestCase.problem_id == problem.id)
+            .order_by(TestCase.order.desc())
+            .first()
+        )
+        order = int(latest.order) + 1 if latest else 1
+    testcase = TestCase(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        input=payload.input,
+        output=payload.output,
+        is_hidden=payload.is_hidden,
+        is_sample=payload.is_sample,
+        score=payload.score,
+        order=order,
+    )
+    db.add(testcase)
+    db.commit()
+    db.refresh(testcase)
+    return {"success": True, "data": _testcase_response(testcase)}
+
+
 @router.patch("/testcases/{testcase_id}")
 def update_testcase(
     testcase_id: str,
@@ -225,9 +355,38 @@ def update_testcase(
     testcase = db.query(TestCase).filter(TestCase.id == testcase_id).first()
     if not testcase:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Testcase not found")
-    for field in ["input", "output", "is_hidden", "is_sample", "score"]:
+    for field in ["input", "output", "is_hidden", "is_sample", "score", "order"]:
         value = getattr(payload, field)
         if value is not None:
             setattr(testcase, field, value)
     db.commit()
+    db.refresh(testcase)
+    return {"success": True, "data": _testcase_response(testcase)}
+
+
+@router.delete("/testcases/{testcase_id}")
+def delete_testcase(
+    testcase_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    testcase = db.query(TestCase).filter(TestCase.id == testcase_id).first()
+    if not testcase:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Testcase not found")
+    db.delete(testcase)
+    db.commit()
     return {"success": True}
+
+
+def _testcase_response(testcase: TestCase) -> dict:
+    return {
+        "id": str(testcase.id),
+        "problem_id": str(testcase.problem_id),
+        "input": testcase.input,
+        "output": testcase.output,
+        "is_hidden": testcase.is_hidden,
+        "is_sample": testcase.is_sample,
+        "score": testcase.score,
+        "order": testcase.order,
+        "created_at": testcase.created_at.isoformat() if testcase.created_at else None,
+    }

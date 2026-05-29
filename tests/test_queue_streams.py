@@ -9,6 +9,7 @@ class FakeRedis:
         self.acked = []
         self.groups = []
         self.published = []
+        self.values = {}
 
     def xgroup_create(self, *args, **kwargs):
         self.groups.append((args, kwargs))
@@ -25,6 +26,18 @@ class FakeRedis:
 
     def xlen(self, _stream):
         return len(self.added)
+
+    def set(self, key, value, ex=None):
+        self.values[key] = {"value": value, "ex": ex}
+
+    def delete(self, key):
+        self.values.pop(key, None)
+
+    def scan_iter(self, match=None, count=None):
+        prefix = (match or "").rstrip("*")
+        for key in list(self.values):
+            if not match or key.startswith(prefix):
+                yield key
 
 
 def test_queue_enqueue_and_ack():
@@ -53,3 +66,18 @@ def test_publish_status_event():
     _, payload = queue.redis_client.published[0]
     assert payload["submission_id"] == "s1"
     assert payload["type"] == "judging"
+
+
+def test_worker_heartbeat_marks_and_clears_live_worker():
+    queue = QueueService()
+    queue.redis_client = FakeRedis()
+
+    assert queue.has_live_worker() is False
+
+    queue.mark_worker_alive()
+    assert queue.has_live_worker() is True
+    key = queue.worker_heartbeat_key()
+    assert queue.redis_client.values[key]["ex"] > 0
+
+    queue.clear_worker_alive()
+    assert queue.has_live_worker() is False

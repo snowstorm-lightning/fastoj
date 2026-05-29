@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.ai.schemas import AILocale, AIModelProfile
 
-ProblemMode = Literal["function", "acm"]
+ProblemMode = Literal["function", "acm", "both"]
 ProblemDraftStatus = Literal[
     "draft",
     "validating",
@@ -93,6 +93,43 @@ class AgentRunResponse(BaseModel):
     steps: list[AgentStepResponse] = Field(default_factory=list)
 
 
+class ProblemDraftTestCaseUpdate(BaseModel):
+    input: str = ""
+    output: str = ""
+    explanation: str | None = None
+    is_hidden: bool = False
+    is_sample: bool = False
+    order: int | None = Field(default=None, ge=1)
+
+
+class ProblemDraftUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    slug: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, min_length=1)
+    difficulty: Literal["easy", "medium", "hard"] | None = None
+    tags: list[str] | None = None
+    mode: ProblemMode | None = None
+    input_format: str | None = None
+    output_format: str | None = None
+    function_signature: str | None = None
+    time_limit: int | None = Field(default=None, ge=100, le=10000)
+    memory_limit: int | None = Field(default=None, ge=16, le=2048)
+    hint: str | None = None
+    official_solution_language: str | None = Field(default=None, max_length=20)
+    official_solution_code: str | None = Field(default=None, min_length=1)
+    official_solution_explanation: str | None = Field(default=None, min_length=1)
+    time_complexity: str | None = Field(default=None, max_length=50)
+    space_complexity: str | None = Field(default=None, max_length=50)
+    testcases: list[ProblemDraftTestCaseUpdate] | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def clean_optional_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return [tag.strip() for tag in value if tag.strip()]
+
+
 class ProblemDraftResponse(BaseModel):
     id: str
     title: str
@@ -119,6 +156,7 @@ class ProblemDraftResponse(BaseModel):
     approved_problem_id: str | None = None
     created_at: str
     updated_at: str
+    steps: list[AgentStepResponse] = Field(default_factory=list)
 
 
 class ProblemDraftListItem(BaseModel):

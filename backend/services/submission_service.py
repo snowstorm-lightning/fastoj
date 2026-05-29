@@ -124,6 +124,8 @@ class SubmissionService:
 
         if settings.JUDGE_ASYNC:
             try:
+                if not queue_service.has_live_worker():
+                    raise RuntimeError("judge worker heartbeat not found")
                 queue_service.push_task(task)
                 queue_service.publish_status(
                     str(submission.id),

@@ -10,10 +10,12 @@ class OpenAICompatibleProvider(BaseAIProvider):
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> str:
         if self._requires_real_api_key() and not self._has_real_api_key():
-            raise AIProviderUnavailableError(
+            message = (
                 "DeepSeek profile is not configured. Set AI_DEEPSEEK_API_KEY or AI_API_KEY in .env, "
                 "then restart Docker services."
             )
+            self._mark_unavailable(message)
+            raise AIProviderUnavailableError(message)
         try:
             response = httpx.post(
                 f"{self.config.base_url}/chat/completions",
@@ -37,16 +39,17 @@ class OpenAICompatibleProvider(BaseAIProvider):
             data = response.json()
             return data["choices"][0]["message"]["content"]
         except httpx.RequestError as exc:
-            raise AIProviderUnavailableError(
-                f"AI provider is unreachable at {self.config.base_url}. "
-                "If you selected Qwen local, start the local OpenAI-compatible server first."
-            ) from exc
+            message = "AI provider is unreachable. If you selected Qwen local, start the local OpenAI-compatible server first."
+            self._mark_unavailable(message)
+            raise AIProviderUnavailableError(message) from exc
         except httpx.HTTPStatusError as exc:
-            raise AIProviderUnavailableError(
-                f"AI provider returned HTTP {exc.response.status_code} for model {self.config.model}."
-            ) from exc
+            message = f"AI provider returned HTTP {exc.response.status_code} for model {self.config.model}."
+            self._mark_unavailable(message)
+            raise AIProviderUnavailableError(message) from exc
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise AIProviderUnavailableError("AI provider returned an invalid chat-completions response.") from exc
+            message = "AI provider returned an invalid chat-completions response."
+            self._mark_unavailable(message)
+            raise AIProviderUnavailableError(message) from exc
 
     def _requires_real_api_key(self) -> bool:
         return "api.deepseek.com" in self.config.base_url.lower()
@@ -54,3 +57,8 @@ class OpenAICompatibleProvider(BaseAIProvider):
     def _has_real_api_key(self) -> bool:
         key = self.config.api_key.strip()
         return bool(key) and key != "sk-no-key-required"
+
+    def _mark_unavailable(self, reason: str) -> None:
+        from backend.ai.profiles import mark_ai_profile_unavailable
+
+        mark_ai_profile_unavailable(self.config.profile, reason)

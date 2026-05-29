@@ -71,6 +71,21 @@ describe("problem mode metadata", () => {
     expect(buildStarter(generated, "python", "function")).toContain("def echo_value");
   });
 
+  it("treats approved dual-mode agent metadata as both ACM and function capable", () => {
+    const generated = {
+      ...twoSum,
+      slug: "agent-dual-echo",
+      mode: "both",
+      function_signature: "def echo_value(value: int) -> int",
+    };
+    const mode = getProblemMode(generated);
+
+    expect(mode.supportsFunction).toBe(true);
+    expect(mode.supportsAcm).toBe(true);
+    expect(mode.functionSpec?.dynamic).toBe(true);
+    expect(buildStarter(generated, "python", "function")).toContain("def echo_value");
+  });
+
   it("builds dynamic function starters for the selected language", () => {
     const generated = {
       ...twoSum,

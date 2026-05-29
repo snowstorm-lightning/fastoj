@@ -6,9 +6,39 @@ Updated: 2026-05-29
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
 
+## 2026-05-29 Dynamic AI Profile Availability
+
+- AI model choices are now served by `GET /api/v1/ai/profiles` instead of being hard-coded in the frontend.
+- The API checks `default`, `deepseek`, and `qwen-local` profile availability with configuration preflight, `/models` probing, a chat-completions fallback, short timeouts, and a 60-second cache.
+- Startup schedules profile checks in the background and never fails just because an AI provider is offline.
+- `model_profile=default` routes to the first healthy profile in this order: default config, DeepSeek, local Qwen.
+- Regular users only receive available profiles; admins receive all profiles plus safe unavailable reasons for authoring setup.
+- Verification for this batch: `uv run ruff check .` passed; `uv run pytest` passed with 127 tests; `cd frontend && npm run build` passed; `cd frontend && npm test` passed with 9 files / 22 tests; `docker compose up --build -d api` rebuilt and started the API; `docker compose ps api` reported healthy; health passed at `http://127.0.0.1:8010/api/v1/health`.
+
+## 2026-05-29 Admin Authoring And Testcase Management
+
+- Problem Authoring Agent draft creation now attempts bounded self-repair: after a failed validation, it can call the model up to two more times with a safe repair context before persisting the final draft.
+- The repair context contains failed check names, public sample diagnostics, and aggregate case summaries only. Hidden testcase input/output remains out of repair prompts, run output, and validation reports.
+- The admin draft preview now includes testcase details with filters for all/public/hidden/failed cases, so administrators can inspect generated inputs and expected outputs before approving a draft.
+- Formal problem management now has admin-only testcase CRUD endpoints and a frontend testcase manager for input, output, hidden/sample flags, score, and order.
+- Formal problem management now supports deleting published problems; deletion removes related testcases, solutions, submissions, and testcase results, while approved draft records keep their history with the approved-problem link cleared.
+- The published-problem delete action is intentionally available only inside the edit panel now; list-row/card delete controls were removed to reduce accidental deletes.
+- Admins can edit a failed authoring draft and use the save-and-revalidate action to rerun sandbox validation before approval.
+- Authoring requests and draft editing now include a `both` mode for problems that should expose both function-mode and ACM-mode practice.
+- Manual draft slug edits now ignore failed, rejected, and historical approved drafts; true duplicate active slugs still show a visible error instead of silently appending `-2`/`-3`.
+- Draft action buttons now prevent approving unsaved local edits, ask for publish/reject confirmation, and only enable cancel when local edits exist.
+- Rejected drafts now render as an explicit status chip in the left draft list, and the formal-problem edit panel has a cancel action.
+- Authoring validation now requires at least one public testcase and one total testcase. Hidden cases remain recommended for non-trivial problems but are not forced for simple drafts.
+- Function-mode authoring validation treats raw string output and JSON string-literal expected output as equivalent, covering no-input string-return tasks such as `print-qiu-qiu`.
+- Docker Compose now gives the API service access to the Docker judge runtime so admin draft validation can run synchronously in the API container.
+- README and README.zh-CN describe the new admin testcase management and bounded authoring-agent repair behavior.
+- Verification for this batch: `uv run ruff check .` passed; `uv run pytest` passed with 132 tests; `cd frontend && npm run build` passed; `cd frontend && npm test` passed with 9 files / 23 tests; `docker compose up --build -d api` rebuilt the API image; `docker compose ps api` reported API healthy; health passed at `http://127.0.0.1:8010/api/v1/health`; a Docker-backed authoring validation smoke for `print-qiu-qiu` passed with one public testcase.
+
 ## 2026-05-29 Workbench Run Panel And Auth Feedback
 
 - Workbench public runs now support editable public run inputs. The new result panel below Monaco shows sample input, official/reference generated expected output, the user's actual output, and line-level diffs with mismatches highlighted.
+- Async judging now uses a Redis worker heartbeat. If Redis is reachable but no judge worker is alive, the API falls back to inline Docker judging instead of leaving submissions pending indefinitely.
+- Frontend polling now appends a terminal result/error event when it observes a finished submission, so the judge timeline recovers even if the WebSocket result event was missed.
 - Backend public runs accept a bounded `run_testcases` payload containing input only, ignore any client-provided expected output, and persist those results without a testcase foreign key. Hidden/full-submit behavior still uses stored testcases only and no hidden input/expected/actual output is returned.
 - Custom public-run expected output is generated server-side by running the official solution in the sandbox when available. `next-permutation`, `diameter-of-binary-tree`, and `maximum-depth-of-binary-tree` also have built-in Python reference generators; exact public sample input can fall back to already visible public sample output.
 - Hidden-case WebSocket progress was tightened so full-submit hidden phases do not expose current testcase names, counts, or last-case status metadata.
@@ -21,7 +51,7 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Python function mode now detects stale ACM starter drafts cached under the function-mode draft key and restores the function starter; resetting the template also persists the corrected draft.
 - Auth now has registration confirm-password validation plus clear success/error dialogs. Registration success shows a dialog before entering the library.
 - README and README.zh-CN page descriptions were updated for the current workbench/auth behavior. Screenshot PNG regeneration was attempted but blocked because the available WSL/browser paths had no runnable browser binary and Windows interop failed with `UtilBindVsockAnyPort`.
-- Verification on 2026-05-29: `uv run ruff check .` passed; targeted backend tests for judge/function-mode behavior passed; `cd frontend && npm run build` passed; `cd frontend && npm test` passed; `docker compose up --build -d api worker` passed; API health returned `{"status":"healthy","app":"FastOJ"}` at `http://127.0.0.1:8010/api/v1/health`; a real custom-run smoke for Majority Element `[1,2,2]` returned `expected_output: 2`, `actual_output: 2`, and `result: ac`.
+- Verification on 2026-05-29: `uv run ruff check .` passed; `uv run pytest` passed with 135 tests; `cd frontend && npm run build` passed; `cd frontend && npm test -- --run` passed with 9 files / 23 tests; `docker compose up --build -d api worker` passed; API health returned `{"status":"healthy","app":"FastOJ"}` at `http://127.0.0.1:8010/api/v1/health`; a real `print-qiu-qiu` function-mode run returned `result: ac`; a real custom-run smoke for Majority Element `[1,2,2]` returned `expected_output: 2`, `actual_output: 2`, and `result: ac`.
 
 ## 2026-05-26 Linux/WSL Deployment Pass
 
@@ -259,6 +289,6 @@ Modified and new files after the latest admin-agent, acceptance, and frontend po
 1. Convert `docs/ACCEPTANCE_HARNESS.md` into a Playwright/equivalent browser suite covering auth, library search/filter, function and ACM run/submit, WebSocket-first status, polling fallback, AI locale behavior, settings, admin, and screenshot smoke.
 2. Finish the remaining browser manual acceptance items not fully automated in this batch: register/login redirect, token-expiry alert, settings save/error with typed form data, admin mutation restore paths, and explicit polling fallback simulation.
 3. Inspect the Chinese UI in a real browser for any remaining mixed-language problem text; move problem statement/solution translations from temporary frontend/backend maps to backend-managed localized fields when the content model is finalized.
-4. Expand admin UI beyond basic controls when ready: full problem editor, official-solution editor, testcase manager with hidden-content safeguards, submission audit, judge queue, and system health.
+4. Expand admin UI beyond current user/problem/testcase controls when ready: full problem editor, official-solution editor, submission audit, judge queue, and system health.
 5. Expand C function-mode harnesses for AI tasks that require matrices or strings, or hide C function mode for those tasks until supported.
 6. Split Monaco/Shiki into lazy chunks to reduce initial frontend bundle size.

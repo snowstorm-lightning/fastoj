@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     JUDGE_STATUS_CHANNEL: str = "judge:status"
     JUDGE_TASK_MAX_RETRIES: int = 3
     JUDGE_PENDING_IDLE_MS: int = 30000
+    JUDGE_WORKER_HEARTBEAT_KEY: str = "judge:worker:heartbeat"
+    JUDGE_WORKER_HEARTBEAT_TTL_SECONDS: int = 15
 
     # Sandbox safety
     FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION: bool = False
@@ -62,6 +64,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,
+        extra="ignore",
     )
 
     @field_validator("DEBUG", mode="before")

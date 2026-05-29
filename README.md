@@ -27,7 +27,7 @@ for that.
   library, card/list layouts, a three-column workbench, editable public-run
   inputs with official-solution expected output generation, output diffing,
   judge timeline, AI drawer, submission trail, local discussion, settings,
-  admin screens, and a training graph.
+  admin screens with testcase management, and a training graph.
 - **It is ready for provider experiments.** The AI layer uses an
   OpenAI-compatible profile, with examples for hosted DeepSeek-style APIs and a
   local Qwen/llama.cpp server.
@@ -43,8 +43,13 @@ for that.
    code review, and contextual chat in the active UI language.
 4. **Training graph** - browse knowledge nodes and return to the library with the
    corresponding tag filter applied.
-5. **Admin console** - manage users and problems, bootstrap official solutions,
-   and review AI-generated problem drafts before publishing.
+5. **Admin console** - manage users and problems, delete retired problems, view
+   and edit full testcase sets, bootstrap official solutions, and review
+   AI-generated problem drafts before publishing. Draft validation failures can
+   trigger bounded AI repair attempts before the final draft is saved; admins
+   can edit failed drafts, save and revalidate them, and author dual-mode drafts
+   that support both function and ACM practice. Simple drafts are allowed to use
+   fewer cases when extra hidden cases would only duplicate coverage.
 
 ## Page Showcase
 
@@ -171,6 +176,15 @@ AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
 AI_QWEN_API_KEY=sk-no-key-required
 AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
+
+FastOJ exposes `GET /api/v1/ai/profiles` for the frontend model selector. The
+API checks the configured profiles in the background with a short timeout and
+caches availability for 60 seconds. Regular users only see currently available
+profiles; administrators can also see unavailable profiles and a safe failure
+reason. Selecting `default` auto-routes to the first healthy profile in this
+order: default config, DeepSeek, then local Qwen. AI calls still validate the
+provider at request time, so a model going offline returns a normal 503 instead
+of breaking API startup.
 
 ### Local Qwen Deployment
 
@@ -481,6 +495,8 @@ ignores `.env` and `.env.*`; `.env.example` contains safe placeholders only.
 
 - Hidden testcase input, expected output, and actual output are never included in
   AI prompts.
+- Hidden testcase content is available only through admin-only testcase and draft
+  review screens.
 - Normal users can explain and review only their own submissions; admins can
   access all submissions through server-side role checks.
 - Public registration always creates a normal `user`; administrator accounts are
@@ -488,6 +504,9 @@ ignores `.env` and `.env.*`; `.env.example` contains safe placeholders only.
 - Production judging uses Docker sandbox execution. The
   `FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true` escape hatch is for local
   development only.
+- In Docker Compose, the API service also mounts the Docker socket so the
+  admin-only Problem Authoring Agent can synchronously sandbox-check official
+  draft solutions before approval or after an admin edit/revalidation pass.
 - Sandbox containers run with network disabled, memory limits, pid limits,
   dropped capabilities, `no-new-privileges`, non-root execution, output
   truncation, timeout kill, and cleanup.

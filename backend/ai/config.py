@@ -14,6 +14,7 @@ class AIConfig:
     model: str
     timeout_seconds: int
     max_output_tokens: int
+    profile: str = "default"
 
     @classmethod
     def from_settings(cls, model_profile: AIModelProfile | None = None) -> "AIConfig":
@@ -27,6 +28,7 @@ class AIConfig:
                 model=settings.AI_DEEPSEEK_MODEL,
                 timeout_seconds=settings.AI_TIMEOUT_SECONDS,
                 max_output_tokens=settings.AI_MAX_OUTPUT_TOKENS,
+                profile="deepseek",
             )
         if profile == "qwen-local":
             return cls(
@@ -36,6 +38,7 @@ class AIConfig:
                 model=settings.AI_QWEN_MODEL,
                 timeout_seconds=settings.AI_TIMEOUT_SECONDS,
                 max_output_tokens=settings.AI_MAX_OUTPUT_TOKENS,
+                profile="qwen-local",
             )
         return cls(
             provider=settings.AI_PROVIDER,
@@ -44,4 +47,5 @@ class AIConfig:
             model=settings.AI_MODEL,
             timeout_seconds=settings.AI_TIMEOUT_SECONDS,
             max_output_tokens=settings.AI_MAX_OUTPUT_TOKENS,
+            profile="default",
         )

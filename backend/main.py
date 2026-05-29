@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.ai.profiles import refresh_ai_profiles_async
 from backend.core.config import settings
 from backend.core.database import Base, engine
 
@@ -120,6 +121,7 @@ async def startup_event():
     app.state.judge_status_task = asyncio.create_task(
         relay_judge_status_events(app.state.judge_status_stop)
     )
+    app.state.ai_profile_health_task = asyncio.create_task(refresh_ai_profiles_async(force=True))
 
 
 @app.on_event("shutdown")
@@ -132,6 +134,13 @@ async def shutdown_event():
         task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
+    ai_task = getattr(app.state, "ai_profile_health_task", None)
+    if ai_task and not ai_task.done():
+        ai_task.cancel()
+        try:
+            await ai_task
         except asyncio.CancelledError:
             pass
 

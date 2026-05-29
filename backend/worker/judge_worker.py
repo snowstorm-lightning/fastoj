@@ -39,6 +39,7 @@ class JudgeWorker:
         # Main loop
         while self.running:
             try:
+                queue_service.mark_worker_alive()
                 queue_service.reclaim_pending()
                 stream_task = queue_service.pop_stream_task(timeout_ms=5000)
                 if stream_task:
@@ -57,6 +58,7 @@ class JudgeWorker:
         """Stop the judge worker."""
         logger.info("Stopping Judge Worker...")
         self.running = False
+        queue_service.clear_worker_alive()
         queue_service.disconnect()
 
     def _signal_handler(self, signum, frame):

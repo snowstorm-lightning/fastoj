@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from backend.ai.profiles import list_ai_profiles
 from backend.ai.providers import AIProviderUnavailableError
 from backend.ai.schemas import (
     AIActionRequest,
@@ -9,6 +10,7 @@ from backend.ai.schemas import (
     AIExplainResponse,
     AIHintRequest,
     AIHintResponse,
+    AIProfileResponse,
     AIReviewResponse,
 )
 from backend.ai.service import AIService
@@ -17,6 +19,11 @@ from backend.core.database import get_db
 from backend.models import User
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+
+
+@router.get("/profiles", response_model=list[AIProfileResponse])
+def profiles(current_user: User = Depends(get_current_user)):
+    return list_ai_profiles(include_unavailable=current_user.role == "admin")
 
 
 @router.post("/submissions/{submission_id}/explain", response_model=AIExplainResponse)

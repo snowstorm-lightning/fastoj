@@ -669,7 +669,7 @@ export function getFunctionSpec(problem?: AnyProblem | null): FunctionSpec | nul
   if (!problem) return null;
   const fixed = FUNCTION_SPECS[problem.slug];
   if (fixed) return fixed;
-  if (problem.mode === "function" && problem.function_signature) {
+  if ((problem.mode === "function" || problem.mode === "both") && problem.function_signature) {
     const signature = problem.function_signature.replace(/:\s*$/, "");
     const match = signature.match(/def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
     const functionName = match?.[1] ?? "solve";

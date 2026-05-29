@@ -30,5 +30,9 @@ describe("API error formatting", () => {
     expect(formatApiErrorResponse({
       detail: "AI provider returned HTTP 401 for model deepseek-v4-flash.",
     })).toBe("AI provider returned HTTP 401 for model deepseek-v4-flash.");
+
+    expect(formatApiErrorResponse({
+      detail: "AI provider is unreachable. If you selected Qwen local, start the local OpenAI-compatible server first.",
+    })).toBe("AI provider is unreachable. If you selected Qwen local, start the local OpenAI-compatible server first.");
   });
 });

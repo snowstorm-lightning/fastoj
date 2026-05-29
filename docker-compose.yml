@@ -51,6 +51,9 @@ services:
       - AI_QWEN_BASE_URL=${AI_QWEN_BASE_URL:-http://host.docker.internal:8080/v1}
       - AI_QWEN_API_KEY=${AI_QWEN_API_KEY:-sk-no-key-required}
       - AI_QWEN_MODEL=${AI_QWEN_MODEL:-qwen2.5-coder-7b-instruct-q4_k_m}
+      - JUDGE_CONTAINER_IMAGE=fastoj-judge:latest
+      - JUDGE_USE_DOCKER=true
+      - FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=false
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -58,7 +61,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      judge-runtime:
+        condition: service_started
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       - ./backend:/app/backend
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=5).read()"]

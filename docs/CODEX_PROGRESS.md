@@ -1,8 +1,38 @@
 # Codex Progress
 
+## 2026-05-29 Dynamic AI Profile Availability
+
+- [x] Planned and implemented dynamic AI profile discovery for `default`, `deepseek`, and `qwen-local` through `GET /api/v1/ai/profiles`.
+- [x] Added background profile health checks with short timeouts, 60-second cache, configuration preflight, `/models` probing, and chat-completions fallback.
+- [x] Changed `default` AI routing to choose the first healthy profile from default config, DeepSeek, then local Qwen; unavailable providers still return normal 503 errors at call time.
+- [x] Updated the workbench and admin authoring UI to use backend-provided profile availability instead of hard-coded model options.
+- [x] Regular users only see available model options; admins can see unavailable authoring profiles and safe failure reasons.
+- [x] Verification passed: `uv run ruff check .`, `uv run pytest` (127 passed), `cd frontend && npm run build`, `cd frontend && npm test` (9 files / 22 tests passed), `docker compose up --build -d api`, `docker compose ps api` healthy, and API health at `http://127.0.0.1:8010/api/v1/health`.
+
+## 2026-05-29 Admin Authoring And Testcase Management
+
+- [x] Added bounded Problem Authoring Agent repair: a failed draft validation now feeds a safe repair context back to the model for at most two additional attempts before the final draft is persisted.
+- [x] Repair context includes failed checks, public sample diagnostics, and aggregate case summaries only; hidden testcase input/output stays out of repair prompts, run output, and validation reports.
+- [x] Added admin-only testcase CRUD endpoints for formal problems: list, create, update, and delete, including hidden/sample flags, score, and order.
+- [x] Added admin UI testcase details for generated drafts and a formal-problem testcase manager with view/edit/create/delete controls.
+- [x] Added admin-only published problem deletion with related testcase, solution, submission, and testcase-result cleanup.
+- [x] Kept published-problem deletion inside the edit panel only, removing the row/card delete action to reduce accidental deletes.
+- [x] Added explicit draft save-and-revalidate controls so admins can edit failed AI drafts and run validation again before approval.
+- [x] Added authoring `both` mode so the Agent request and draft editor can represent problems that support both function and ACM practice.
+- [x] Changed manual draft slug edits to ignore failed/rejected/historical approved drafts, reject true duplicate active slugs with a visible error, and stop silently appending a numeric suffix.
+- [x] Hardened draft action buttons: approving now requires no unsaved edits and asks for confirmation; rejecting asks for confirmation; cancel is enabled only when there are local edits.
+- [x] Made rejected drafts visually distinct in the draft list and added a cancel action for the formal-problem edit panel.
+- [x] Relaxed authoring testcase-count validation to require at least one public testcase and one total testcase; hidden cases are recommended but no longer forced for simple drafts.
+- [x] Fixed authoring validation for function solutions that return strings where expected output is represented as a JSON string literal.
+- [x] Updated Docker Compose so the API service can use the Docker judge runtime for synchronous admin draft validation.
+- [x] Updated README and Chinese README for the new admin testcase and authoring-agent behavior.
+- [x] Verification passed: `uv run ruff check .`, `uv run pytest` (132 passed), `cd frontend && npm run build`, `cd frontend && npm test` (9 files / 23 tests passed), `docker compose up --build -d api`, `docker compose ps api` healthy, API health at `http://127.0.0.1:8010/api/v1/health`, and a Docker-backed authoring validation smoke for `print-qiu-qiu`.
+
 ## 2026-05-29 Workbench Run Panel And Auth Feedback
 
 - [x] Added a LeetCode-style run result panel below the editor with editable public inputs, official-solution generated expected output, actual output, and red-highlighted diff lines for mismatches.
+- [x] Added judge-worker heartbeat detection so async submissions fall back to inline Docker judging when Redis is up but no worker is alive, preventing runs from staying pending forever.
+- [x] Made the frontend polling fallback append a final result/error event when WebSocket terminal events are missed.
 - [x] Changed public-run custom cases so clients submit only input; the judge ignores client-provided expected output and generates it server-side from an official/reference solution, with public-sample fallback only for already visible samples.
 - [x] Added backend support for public-only custom run cases while keeping hidden testcase inputs, expected outputs, actual outputs, and hidden progress metadata out of API/WebSocket responses.
 - [x] Added registration confirm-password validation, clearer auth error dialogs, and a registration-success dialog before entering the problem library.
@@ -12,7 +42,7 @@
 - [x] Fixed custom runs for Majority Element by adding a sandboxed reference generator, and made official function-solution wrapping use the function-signature fallback.
 - [x] Fixed stale ACM starter drafts appearing in Python function mode; function mode now restores the function starter when an ACM template was cached under the function draft key.
 - [x] Updated English and Chinese README page descriptions for the current auth and workbench behavior. Screenshot PNG regeneration was attempted but blocked by the current WSL/browser environment.
-- [x] Verification passed for the touched surface: `uv run ruff check .` passed, targeted backend judge/function-mode tests passed, frontend build passed, frontend tests passed, Docker API/worker rebuild and health passed, and a real Majority Element custom-run smoke returned `ac` with generated expected output.
+- [x] Verification passed for the touched surface: `uv run ruff check .` passed, `uv run pytest` (135 passed), frontend build passed, frontend tests passed (9 files / 23 tests), Docker API/worker rebuild and health passed, a real `print-qiu-qiu` run returned `ac`, and a real Majority Element custom-run smoke returned `ac` with generated expected output.
 
 ## 2026-05-26 Linux/WSL Deployment Pass
 

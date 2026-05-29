@@ -82,6 +82,18 @@ class AIChatResponse(BaseModel):
     full_solution_revealed: bool = False
 
 
+class AIProfileResponse(BaseModel):
+    value: AIModelProfile
+    label_zh: str
+    label_en: str
+    detail_zh: str
+    detail_en: str
+    configured: bool
+    available: bool
+    reason: str | None = None
+    checked_at: str | None = None
+
+
 class AIHintResponse(BaseModel):
     level: Literal[1, 2, 3]
     hint: str

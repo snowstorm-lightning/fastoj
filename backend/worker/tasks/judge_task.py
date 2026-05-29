@@ -425,7 +425,19 @@ def _camel_case(name: str) -> str:
 def _outputs_match(actual_output: str, expected_output: str) -> bool:
     if actual_output == expected_output:
         return True
+    actual_is_json, actual_json = _json_value(actual_output)
+    expected_is_json, expected_json = _json_value(expected_output)
+    if expected_is_json and isinstance(expected_json, str) and actual_output == expected_json:
+        return True
+    if actual_is_json and isinstance(actual_json, str) and expected_output == actual_json:
+        return True
+    if actual_is_json and expected_is_json:
+        return actual_json == expected_json
+    return False
+
+
+def _json_value(value: str) -> tuple[bool, Any]:
     try:
-        return json.loads(actual_output) == json.loads(expected_output)
+        return True, json.loads(value)
     except json.JSONDecodeError:
-        return False
+        return False, None

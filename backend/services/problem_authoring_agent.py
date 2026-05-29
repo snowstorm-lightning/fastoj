@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from backend.ai.config import AIConfig
+from backend.ai.profiles import resolve_ai_config
 from backend.ai.prompts import problem_authoring
 from backend.ai.providers import AIProviderUnavailableError, BaseAIProvider, build_provider
 from backend.models import (
@@ -21,7 +21,15 @@ from backend.models import (
     User,
 )
 from backend.sandbox.executor import SandboxExecutor
-from backend.schemas.problem_authoring import AuthoredProblemDraft, ProblemAuthoringRequest
+from backend.schemas.problem_authoring import (
+    AuthoredProblemDraft,
+    AuthoredTestCase,
+    ProblemAuthoringRequest,
+    ProblemDraftUpdate,
+)
+
+MAX_AUTHORING_REPAIR_ATTEMPTS = 2
+SLUG_RESERVED_DRAFT_STATUSES = {"draft", "validating", "validated"}
 
 
 def dump_json(value: Any) -> str:
@@ -102,10 +110,12 @@ class ProblemDraftValidationAdapter:
         for field, value in required_fields.items():
             check(field, bool(str(value or "").strip()), f"{field} is required")
 
-        if draft.mode == "acm":
+        requires_acm = draft.mode in {"acm", "both"}
+        requires_function = draft.mode in {"function", "both"}
+        if requires_acm:
             check("input_format", bool(str(draft.input_format or "").strip()), "ACM mode requires input_format")
             check("output_format", bool(str(draft.output_format or "").strip()), "ACM mode requires output_format")
-        else:
+        if requires_function:
             check(
                 "function_signature",
                 bool(str(draft.function_signature or "").strip()),
@@ -114,15 +124,16 @@ class ProblemDraftValidationAdapter:
 
         public_count = sum(1 for testcase in testcases if not testcase["is_hidden"])
         hidden_count = sum(1 for testcase in testcases if testcase["is_hidden"])
-        check("public_sample_count", public_count >= 2, "At least 2 public sample testcases are required")
-        check("hidden_testcase_count", hidden_count >= 6, "At least 6 hidden testcases are required")
+        total_count = len(testcases)
+        check("testcase_count", total_count >= 1, "At least 1 testcase is required")
+        check("public_sample_count", public_count >= 1, "At least 1 public sample testcase is required")
         check(
             "non_empty_outputs",
             all(str(testcase.get("output") or "").strip() for testcase in testcases),
             "Every expected output must be non-empty",
         )
 
-        if draft.mode == "function" and str(draft.function_signature or "").strip():
+        if requires_function and str(draft.function_signature or "").strip():
             try:
                 parameter_names = self._function_parameters(draft)
                 for testcase in testcases:
@@ -169,7 +180,7 @@ class ProblemDraftValidationAdapter:
 
     def _run_solution(self, draft: AuthoredProblemDraft, testcases: list[dict[str, Any]]) -> list[dict[str, Any]]:
         language = draft.official_solution_language
-        if draft.mode == "function":
+        if draft.mode in {"function", "both"}:
             if language != "python":
                 return [
                     {
@@ -303,10 +314,21 @@ if __name__ == "__main__":
     def _outputs_match(self, actual_output: str, expected_output: str) -> bool:
         if actual_output == expected_output:
             return True
+        actual_is_json, actual_json = self._json_value(actual_output)
+        expected_is_json, expected_json = self._json_value(expected_output)
+        if expected_is_json and isinstance(expected_json, str) and actual_output == expected_json:
+            return True
+        if actual_is_json and isinstance(actual_json, str) and expected_output == actual_json:
+            return True
+        if actual_is_json and expected_is_json:
+            return actual_json == expected_json
+        return False
+
+    def _json_value(self, value: str) -> tuple[bool, Any]:
         try:
-            return json.loads(actual_output) == json.loads(expected_output)
+            return True, json.loads(value)
         except json.JSONDecodeError:
-            return False
+            return False, None
 
     def _safe_case_error(self, status_value: Any, passed: bool) -> str | None:
         if passed:
@@ -355,41 +377,78 @@ class ProblemAuthoringAgentService:
             "plan",
             "problem_authoring_agent",
             {"topic": payload.topic, "mode": payload.mode, "target_language": payload.target_language},
-            {"plan": ["generate structured draft", "validate fields and testcase counts", "run official solution", "persist draft"]},
+            {
+                "plan": [
+                    "generate structured draft",
+                    "validate fields and testcase counts",
+                    "repair draft at most twice if validation fails",
+                    "run official solution",
+                    "persist final draft",
+                ],
+                "max_repair_attempts": MAX_AUTHORING_REPAIR_ATTEMPTS,
+            },
             "succeeded",
         )
 
         try:
-            raw = self._call_model(payload)
-            self._add_step(
-                run,
-                "model_call",
-                "ai_provider.complete_json",
-                {"model_profile": payload.model_profile, "locale": payload.locale},
-                {"raw_length": len(raw)},
-                "succeeded",
-            )
-            authored = self._parse_model_response(raw)
-            authored = authored.model_copy(
-                update={
-                    "difficulty": payload.difficulty,
-                    "mode": payload.mode,
-                    "tags": payload.tags or authored.tags,
-                    "official_solution_language": payload.target_language or authored.official_solution_language,
-                }
-            )
-            slug = self._unique_slug(authored.slug_candidate or authored.title)
-            testcases = self._testcases(authored)
-            validation_report = self.validator.validate(authored, testcases)
-            self._add_step(
-                run,
-                "validation",
-                self.validator.__class__.__name__,
-                {"slug": slug, "case_count": len(testcases)},
-                self._validation_step_output(validation_report),
-                "succeeded" if validation_report["passed"] else "failed",
-                None if validation_report["passed"] else "Draft validation failed",
-            )
+            authored: AuthoredProblemDraft | None = None
+            testcases: list[dict[str, Any]] = []
+            validation_report: dict[str, Any] | None = None
+            repair_context: dict[str, Any] | None = None
+            last_parse_error: ValueError | None = None
+            total_attempts = MAX_AUTHORING_REPAIR_ATTEMPTS + 1
+
+            for attempt in range(1, total_attempts + 1):
+                raw = self._call_model(payload, repair_context)
+                self._add_step(
+                    run,
+                    "model_call",
+                    "ai_provider.complete_json",
+                    {
+                        "model_profile": payload.model_profile,
+                        "locale": payload.locale,
+                        "attempt": attempt,
+                        "repair_attempt": max(attempt - 1, 0),
+                    },
+                    {"raw_length": len(raw), "attempt": attempt},
+                    "succeeded",
+                )
+                try:
+                    authored = self._prepare_authored_draft(self._parse_model_response(raw), payload)
+                except ValueError as exc:
+                    last_parse_error = exc
+                    self._add_step(
+                        run,
+                        "validation",
+                        "pydantic",
+                        {"attempt": attempt, "case_count": 0},
+                        {"passed": False, "summary": "schema_validation_failed", "attempt": attempt},
+                        "failed",
+                        str(exc),
+                    )
+                    if attempt >= total_attempts:
+                        raise exc
+                    repair_context = self._schema_repair_context(payload, str(exc), attempt)
+                    continue
+
+                slug = self._unique_slug(authored.slug_candidate or authored.title)
+                testcases = self._testcases(authored)
+                validation_report = self.validator.validate(authored, testcases)
+                self._add_step(
+                    run,
+                    "validation",
+                    self.validator.__class__.__name__,
+                    {"slug": slug, "case_count": len(testcases), "attempt": attempt},
+                    {**self._validation_step_output(validation_report), "attempt": attempt},
+                    "succeeded" if validation_report["passed"] else "failed",
+                    None if validation_report["passed"] else "Draft validation failed",
+                )
+                if validation_report["passed"] or attempt >= total_attempts:
+                    break
+                repair_context = self._validation_repair_context(authored, testcases, validation_report, attempt)
+
+            if authored is None or validation_report is None:
+                raise last_parse_error or ValueError("AI problem draft JSON does not match the required schema")
 
             draft = ProblemDraft(
                 id=uuid.uuid4(),
@@ -515,12 +574,120 @@ class ProblemAuthoringAgentService:
             self.db.refresh(draft)
         return draft
 
-    def _call_model(self, payload: ProblemAuthoringRequest) -> str:
-        config = AIConfig.from_settings(payload.model_profile)
+    def update_draft(self, draft_id: str, payload: ProblemDraftUpdate, current_user: User) -> ProblemDraft:
+        draft = self._get_draft(draft_id)
+        if draft.status == "approved":
+            raise ValueError("Approved drafts cannot be edited")
+
+        values = payload.model_dump(exclude_unset=True)
+        changed_fields = sorted(values.keys())
+        if "title" in values and values["title"] is not None:
+            draft.title = str(values["title"]).strip()
+        if "slug" in values:
+            requested_slug = str(values["slug"] or "").strip()
+            if requested_slug:
+                normalized_slug = normalize_slug(requested_slug)
+                if self._slug_exists(normalized_slug, exclude_draft_id=str(draft.id)):
+                    raise ValueError(f"Slug already exists: {normalized_slug}")
+                draft.slug = normalized_slug
+            else:
+                draft.slug = self._unique_slug(str(draft.title), exclude_draft_id=str(draft.id))
+        if "description" in values and values["description"] is not None:
+            draft.description = str(values["description"]).strip()
+        if "difficulty" in values and values["difficulty"] is not None:
+            draft.difficulty = values["difficulty"]
+        if "tags" in values and values["tags"] is not None:
+            draft.tags = dump_json(values["tags"])
+        if "mode" in values and values["mode"] is not None:
+            draft.mode = values["mode"]
+        if "input_format" in values:
+            draft.input_format = self._nullable_text(values["input_format"])
+        if "output_format" in values:
+            draft.output_format = self._nullable_text(values["output_format"])
+        if "function_signature" in values:
+            draft.function_signature = self._nullable_text(values["function_signature"])
+        if "time_limit" in values and values["time_limit"] is not None:
+            draft.time_limit = int(values["time_limit"])
+        if "memory_limit" in values and values["memory_limit"] is not None:
+            draft.memory_limit = int(values["memory_limit"])
+        if "hint" in values:
+            draft.hint = self._nullable_text(values["hint"])
+        if "official_solution_language" in values and values["official_solution_language"] is not None:
+            draft.official_solution_language = str(values["official_solution_language"]).strip() or "python"
+        if "official_solution_code" in values and values["official_solution_code"] is not None:
+            draft.official_solution_code = str(values["official_solution_code"])
+        if "official_solution_explanation" in values and values["official_solution_explanation"] is not None:
+            draft.official_solution_explanation = str(values["official_solution_explanation"]).strip()
+        if "time_complexity" in values:
+            draft.time_complexity = self._nullable_text(values["time_complexity"])
+        if "space_complexity" in values:
+            draft.space_complexity = self._nullable_text(values["space_complexity"])
+
+        testcases = load_json(draft.testcases_json, [])
+        if "testcases" in values and values["testcases"] is not None:
+            testcases = self._normalize_updated_testcases(values["testcases"])
+            draft.testcases_json = dump_json(testcases)
+
+        authored = self._draft_model_from_record(draft, testcases)
+        validation_report = self.validator.validate(authored, testcases)
+        draft.validation_report_json = dump_json(validation_report)
+        draft.status = "validated" if validation_report["passed"] else "validation_failed"
+
+        run = AgentRun(
+            id=uuid.uuid4(),
+            run_type="problem_authoring",
+            status="succeeded",
+            input_json=dump_json(
+                {
+                    "draft_id": str(draft.id),
+                    "changed_fields": changed_fields,
+                    "testcase_count": len(testcases),
+                }
+            ),
+            output_json=dump_json({"draft_id": str(draft.id), "validation": validation_report}),
+            model_profile="manual",
+            locale="en",
+            created_by=current_user.id,
+            draft_id=draft.id,
+            finished_at=datetime.utcnow(),
+        )
+        self.db.add(run)
+        self.db.flush()
+        self._add_step(
+            run,
+            "manual_edit",
+            "admin",
+            {"draft_id": str(draft.id), "changed_fields": changed_fields, "testcase_count": len(testcases)},
+            {**self._validation_step_output(validation_report), "draft_status": draft.status},
+            "succeeded" if validation_report["passed"] else "failed",
+            None if validation_report["passed"] else "Draft validation failed",
+        )
+        self.db.commit()
+        self.db.refresh(draft)
+        return draft
+
+    def _call_model(self, payload: ProblemAuthoringRequest, repair_context: dict[str, Any] | None = None) -> str:
+        config = resolve_ai_config(payload.model_profile)
         provider = self.provider or build_provider(config)
         context = payload.model_dump()
         context["response_language"] = "Simplified Chinese" if payload.locale == "zh" else "English"
+        if repair_context:
+            context["repair_request"] = repair_context
         return provider.complete_json(problem_authoring.SYSTEM_PROMPT, problem_authoring.build_prompt(context))
+
+    def _prepare_authored_draft(
+        self,
+        authored: AuthoredProblemDraft,
+        payload: ProblemAuthoringRequest,
+    ) -> AuthoredProblemDraft:
+        return authored.model_copy(
+            update={
+                "difficulty": payload.difficulty,
+                "mode": payload.mode,
+                "tags": payload.tags or authored.tags,
+                "official_solution_language": payload.target_language or authored.official_solution_language,
+            }
+        )
 
     def _parse_model_response(self, raw: str) -> AuthoredProblemDraft:
         data = self._extract_json(raw)
@@ -614,6 +781,143 @@ class ProblemAuthoringAgentService:
             )
         return testcases
 
+    def _draft_model_from_record(self, draft: ProblemDraft, testcases: list[dict[str, Any]]) -> AuthoredProblemDraft:
+        public_cases: list[AuthoredTestCase] = []
+        hidden_cases: list[AuthoredTestCase] = []
+        for testcase in testcases:
+            case = AuthoredTestCase(
+                input=str(testcase.get("input") or ""),
+                output=str(testcase.get("output") or ""),
+                explanation=self._nullable_text(testcase.get("explanation")),
+            )
+            if testcase.get("is_hidden"):
+                hidden_cases.append(case)
+            else:
+                public_cases.append(case)
+        return AuthoredProblemDraft(
+            title=str(draft.title),
+            slug_candidate=str(draft.slug),
+            description=str(draft.description),
+            input_format=draft.input_format,
+            output_format=draft.output_format,
+            function_signature=draft.function_signature,
+            difficulty=str(draft.difficulty),
+            tags=load_json(draft.tags, []),
+            mode=str(draft.mode),
+            time_limit=int(draft.time_limit or 1000),
+            memory_limit=int(draft.memory_limit or 256),
+            hint=draft.hint,
+            official_solution_language=str(draft.official_solution_language or "python"),
+            official_solution_code=str(draft.official_solution_code),
+            official_solution_explanation=str(draft.official_solution_explanation),
+            time_complexity=str(draft.time_complexity or ""),
+            space_complexity=str(draft.space_complexity or ""),
+            public_sample_testcases=public_cases,
+            hidden_testcases=hidden_cases,
+        )
+
+    def _normalize_updated_testcases(self, raw_testcases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for index, testcase in enumerate(raw_testcases, start=1):
+            order = testcase.get("order") if isinstance(testcase, dict) else None
+            normalized.append(
+                {
+                    "input": str(testcase.get("input") or ""),
+                    "output": str(testcase.get("output") or ""),
+                    "is_hidden": bool(testcase.get("is_hidden")),
+                    "is_sample": bool(testcase.get("is_sample")),
+                    "explanation": self._nullable_text(testcase.get("explanation")),
+                    "order": int(order) if order else index,
+                }
+            )
+        return sorted(normalized, key=lambda item: int(item.get("order") or 0))
+
+    def _nullable_text(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    def _schema_repair_context(self, payload: ProblemAuthoringRequest, message: str, attempt: int) -> dict[str, Any]:
+        return {
+            "kind": "schema_repair",
+            "attempt": attempt + 1,
+            "max_attempts": MAX_AUTHORING_REPAIR_ATTEMPTS + 1,
+            "instruction": "Return a complete replacement JSON object matching the required schema.",
+            "safe_error": message,
+            "requested_mode": payload.mode,
+            "requested_difficulty": payload.difficulty,
+            "requested_tags": payload.tags,
+        }
+
+    def _validation_repair_context(
+        self,
+        authored: AuthoredProblemDraft,
+        testcases: list[dict[str, Any]],
+        report: dict[str, Any],
+        attempt: int,
+    ) -> dict[str, Any]:
+        failed_checks = [
+            {"name": check.get("name"), "message": check.get("message")}
+            for check in report.get("checks", [])
+            if not check.get("passed")
+        ]
+        case_results = [record for record in report.get("case_results", []) if isinstance(record, dict)]
+        public_results = [
+            {
+                "case_index": result.get("case_index"),
+                "passed": result.get("passed"),
+                "status": result.get("status"),
+                "error_message": result.get("error_message"),
+            }
+            for result in case_results
+            if result.get("hidden") is False
+        ]
+        public_samples = [
+            {
+                "case_index": index,
+                "input": testcase.get("input"),
+                "expected_output": testcase.get("output"),
+                "explanation": testcase.get("explanation"),
+            }
+            for index, testcase in enumerate(testcases, start=1)
+            if not testcase.get("is_hidden")
+        ]
+        return {
+            "kind": "validation_repair",
+            "attempt": attempt + 1,
+            "max_attempts": MAX_AUTHORING_REPAIR_ATTEMPTS + 1,
+            "instruction": (
+                "Return a complete replacement JSON object. Hidden testcase content from the previous draft is omitted; "
+                "regenerate any needed public or hidden testcases so the official solution passes all generated tests."
+            ),
+            "failed_checks": failed_checks,
+            "case_summary": report.get("case_summary", {}),
+            "public_case_results": public_results,
+            "previous_draft_without_hidden_testcases": {
+                "title": authored.title,
+                "slug_candidate": authored.slug_candidate,
+                "description": authored.description,
+                "input_format": authored.input_format,
+                "output_format": authored.output_format,
+                "function_signature": authored.function_signature,
+                "difficulty": authored.difficulty,
+                "tags": authored.tags,
+                "mode": authored.mode,
+                "time_limit": authored.time_limit,
+                "memory_limit": authored.memory_limit,
+                "hint": authored.hint,
+                "official_solution_language": authored.official_solution_language,
+                "official_solution_code": authored.official_solution_code,
+                "official_solution_explanation": authored.official_solution_explanation,
+                "time_complexity": authored.time_complexity,
+                "space_complexity": authored.space_complexity,
+                "public_sample_testcases": public_samples,
+                "hidden_testcase_count": sum(1 for testcase in testcases if testcase.get("is_hidden")),
+                "validation_notes": authored.validation_notes,
+            },
+        }
+
     def _unique_slug(self, value: str, exclude_draft_id: str | None = None) -> str:
         base = normalize_slug(value)
         candidate = base
@@ -627,9 +931,11 @@ class ProblemAuthoringAgentService:
         if self.db.query(Problem).filter(Problem.slug == slug).first():
             return True
         query = self.db.query(ProblemDraft).filter(ProblemDraft.slug == slug)
-        if exclude_draft_id:
-            query = query.filter(ProblemDraft.id != exclude_draft_id)
-        return query.first() is not None
+        return any(
+            str(draft.id) != str(exclude_draft_id)
+            and str(getattr(draft, "status", "")) in SLUG_RESERVED_DRAFT_STATUSES
+            for draft in query.all()
+        )
 
     def _get_draft(self, draft_id: str) -> ProblemDraft:
         draft = self.db.query(ProblemDraft).filter(ProblemDraft.id == draft_id).first()

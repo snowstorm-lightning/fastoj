@@ -13,6 +13,7 @@ from backend.schemas.problem_authoring import (
     ProblemAuthoringRequest,
     ProblemDraftListItem,
     ProblemDraftResponse,
+    ProblemDraftUpdate,
 )
 from backend.services.problem_authoring_agent import ProblemAuthoringAgentService, load_json
 
@@ -38,7 +39,7 @@ def create_problem_draft(
         run_id=str(run.id),
         status=draft.status,
         validation_summary=_validation_summary(validation_report),
-        steps=[_step_response(step) for step in run.steps],
+        steps=[_step_response(step) for step in _run_steps(db, run)],
     )
 
 
@@ -51,7 +52,7 @@ def get_agent_run(
     run = db.query(AgentRun).filter(AgentRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
-    return _run_response(run)
+    return _run_response(db, run)
 
 
 @router.get("/problem-drafts", response_model=list[ProblemDraftListItem])
@@ -87,7 +88,23 @@ def get_problem_draft(
     draft = db.query(ProblemDraft).filter(ProblemDraft.id == draft_id).first()
     if not draft:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem draft not found")
-    return _draft_response(draft)
+    return _draft_response(db, draft)
+
+
+@router.patch("/problem-drafts/{draft_id}", response_model=ProblemDraftResponse)
+def update_problem_draft(
+    draft_id: str,
+    payload: ProblemDraftUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    try:
+        draft = ProblemAuthoringAgentService(db).update_draft(draft_id, payload, current_user)
+        return _draft_response(db, draft)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/problem-drafts/{draft_id}/approve", response_model=ProblemDraftResponse)
@@ -98,7 +115,7 @@ def approve_problem_draft(
 ):
     try:
         draft = ProblemAuthoringAgentService(db).approve_draft(draft_id, current_user)
-        return _draft_response(draft)
+        return _draft_response(db, draft)
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
@@ -113,7 +130,7 @@ def reject_problem_draft(
 ):
     try:
         draft = ProblemAuthoringAgentService(db).reject_draft(draft_id, current_user)
-        return _draft_response(draft)
+        return _draft_response(db, draft)
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
@@ -135,7 +152,15 @@ def _step_response(step: AgentStep) -> AgentStepResponse:
     )
 
 
-def _run_response(run: AgentRun) -> AgentRunResponse:
+def _latest_run(db: Session, draft: ProblemDraft) -> AgentRun | None:
+    return db.query(AgentRun).filter(AgentRun.draft_id == draft.id).order_by(AgentRun.created_at.desc()).first()
+
+
+def _run_steps(db: Session, run: AgentRun) -> list[AgentStep]:
+    return db.query(AgentStep).filter(AgentStep.run_id == run.id).order_by(AgentStep.step_index).all()
+
+
+def _run_response(db: Session, run: AgentRun) -> AgentRunResponse:
     return AgentRunResponse(
         id=str(run.id),
         run_type=run.run_type,
@@ -149,11 +174,12 @@ def _run_response(run: AgentRun) -> AgentRunResponse:
         draft_id=str(run.draft_id) if run.draft_id else None,
         created_at=run.created_at.isoformat(),
         finished_at=run.finished_at.isoformat() if run.finished_at else None,
-        steps=[_step_response(step) for step in sorted(run.steps, key=lambda item: item.step_index)],
+        steps=[_step_response(step) for step in _run_steps(db, run)],
     )
 
 
-def _draft_response(draft: ProblemDraft) -> ProblemDraftResponse:
+def _draft_response(db: Session, draft: ProblemDraft) -> ProblemDraftResponse:
+    latest_run = _latest_run(db, draft)
     return ProblemDraftResponse(
         id=str(draft.id),
         title=draft.title,
@@ -180,6 +206,7 @@ def _draft_response(draft: ProblemDraft) -> ProblemDraftResponse:
         approved_problem_id=str(draft.approved_problem_id) if draft.approved_problem_id else None,
         created_at=draft.created_at.isoformat(),
         updated_at=draft.updated_at.isoformat(),
+        steps=[_step_response(step) for step in _run_steps(db, latest_run)] if latest_run else [],
     )
 
 
