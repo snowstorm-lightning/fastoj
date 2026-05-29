@@ -1,11 +1,11 @@
 # fastoj Development Guidelines
 
-Last updated: 2026-05-14
+Last updated: 2026-05-29
 
 ## Current Stack
 
-- Backend: Python 3.11+, FastAPI, SQLAlchemy 2.0, Pydantic v2, Redis Streams, PostgreSQL.
-- Judge: Docker-based sandbox execution. Production code must not fall back to host `subprocess`.
+- Backend: Python 3.11+ as declared in `pyproject.toml`, FastAPI, SQLAlchemy 2.0, Pydantic v2, Redis Streams, PostgreSQL 14+.
+- Judge: Docker-based sandbox execution via the Python Docker SDK. Production code must not fall back to host `subprocess`.
 - Frontend: React + TypeScript + Vite, TanStack Query, Zustand, Monaco editor, React Flow.
 - Tooling: `uv`, `ruff`, `pytest`, `npm`, Docker Compose.
 - AI providers: DeepSeek-compatible API profile and a local Qwen profile. API keys stay in `.env`; never commit real secrets.

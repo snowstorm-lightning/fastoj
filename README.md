@@ -23,45 +23,61 @@ for that.
   reviews, and chat use verdicts, user code, public samples, and safe aggregate
   summaries. Hidden testcase input, expected output, and actual output are not
   returned to users or sent to the AI provider.
-- **The frontend is a real product surface.** It includes a searchable problem
-  library, card/list layouts, a three-column workbench, editable public-run
-  inputs with official-solution expected output generation, output diffing,
-  judge timeline, AI drawer, submission trail, local discussion, settings,
-  admin screens with testcase management, and a training graph.
+- **The frontend is a real product surface.** It supports both light and dark
+  themes, and includes a searchable problem library, card/list layouts, a
+  three-column workbench, editable public-run inputs with official-solution
+  expected output generation, output diffing, judge timeline, AI drawer,
+  submission trail, local discussion, settings, admin screens with testcase
+  management, and a training graph.
 - **It is ready for provider experiments.** The AI layer uses an
   OpenAI-compatible profile, with examples for hosted DeepSeek-style APIs and a
   local Qwen/llama.cpp server.
 
 ## Product Tour
 
-1. **Problem library** - search, filter by tag/difficulty, switch between visual
+1. **Light and dark themes** - switch themes directly from the top navigation;
+   the library, workbench, graph, auth flow, and admin console all follow the
+   selected theme for daytime browsing and longer night sessions.
+2. **Problem library** - search, filter by tag/difficulty, switch between visual
    cards and a dense OJ-style list, and jump into recommended practice.
-2. **Workbench** - read the statement, edit in Monaco, run editable public
+3. **Workbench** - read the statement, edit in Monaco, run editable public
    inputs, compare official expected output with your output, submit for full
-   judging, and watch status move from pending to result.
-3. **AI Copilot** - request progressive hints, failed-submission explanations,
+   judging, and watch status move from pending to result. When code is wrong,
+   the page shows judge feedback and the right-side AI judge assistant continues
+   with likely causes, suspicious code regions, boundary checks, and next steps.
+4. **AI Copilot** - request progressive hints, failed-submission explanations,
    code review, and contextual chat in the active UI language.
-4. **Training graph** - browse knowledge nodes and return to the library with the
+5. **Training graph** - browse knowledge nodes and return to the library with the
    corresponding tag filter applied.
-5. **Admin console** - manage users and problems, delete retired problems, view
-   and edit full testcase sets, bootstrap official solutions, and review
-   AI-generated problem drafts before publishing. Draft validation failures can
-   trigger bounded AI repair attempts before the final draft is saved; admins
-   can edit failed drafts, save and revalidate them, and author dual-mode drafts
-   that support both function and ACM practice. Simple drafts are allowed to use
-   fewer cases when extra hidden cases would only duplicate coverage.
+6. **Admin console** - the admin surface includes the problem-authoring Agent,
+   user management, problem management, and testcase management. AI-generated
+   content is saved as a draft until an administrator approves it; validation
+   failures can trigger bounded AI repair attempts before the final draft is
+   saved, and admins can manually edit failed drafts, save, and revalidate them.
+   User management covers roles and account status; problem management covers
+   statements, difficulty, visibility, official solutions, full testcase sets,
+   and deleting retired problems. Drafts can publish dual-mode problems that
+   support both function and ACM practice. Simple drafts are allowed to use fewer
+   cases when extra hidden cases would only duplicate coverage.
 
 ## Page Showcase
+
+The UI supports both light and dark themes from the top navigation. The
+screenshots below use the English UI; Chinese can be toggled from the header.
 
 | Problem Library | Coding Workbench |
 | --- | --- |
 | ![FastOJ problem library with filters, problem cards, mode badges, and acceptance stats](docs/screenshots/library-en.png) | ![FastOJ workbench with statement panel, Monaco editor, adjustable editor/result split, editable run inputs, official expected output, output diff, and AI judge copilot](docs/screenshots/workbench-en.png) |
-| Searchable practice catalog with filters, card/list layouts, mode badges, and training metrics. | Focused coding surface with the statement, starter frame, adjustable editor/result split, editable sample input, official expected output, your output, diff, and AI Copilot in one view. |
+| Searchable practice catalog with light/dark themes, filters, card/list layouts, mode badges, and training metrics. | Focused coding surface with the statement, starter frame, adjustable editor/result split, editable sample input, official expected output, your output, diff, and AI judge assistant in one view; after a wrong run, the assistant uses the judge feedback to suggest causes and fixes. |
 
 | Training Graph | Auth Flow |
 | --- | --- |
 | ![FastOJ knowledge graph with topic cards and progress counts](docs/screenshots/graph-en.png) | ![FastOJ login and registration screen with account form, confirm password, product proof chips, and auth dialogs](docs/screenshots/auth-en.png) |
 | Topic map built with React Flow; clicking a node returns to the library with a tag filter applied. | Dedicated login/register screen with confirm password and clear success/error dialogs that keeps account, submissions, drafts, and AI feedback tied together. |
+
+| Admin Console |
+| --- |
+| Admins get a single workspace for the problem-authoring Agent, user management, problem/content management, formal testcase management, and draft approval. Hidden testcase content is visible only through admin UI/API and is not exposed to regular problem views, AI explanations, or submission logs. |
 
 ## Quick Start
 
