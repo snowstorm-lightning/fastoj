@@ -59,12 +59,17 @@ for that.
    failures can trigger bounded AI repair attempts before the final draft is
    saved, and admins can manually edit failed drafts, save, and revalidate them.
    User management covers roles and account status; problem management covers
-   statements, difficulty, visibility, official solutions, full testcase sets,
-   and deleting retired problems. Drafts can publish dual-mode problems that
-   support both function and ACM practice, and the authoring Agent can request,
-   validate, edit, and publish official solutions for multiple programming
-   languages from the same draft. Simple drafts are allowed to use fewer cases
-   when extra hidden cases would only duplicate coverage.
+   statements, slug, mode, function signature, ACM formats, limits, visibility,
+   official solutions, full testcase sets, revalidation, and deleting retired
+   problems. Drafts can publish dual-mode problems that support both function
+   and ACM practice; dual mode stores one canonical function-style official
+   solution per language, and ACM practice uses the same JSON-argument
+   input/output contract. The authoring Agent can request, validate, edit, and
+   publish official solutions for multiple programming languages from the same
+   draft. When an extra language is added during draft or formal-problem review,
+   admins can ask AI to fill that single official solution before saving and
+   revalidating. Simple drafts are allowed to use fewer cases when extra hidden
+   cases would only duplicate coverage.
 
 ## Page Showcase
 
@@ -531,7 +536,9 @@ ignores `.env` and `.env.*`; `.env.example` contains safe placeholders only.
   admin-only Problem Authoring Agent can synchronously sandbox-check official
   draft solutions before approval or after an admin edit/revalidation pass.
   Multi-language drafts are checked per official solution language before they
-  can be approved.
+  can be approved. Dual-mode validation checks the canonical function solution
+  only, so the same trusted implementation is used to define both function-mode
+  and ACM-mode expected outputs.
 - Sandbox containers run with network disabled, memory limits, pid limits,
   dropped capabilities, `no-new-privileges`, non-root execution, output
   truncation, timeout kill, and cleanup.

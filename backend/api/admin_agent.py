@@ -9,10 +9,12 @@ from backend.models import AgentRun, AgentStep, ProblemDraft, User
 from backend.schemas.problem_authoring import (
     AgentRunResponse,
     AgentStepResponse,
+    AuthoredOfficialSolution,
     ProblemAuthoringCreateResponse,
     ProblemAuthoringRequest,
     ProblemDraftListItem,
     ProblemDraftResponse,
+    ProblemDraftSolutionGenerateRequest,
     ProblemDraftUpdate,
 )
 from backend.services.problem_authoring_agent import ProblemAuthoringAgentService, load_json
@@ -107,6 +109,45 @@ def update_problem_draft(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+@router.post("/problem-drafts/{draft_id}/revalidate", response_model=ProblemDraftResponse)
+def revalidate_problem_draft(
+    draft_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    try:
+        draft = ProblemAuthoringAgentService(db).revalidate_draft(draft_id, current_user)
+        return _draft_response(db, draft)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/problem-drafts/{draft_id}/solutions/generate", response_model=AuthoredOfficialSolution)
+def generate_problem_draft_solution(
+    draft_id: str,
+    payload: ProblemDraftSolutionGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    try:
+        return ProblemAuthoringAgentService(db).generate_solution_for_draft(
+            draft_id,
+            payload.language,
+            payload.model_profile,
+            payload.locale,
+            current_user,
+            payload.draft,
+        )
+    except AIProviderUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 @router.post("/problem-drafts/{draft_id}/approve", response_model=ProblemDraftResponse)
 def approve_problem_draft(
     draft_id: str,
@@ -156,6 +197,10 @@ def _latest_run(db: Session, draft: ProblemDraft) -> AgentRun | None:
     return db.query(AgentRun).filter(AgentRun.draft_id == draft.id).order_by(AgentRun.created_at.desc()).first()
 
 
+def _draft_runs(db: Session, draft: ProblemDraft) -> list[AgentRun]:
+    return db.query(AgentRun).filter(AgentRun.draft_id == draft.id).order_by(AgentRun.created_at.asc()).all()
+
+
 def _run_steps(db: Session, run: AgentRun) -> list[AgentStep]:
     return db.query(AgentStep).filter(AgentStep.run_id == run.id).order_by(AgentStep.step_index).all()
 
@@ -179,7 +224,9 @@ def _run_response(db: Session, run: AgentRun) -> AgentRunResponse:
 
 
 def _draft_response(db: Session, draft: ProblemDraft) -> ProblemDraftResponse:
-    latest_run = _latest_run(db, draft)
+    runs = _draft_runs(db, draft)
+    latest_run = runs[-1] if runs else None
+    all_steps = [step for run in runs for step in _run_steps(db, run)]
     return ProblemDraftResponse(
         id=str(draft.id),
         title=draft.title,
@@ -188,6 +235,7 @@ def _draft_response(db: Session, draft: ProblemDraft) -> ProblemDraftResponse:
         difficulty=draft.difficulty,
         tags=load_json(draft.tags, []),
         mode=draft.mode,
+        target_languages=_draft_target_languages(draft),
         input_format=draft.input_format,
         output_format=draft.output_format,
         function_signature=draft.function_signature,
@@ -207,7 +255,8 @@ def _draft_response(db: Session, draft: ProblemDraft) -> ProblemDraftResponse:
         approved_problem_id=str(draft.approved_problem_id) if draft.approved_problem_id else None,
         created_at=draft.created_at.isoformat(),
         updated_at=draft.updated_at.isoformat(),
-        steps=[_step_response(step) for step in _run_steps(db, latest_run)] if latest_run else [],
+        steps=[_step_response(step) for step in (all_steps or (_run_steps(db, latest_run) if latest_run else []))],
+        runs=[_run_response(db, run) for run in runs],
     )
 
 
@@ -220,6 +269,7 @@ def _draft_list_item(draft: ProblemDraft) -> ProblemDraftListItem:
         difficulty=draft.difficulty,
         tags=load_json(draft.tags, []),
         mode=draft.mode,
+        target_languages=_draft_target_languages(draft),
         status=draft.status,
         validation_summary=_validation_summary(report),
         approved_problem_id=str(draft.approved_problem_id) if draft.approved_problem_id else None,
@@ -247,6 +297,15 @@ def _draft_solutions(draft: ProblemDraft) -> list[dict]:
             "explanation": str(draft.official_solution_explanation or ""),
         }
     ]
+
+
+def _draft_target_languages(draft: ProblemDraft) -> list[str]:
+    raw = load_json(getattr(draft, "target_languages_json", None), [])
+    if isinstance(raw, list):
+        languages = [str(item).strip().lower() for item in raw if str(item).strip()]
+        if languages:
+            return list(dict.fromkeys(languages))
+    return list(dict.fromkeys(solution["language"] for solution in _draft_solutions(draft)))
 
 
 def _validation_summary(report: dict) -> dict:

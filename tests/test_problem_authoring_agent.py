@@ -8,14 +8,23 @@ from fastapi import HTTPException
 
 from backend.ai.providers import BaseAIProvider
 from backend.api.admin import (
+    AdminProblemUpdate,
+    AdminSolutionGenerateRequest,
+    AdminSolutionUpsert,
     AdminTestCaseCreate,
     AdminTestCaseUpdate,
     create_testcase,
     delete_problem,
+    delete_solution,
     delete_testcase,
+    generate_solution,
+    list_solutions,
     list_testcases,
     require_admin,
+    revalidate_problem,
+    update_problem,
     update_testcase,
+    upsert_solution,
 )
 from backend.api.admin_agent import create_problem_draft
 from backend.core.config import settings
@@ -34,7 +43,11 @@ from backend.models import (
 from backend.models import (
     TestCase as OJTestCase,
 )
-from backend.schemas.problem_authoring import ProblemAuthoringRequest, ProblemDraftUpdate
+from backend.schemas.problem_authoring import (
+    AuthoredOfficialSolution,
+    ProblemAuthoringRequest,
+    ProblemDraftUpdate,
+)
 from backend.services.problem_authoring_agent import (
     ProblemAuthoringAgentService,
     ProblemDraftValidationAdapter,
@@ -382,6 +395,48 @@ def test_update_draft_revalidates_and_records_manual_step():
     assert db.data[AgentStep][-1].step_type == "manual_edit"
 
 
+def test_update_draft_persists_target_languages_and_requires_each_solution():
+    db = FakeSession()
+    user = admin_user()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=FakeProvider(authored_payload(public_count=1, hidden_count=0)),
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+    draft, _ = service.create_draft(request_payload(), user)
+
+    updated = service.update_draft(
+        str(draft.id),
+        ProblemDraftUpdate(target_languages=["python", "cpp"]),
+        user,
+    )
+
+    assert load_json(updated.target_languages_json, []) == ["python", "cpp"]
+    assert updated.status == "validation_failed"
+    report = json.loads(updated.validation_report_json)
+    failed_checks = {check["name"] for check in report["checks"] if not check["passed"]}
+    assert "official_solution_languages" in failed_checks
+
+
+def test_update_draft_rejects_terminal_drafts():
+    db = FakeSession()
+    user = admin_user()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=FakeProvider(authored_payload(public_count=1, hidden_count=0)),
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+    draft, _ = service.create_draft(request_payload(), user)
+
+    draft.status = "rejected"
+    with pytest.raises(ValueError, match="Rejected drafts cannot be edited"):
+        service.update_draft(str(draft.id), ProblemDraftUpdate(title="Nope"), user)
+
+    draft.status = "approved"
+    with pytest.raises(ValueError, match="Approved drafts cannot be edited"):
+        service.update_draft(str(draft.id), ProblemDraftUpdate(title="Nope"), user)
+
+
 def test_update_draft_rejects_duplicate_manual_slug():
     db = FakeSession()
     user = admin_user()
@@ -561,12 +616,45 @@ def test_validation_accepts_both_mode_with_acm_and_function_contracts():
     report = json.loads(draft.validation_report_json)
     passed_checks = {check["name"] for check in report["checks"] if check["passed"]}
     assert {"input_format", "output_format", "function_signature", "function_testcase_inputs"} <= passed_checks
+    assert {result["execution_mode"] for result in report["case_results"]} == {"function"}
+    assert {result["validation_mode"] for result in report["case_results"]} == {"canonical_function"}
+    assert {result["problem_mode"] for result in report["case_results"]} == {"both"}
 
 
 def test_authoring_output_match_accepts_json_string_expected_value():
     validator = ProblemDraftValidationAdapter(EchoExecutor())
 
     assert validator._outputs_match("qiu qiu", '"qiu qiu"')
+
+
+def test_official_solution_code_normalizes_smart_quotes():
+    solution = AuthoredOfficialSolution(
+        language="c",
+        code="const char* print_test() { return ”test”; }\n",
+        explanation="Return a fixed string.",
+    )
+
+    assert 'return "test";' in solution.code
+    assert "”" not in solution.code
+
+
+def test_admin_solution_upsert_normalizes_smart_quotes():
+    payload = AdminSolutionUpsert(
+        language="java",
+        code="return ”test”;",
+        explanation="Return a fixed string.",
+    )
+
+    assert payload.code == 'return "test";'
+
+
+def test_validation_error_message_distinguishes_wrong_answer_from_executor_ac():
+    validator = ProblemDraftValidationAdapter(EchoExecutor())
+
+    assert (
+        validator._safe_case_error("ac", passed=False)
+        == "Official solution output did not match expected output during validation."
+    )
 
 
 def test_model_validation_error_sanitizes_raw_payload_values():
@@ -679,6 +767,16 @@ def test_validation_repair_prompt_omits_hidden_testcase_content():
     payload = json.loads(authored_payload())
     payload["hidden_testcases"][0]["input"] = "SECRET_HIDDEN_INPUT"
     payload["hidden_testcases"][0]["output"] = "SECRET_EXPECTED_OUTPUT"
+    payload["hint"] = "Do not rely on SECRET_HIDDEN_INPUT."
+    payload["validation_notes"] = "The hidden output SECRET_EXPECTED_OUTPUT catches hard-coded answers."
+    payload["official_solution_code"] = "import sys\n# SECRET_HIDDEN_INPUT\nprint(sys.stdin.read().strip())\n"
+    payload["official_solutions"] = [
+        {
+            "language": "python",
+            "code": payload["official_solution_code"],
+            "explanation": "Avoid SECRET_EXPECTED_OUTPUT in hard-coded outputs.",
+        }
+    ]
     provider = SequenceProvider([json.dumps(payload)] * 3)
     db = FakeSession()
     service = ProblemAuthoringAgentService(
@@ -698,6 +796,52 @@ def test_validation_repair_prompt_omits_hidden_testcase_content():
     assert "SECRET_EXPECTED_OUTPUT" not in run.output_json
 
 
+def test_generate_draft_solution_uses_public_context_and_redacts_hidden_content():
+    db = FakeSession()
+    create_service = ProblemAuthoringAgentService(
+        db,
+        provider=FakeProvider(authored_payload(public_count=1, hidden_count=1)),
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+    draft, _run = create_service.create_draft(request_payload(), admin_user())
+    testcases = load_json(draft.testcases_json, [])
+    testcases[1]["input"] = "SECRET_HIDDEN_INPUT"
+    testcases[1]["output"] = "SECRET_EXPECTED_OUTPUT"
+    draft.testcases_json = json.dumps(testcases)
+    draft.hint = "Do not mention SECRET_HIDDEN_INPUT."
+    draft.official_solutions_json = json.dumps(
+        [
+            {
+                "language": "python",
+                "code": "import sys\n# SECRET_HIDDEN_INPUT\nprint(sys.stdin.read().strip())\n",
+                "explanation": "Avoid hard-coding SECRET_EXPECTED_OUTPUT.",
+            }
+        ]
+    )
+    provider = SequenceProvider(
+        [
+            json.dumps(
+                {
+                    "language": "cpp",
+                    "code": "#include <bits/stdc++.h>\nusing namespace std;\nint main(){string s; getline(cin,s); cout<<s;}\n",
+                    "explanation": "Read one line and print it.",
+                }
+            )
+        ]
+    )
+    solution_service = ProblemAuthoringAgentService(db, provider=provider)
+
+    solution = solution_service.generate_solution_for_draft(str(draft.id), "cpp", "default", "en", admin_user())
+
+    assert solution.language == "cpp"
+    assert "getline" in solution.code
+    prompts = "\n".join(user_prompt for _system_prompt, user_prompt in provider.calls)
+    assert "SECRET_HIDDEN_INPUT" not in prompts
+    assert "SECRET_EXPECTED_OUTPUT" not in prompts
+    assert '"public_sample_testcases"' in prompts
+    assert db.data[AgentRun][-1].run_type == "problem_authoring_solution"
+
+
 def test_admin_can_manage_problem_testcases_with_hidden_content():
     db = FakeSession()
     problem = Problem(
@@ -712,7 +856,7 @@ def test_admin_can_manage_problem_testcases_with_hidden_content():
         id=uuid.uuid4(),
         problem_id=problem.id,
         input="SECRET_ADMIN_INPUT",
-        output="SECRET_ADMIN_OUTPUT",
+        output="SECRET_ADMIN_INPUT",
         is_hidden=True,
         is_sample=False,
         score=10,
@@ -727,23 +871,25 @@ def test_admin_can_manage_problem_testcases_with_hidden_content():
 
     create_response = create_testcase(
         str(problem.id),
-        AdminTestCaseCreate(input="2", output="2", is_hidden=False, is_sample=True, score=5),
+        AdminTestCaseCreate(input="2", output="2", is_hidden=True, is_sample=True, score=5),
         db,
         user,
     )
     created = create_response["data"]
     assert created["order"] == 2
-    assert created["is_sample"] is True
+    assert created["is_hidden"] is True
+    assert created["is_sample"] is False
 
     patch_response = update_testcase(
         str(hidden_case.id),
-        AdminTestCaseUpdate(input="updated", output="ok", is_hidden=False, order=3),
+        AdminTestCaseUpdate(input="updated", output="ok", is_hidden=False, is_sample=True, order=3),
         db,
         user,
     )
     patched = patch_response["data"]
     assert patched["input"] == "updated"
     assert patched["is_hidden"] is False
+    assert patched["is_sample"] is True
     assert patched["order"] == 3
 
     delete_response = delete_testcase(created["id"], db, user)
@@ -830,3 +976,268 @@ def test_admin_can_delete_problem_and_related_rows():
     assert db.data[TestCaseResult] == []
     assert db.data[Solution] == []
     assert draft.approved_problem_id is None
+
+
+def test_admin_can_edit_problem_core_fields_and_manage_official_solutions():
+    db = FakeSession()
+    user = admin_user()
+    problem = Problem(
+        id=uuid.uuid4(),
+        title="Original",
+        slug="original",
+        description="Original description.",
+        difficulty=Difficulty.EASY,
+        mode="acm",
+    )
+    existing = Problem(
+        id=uuid.uuid4(),
+        title="Existing",
+        slug="existing",
+        description="Existing problem.",
+        difficulty=Difficulty.EASY,
+        mode="acm",
+    )
+    db.add(problem)
+    db.add(existing)
+
+    with pytest.raises(HTTPException) as exc_info:
+        update_problem(str(problem.id), AdminProblemUpdate(slug="existing"), db, user)
+    assert exc_info.value.status_code == 400
+
+    update_problem(
+        str(problem.id),
+        AdminProblemUpdate(
+            title="Updated",
+            slug="updated",
+            mode="both",
+            function_signature="def updated(value: int) -> int:",
+            input_format="JSON value.",
+            output_format="Same value.",
+            time_limit=1500,
+            memory_limit=512,
+        ),
+        db,
+        user,
+    )
+    assert problem.slug == "updated"
+    assert problem.mode == "both"
+    assert problem.function_signature == "def updated(value: int) -> int:"
+    assert problem.time_limit == 1500
+    assert problem.memory_limit == 512
+
+    created = upsert_solution(
+        str(problem.id),
+        AdminSolutionUpsert(
+            language="python",
+            code="def updated(value: int) -> int:\n    return value\n",
+            explanation="Return the argument.",
+            time_complexity="O(1)",
+            space_complexity="O(1)",
+        ),
+        db,
+        user,
+    )["data"]
+    assert created["language"] == "python"
+    assert list_solutions(str(problem.id), db, user)["data"][0]["code"].startswith("def updated")
+
+    assert delete_solution(str(problem.id), "python", db, user)["success"] is True
+    assert list_solutions(str(problem.id), db, user)["data"] == []
+
+
+def test_admin_problem_revalidate_runs_all_official_solutions_without_hidden_content(monkeypatch):
+    monkeypatch.setattr(
+        "backend.api.admin.ProblemDraftValidationAdapter",
+        lambda: ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+    db = FakeSession()
+    user = admin_user()
+    problem = Problem(
+        id=uuid.uuid4(),
+        title="Echo",
+        slug="echo",
+        description="Echo stdin.",
+        difficulty=Difficulty.EASY,
+        mode="acm",
+        input_format="One value.",
+        output_format="Same value.",
+    )
+    public_case = OJTestCase(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        input="1",
+        output="1",
+        is_hidden=False,
+        is_sample=True,
+        score=10,
+        order=1,
+    )
+    hidden_case = OJTestCase(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        input="SECRET_ADMIN_INPUT",
+        output="SECRET_ADMIN_INPUT",
+        is_hidden=True,
+        is_sample=False,
+        score=10,
+        order=2,
+    )
+    solution = Solution(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        language="python",
+        code="import sys\nprint(sys.stdin.read().strip())\n",
+        explanation="Echo stdin.",
+        time_complexity="O(n)",
+        space_complexity="O(n)",
+        is_official=True,
+    )
+    problem.testcases = [public_case, hidden_case]
+    problem.solutions = [solution]
+    for item in [problem, public_case, hidden_case, solution]:
+        db.add(item)
+
+    response = revalidate_problem(str(problem.id), db, user)
+
+    report = response["data"]
+    assert report["passed"] is True, report
+    assert report["public_sample_count"] == 1
+    assert report["hidden_testcase_count"] == 1
+    serialized = json.dumps(report)
+    assert "SECRET_ADMIN_INPUT" not in serialized
+
+
+def test_admin_problem_revalidate_both_mode_uses_canonical_function_solution(monkeypatch):
+    monkeypatch.setattr(
+        "backend.api.admin.ProblemDraftValidationAdapter",
+        lambda: ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+    db = FakeSession()
+    user = admin_user()
+    problem = Problem(
+        id=uuid.uuid4(),
+        title="Echo Both",
+        slug="echo-both",
+        description="Return the input value.",
+        difficulty=Difficulty.EASY,
+        mode="both",
+        input_format="JSON value.",
+        output_format="Returned value.",
+        function_signature="def echo_value(value: int) -> int:",
+    )
+    public_case = OJTestCase(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        input="7",
+        output="7",
+        is_hidden=False,
+        is_sample=True,
+        score=10,
+        order=1,
+    )
+    solution = Solution(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        language="python",
+        code="def echo_value(value: int) -> int:\n    return value\n",
+        explanation="Return the argument.",
+        time_complexity="O(1)",
+        space_complexity="O(1)",
+        is_official=True,
+    )
+    problem.testcases = [public_case]
+    problem.solutions = [solution]
+    for item in [problem, public_case, solution]:
+        db.add(item)
+
+    report = revalidate_problem(str(problem.id), db, user)["data"]
+
+    assert report["passed"] is True, report
+    assert {result["execution_mode"] for result in report["case_results"]} == {"function"}
+    assert {result["validation_mode"] for result in report["case_results"]} == {"canonical_function"}
+    assert {result["problem_mode"] for result in report["case_results"]} == {"both"}
+
+
+def test_admin_problem_solution_generation_context_redacts_hidden_content(monkeypatch):
+    captured: dict[str, Any] = {}
+
+    class FakeSolutionService:
+        def __init__(self, db):
+            self.db = db
+
+        def generate_solution_from_context(self, context, language, model_profile):
+            captured["context"] = context
+            captured["language"] = language
+            captured["model_profile"] = model_profile
+            return AuthoredOfficialSolution(
+                language=language,
+                code="def solve(value: int) -> int:\n    return value\n",
+                explanation="Return the argument.",
+            )
+
+    monkeypatch.setattr("backend.api.admin.ProblemAuthoringAgentService", FakeSolutionService)
+    db = FakeSession()
+    user = admin_user()
+    problem = Problem(
+        id=uuid.uuid4(),
+        title="Secret",
+        slug="secret",
+        description="Visible statement.",
+        difficulty=Difficulty.EASY,
+        mode="both",
+        input_format="JSON value.",
+        output_format="Returned value.",
+        function_signature="def solve(value: int) -> int:",
+        hint="Do not mention SECRET_HIDDEN_INPUT.",
+    )
+    public_case = OJTestCase(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        input="1",
+        output="1",
+        is_hidden=False,
+        is_sample=True,
+        score=10,
+        order=1,
+    )
+    hidden_case = OJTestCase(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        input="SECRET_HIDDEN_INPUT",
+        output="SECRET_EXPECTED_OUTPUT",
+        is_hidden=True,
+        is_sample=False,
+        score=10,
+        order=2,
+    )
+    solution = Solution(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        language="python",
+        code="# SECRET_HIDDEN_INPUT\n"
+        "def solve(value: int) -> int:\n"
+        "    return value\n",
+        explanation="Avoid SECRET_EXPECTED_OUTPUT.",
+        is_official=True,
+    )
+    problem.testcases = [public_case, hidden_case]
+    problem.solutions = [solution]
+    for item in [problem, public_case, hidden_case, solution]:
+        db.add(item)
+
+    generated = generate_solution(
+        str(problem.id),
+        AdminSolutionGenerateRequest(
+            language="cpp",
+            locale="zh",
+            model_profile="default",
+        ),
+        db,
+        user,
+    )
+
+    assert generated.language == "cpp"
+    serialized_context = json.dumps(captured["context"], ensure_ascii=False)
+    assert "SECRET_HIDDEN_INPUT" not in serialized_context
+    assert "SECRET_EXPECTED_OUTPUT" not in serialized_context
+    assert captured["context"]["hidden_testcase_count"] == 1
+    assert captured["context"]["public_sample_testcases"][0]["input"] == "1"

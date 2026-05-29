@@ -956,6 +956,13 @@ def _camel_case(name: str) -> str:
     return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:])
 
 
+def _preferred_callable_name(code: str, snake_name: str) -> str:
+    camel_name = _camel_case(snake_name)
+    if camel_name != snake_name and re.search(rf"\b{re.escape(snake_name)}\s*\(", code):
+        return snake_name
+    return camel_name
+
+
 def _split_signature_parameters(params: str) -> list[str]:
     parts: list[str] = []
     start = 0
@@ -2077,7 +2084,7 @@ def _java_formatter(annotation: str, value: str) -> str:
 
 def _wrap_dynamic_java(code: str, function_signature: str) -> str:
     parsed = _parse_function_signature(function_signature)
-    method_name = _camel_case(parsed.function_name)
+    method_name = _preferred_callable_name(code, parsed.function_name)
     total = len(parsed.params)
     readers = []
     for index, param in enumerate(parsed.params):
@@ -2181,7 +2188,7 @@ def _go_formatter(annotation: str, value: str) -> str:
 
 def _wrap_dynamic_go(code: str, function_signature: str) -> str:
     parsed = _parse_function_signature(function_signature)
-    function_name = _camel_case(parsed.function_name)
+    function_name = _preferred_callable_name(code, parsed.function_name)
     total = len(parsed.params)
     readers = [_go_reader(param, index, total) for index, param in enumerate(parsed.params)]
     call_args = ", ".join(param.name for param in parsed.params)
@@ -2202,6 +2209,7 @@ func main() {{
 	if raw != "" {{
 		lines = strings.Split(raw, "\\n")
 	}}
+	_ = lines
 {chr(10).join(readers)}
 {result_block}}}
 """
@@ -2427,7 +2435,7 @@ def _wrap_dynamic_c(code: str, function_signature: str) -> str:
         elif return_type == "char*":
             prefix = "    int result_is_null = 0;\n" if nullable else ""
             printer = "    if (result_is_null) printf(\"null\\n\"); else printf(\"%s\\n\", result);\n" if nullable else "    printf(\"%s\\n\", result);\n"
-            result_block = f"{prefix}    char* result = {parsed.function_name}({', '.join(call_args)});\n{printer}"
+            result_block = f"{prefix}    const char* result = {parsed.function_name}({', '.join(call_args)});\n{printer}"
         elif _annotation_without_none(parsed.return_type)[0].lower() == "bool":
             prefix = "    int result_is_null = 0;\n" if nullable else ""
             printer = "    if (result_is_null) printf(\"null\\n\"); else printf(\"%s\\n\", result ? \"true\" : \"false\");\n" if nullable else "    printf(\"%s\\n\", result ? \"true\" : \"false\");\n"

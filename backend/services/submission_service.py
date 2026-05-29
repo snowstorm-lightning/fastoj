@@ -24,7 +24,11 @@ class SubmissionService:
         self.db = db
 
     def create_submission(
-        self, submission_data: SubmissionCreate, user_id: str, ip_address: str | None = None
+        self,
+        submission_data: SubmissionCreate,
+        user_id: str,
+        ip_address: str | None = None,
+        is_admin: bool = False,
     ) -> Submission:
         """Create a new submission and queue it for judging."""
         if submission_data.run_testcases:
@@ -34,6 +38,8 @@ class SubmissionService:
             raise ValueError(f"Unsupported language: {submission_data.language}")
         problem = self.db.query(Problem).filter(Problem.id == submission_data.problem_id).first()
         if not problem:
+            raise ValueError("Problem not found")
+        if not problem.is_public and not is_admin:
             raise ValueError("Problem not found")
         judge_code = self._prepare_judge_code(submission_data, problem)
 
@@ -60,7 +66,11 @@ class SubmissionService:
         return submission
 
     def create_run(
-        self, submission_data: SubmissionCreate, user_id: str, ip_address: str | None = None
+        self,
+        submission_data: SubmissionCreate,
+        user_id: str,
+        ip_address: str | None = None,
+        is_admin: bool = False,
     ) -> Submission:
         """Create a run (test with public testcases only)."""
         # Verify problem exists
@@ -68,6 +78,8 @@ class SubmissionService:
             raise ValueError(f"Unsupported language: {submission_data.language}")
         problem = self.db.query(Problem).filter(Problem.id == submission_data.problem_id).first()
         if not problem:
+            raise ValueError("Problem not found")
+        if not problem.is_public and not is_admin:
             raise ValueError("Problem not found")
         judge_code = self._prepare_judge_code(submission_data, problem)
 

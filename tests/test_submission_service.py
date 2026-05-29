@@ -1,6 +1,10 @@
 from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
 
 from backend.models import SubmissionResult, SubmissionStatus
+from backend.schemas.submission import SubmissionCreate
 from backend.services import submission_service as submission_module
 from backend.services.submission_service import SubmissionService
 
@@ -37,3 +41,24 @@ def test_async_submission_falls_back_inline_when_no_worker_heartbeat(monkeypatch
     assert updates[0][1] == SubmissionStatus.JUDGING
     assert updates[1][1] == SubmissionStatus.FINISHED
     assert updates[1][2]["result"] == SubmissionResult.AC
+
+
+def test_regular_user_cannot_submit_private_problem():
+    private_problem = SimpleNamespace(id="p1", is_public=False, slug="private", total_submissions=0)
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = private_problem
+    service = SubmissionService(db)
+
+    with pytest.raises(ValueError, match="Problem not found"):
+        service.create_submission(
+            SubmissionCreate(problem_id="p1", code="print(1)", language="python"),
+            user_id="u1",
+            is_admin=False,
+        )
+
+    with pytest.raises(ValueError, match="Problem not found"):
+        service.create_run(
+            SubmissionCreate(problem_id="p1", code="print(1)", language="python"),
+            user_id="u1",
+            is_admin=False,
+        )

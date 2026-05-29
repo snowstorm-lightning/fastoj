@@ -6,8 +6,16 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from backend.api.auth import UserCreate, UserUpdate, get_me, login, register, update_me
-from backend.core.security import get_password_hash
+from backend.api.auth import (
+    UserCreate,
+    UserUpdate,
+    get_current_user,
+    get_me,
+    login,
+    register,
+    update_me,
+)
+from backend.core.security import create_access_token, get_password_hash
 from backend.models import User
 
 
@@ -89,6 +97,22 @@ def test_login_wrong_password_fails():
     )
     with pytest.raises(HTTPException) as exc:
         login(SimpleNamespace(username="alice", password="wrong"), FakeAuthDb([user]))
+    assert exc.value.status_code == 401
+
+
+def test_get_current_user_rejects_disabled_user_token():
+    user = User(
+        id=uuid4(),
+        username="alice",
+        email="alice@example.com",
+        password_hash=get_password_hash("password123"),
+        is_active=False,
+    )
+    token = create_access_token(data={"sub": str(user.id), "username": user.username})
+
+    with pytest.raises(HTTPException) as exc:
+        get_current_user(token, FakeAuthDb([user]))
+
     assert exc.value.status_code == 401
 
 

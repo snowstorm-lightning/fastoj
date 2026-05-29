@@ -52,12 +52,28 @@ export type ProblemAgentRequest = {
 };
 export type AgentStep = {
   id: string;
+  run_id?: string;
   step_index: number;
   step_type: string;
   tool_name?: string | null;
   status: string;
   error_message?: string | null;
   output: Record<string, unknown>;
+};
+export type AgentRun = {
+  id: string;
+  run_type: string;
+  status: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  error_message?: string | null;
+  model_profile: string;
+  locale: string;
+  created_by: string;
+  draft_id?: string | null;
+  created_at: string;
+  finished_at?: string | null;
+  steps: AgentStep[];
 };
 export type ProblemDraft = {
   id: string;
@@ -67,6 +83,7 @@ export type ProblemDraft = {
   difficulty: string;
   tags: string[];
   mode: string;
+  target_languages?: string[];
   status: string;
   input_format?: string | null;
   output_format?: string | null;
@@ -84,6 +101,7 @@ export type ProblemDraft = {
   validation_report?: Record<string, any>;
   testcases?: Array<Record<string, any>>;
   steps?: AgentStep[];
+  runs?: AgentRun[];
   approved_problem_id?: string | null;
 };
 export type ProblemDraftUpdatePayload = {
@@ -93,6 +111,7 @@ export type ProblemDraftUpdatePayload = {
   difficulty?: string;
   tags?: string[];
   mode?: string;
+  target_languages?: string[];
   input_format?: string | null;
   output_format?: string | null;
   function_signature?: string | null;
@@ -106,6 +125,19 @@ export type ProblemDraftUpdatePayload = {
   time_complexity?: string | null;
   space_complexity?: string | null;
   testcases?: Array<Record<string, unknown>>;
+};
+export type ProblemDraftSolutionGeneratePayload = {
+  language: string;
+  locale: Locale;
+  model_profile: AIModelProfile;
+  draft?: ProblemDraftUpdatePayload;
+};
+export type AdminProblemSolutionGeneratePayload = {
+  language: string;
+  locale: Locale;
+  model_profile: AIModelProfile;
+  problem?: Record<string, unknown>;
+  solutions?: AdminSolutionPayload[];
 };
 export type AdminTestCase = {
   id: string;
@@ -125,6 +157,25 @@ export type AdminTestCasePayload = {
   is_sample: boolean;
   score: number;
   order?: number | null;
+};
+export type AdminSolution = {
+  id: string;
+  problem_id: string;
+  language: string;
+  code: string;
+  explanation: string;
+  time_complexity?: string | null;
+  space_complexity?: string | null;
+  is_official?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+export type AdminSolutionPayload = {
+  language: string;
+  code: string;
+  explanation: string;
+  time_complexity?: string | null;
+  space_complexity?: string | null;
 };
 export type CurrentUser = {
   id: string;
@@ -181,6 +232,13 @@ const SAFE_BACKEND_ERROR_TEXT = [
   /^DeepSeek profile is not configured\./,
   /^AI provider returned HTTP \d{3} for model [A-Za-z0-9._:-]+\.$/,
   /^AI provider returned HTTP \d{3}\.$/,
+  /^AI provider did not return a JSON object for the problem draft\.$/,
+  /^AI provider returned JSON without a problem draft object\. Top-level keys: [A-Za-z0-9_, -]+\.$/,
+  /^AI problem draft JSON is missing required fields: [A-Za-z0-9_., -]+\.?$/,
+  /^AI problem draft JSON does not match the required schema: [A-Za-z0-9_()., -]+$/,
+  /^AI provider did not return a JSON object for the official solution\.$/,
+  /^AI provider returned JSON without an official solution object\. Top-level keys: [A-Za-z0-9_, -]+\.$/,
+  /^AI official solution JSON does not match the required schema: [A-Za-z0-9_()., -]+$/,
   /^AI provider is unreachable at https?:\/\/[A-Za-z0-9.:/_-]+\/?[A-Za-z0-9./_-]*\./,
   /^AI provider is unreachable\./,
   /^AI provider is unavailable\./,
@@ -324,11 +382,30 @@ export const api = {
   async adminDeleteProblem(problemId: string) {
     return request(`/api/v1/admin/problems/${problemId}`, { method: "DELETE" }, (data: any) => data);
   },
-  async adminUpsertSolution(problemId: string, payload: Record<string, unknown>) {
+  async adminProblemSolutions(problemId: string): Promise<AdminSolution[]> {
+    return request(`/api/v1/admin/problems/${problemId}/solutions`, { method: "GET" }, (data: any) => data.data ?? []);
+  },
+  async adminUpsertSolution(problemId: string, payload: AdminSolutionPayload): Promise<AdminSolution> {
     return request(`/api/v1/admin/problems/${problemId}/solutions`, {
       method: "PUT",
       body: JSON.stringify(payload),
+    }, (data: any) => data.data);
+  },
+  async adminGenerateProblemSolution(problemId: string, payload: AdminProblemSolutionGeneratePayload) {
+    return request(`/api/v1/admin/problems/${problemId}/solutions/generate`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, (data: any) => data as { language: string; code: string; explanation: string });
+  },
+  async adminDeleteSolution(problemId: string, language: string) {
+    return request(`/api/v1/admin/problems/${problemId}/solutions/${encodeURIComponent(language)}`, {
+      method: "DELETE",
     }, (data: any) => data);
+  },
+  async adminRevalidateProblem(problemId: string): Promise<Record<string, any>> {
+    return request(`/api/v1/admin/problems/${problemId}/revalidate`, {
+      method: "POST",
+    }, (data: any) => data.data ?? {});
   },
   async adminProblemTestcases(problemId: string): Promise<AdminTestCase[]> {
     return request(`/api/v1/admin/problems/${problemId}/testcases`, { method: "GET" }, (data: any) => data.data ?? []);
@@ -370,6 +447,17 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }, (data: any) => data);
+  },
+  async adminRevalidateProblemDraft(draftId: string): Promise<ProblemDraft> {
+    return request(`/api/v1/admin/problem-drafts/${draftId}/revalidate`, {
+      method: "POST",
+    }, (data: any) => data);
+  },
+  async adminGenerateProblemDraftSolution(draftId: string, payload: ProblemDraftSolutionGeneratePayload) {
+    return request(`/api/v1/admin/problem-drafts/${draftId}/solutions/generate`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, (data: any) => data as { language: string; code: string; explanation: string });
   },
   async adminAgentRun(runId: string) {
     return request(`/api/v1/admin/agent/runs/${runId}`, { method: "GET" }, (data: any) => data);

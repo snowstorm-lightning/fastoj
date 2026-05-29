@@ -114,6 +114,59 @@ def test_wrap_dynamic_function_mode_for_all_languages(language, code, expected):
     assert expected in wrapped
 
 
+def test_wrap_dynamic_java_accepts_snake_case_method_name_from_signature():
+    wrapped = wrap_function_submission(
+        """
+class Solution {
+    public String print_test() {
+        return "test";
+    }
+}
+""",
+        "java",
+        "print-test",
+        "def print_test() -> str:",
+    )
+
+    assert "solver.print_test()" in wrapped
+    assert "solver.printTest()" not in wrapped
+
+
+def test_wrap_dynamic_go_accepts_snake_case_function_name_from_signature():
+    wrapped = wrap_function_submission(
+        """
+package main
+
+func print_test() string {
+    return "test"
+}
+""",
+        "golang",
+        "print-test",
+        "def print_test() -> str:",
+    )
+
+    assert "result := print_test()" in wrapped
+    assert "result := printTest()" not in wrapped
+    assert "_ = lines" in wrapped
+
+
+def test_wrap_dynamic_c_string_return_uses_const_result():
+    wrapped = wrap_function_submission(
+        """
+const char* print_test() {
+    return "test";
+}
+""",
+        "c",
+        "print-test",
+        "def print_test() -> str:",
+    )
+
+    assert "const char* result = print_test();" in wrapped
+    assert "\n    char* result = print_test();" not in wrapped
+
+
 def test_wrap_dynamic_c_matrix_function_mode():
     wrapped = wrap_function_submission(
         """

@@ -1,12 +1,17 @@
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from backend.ai.providers import AIProviderUnavailableError
+from backend.ai.schemas import AILocale, AIModelProfile
 from backend.api.auth import get_current_user
+from backend.core.code_normalization import normalize_source_code
 from backend.core.database import get_db
+from backend.core.languages import Language
 from backend.models import (
     Difficulty,
     Problem,
@@ -16,6 +21,16 @@ from backend.models import (
     TestCase,
     TestCaseResult,
     User,
+)
+from backend.schemas.problem_authoring import (
+    AuthoredOfficialSolution,
+    AuthoredProblemDraft,
+    AuthoredTestCase,
+)
+from backend.services.problem_authoring_agent import (
+    ProblemAuthoringAgentService,
+    ProblemDraftValidationAdapter,
+    normalize_slug,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -28,11 +43,18 @@ class AdminUserUpdate(BaseModel):
 
 class AdminProblemUpdate(BaseModel):
     title: str | None = None
+    slug: str | None = None
     description: str | None = None
     hint: str | None = None
     difficulty: str | None = None
     tags: list[str] | None = None
     is_public: bool | None = None
+    mode: str | None = None
+    input_format: str | None = None
+    output_format: str | None = None
+    function_signature: str | None = None
+    time_limit: int | None = Field(default=None, ge=100, le=10000)
+    memory_limit: int | None = Field(default=None, ge=16, le=2048)
 
 
 class AdminSolutionUpsert(BaseModel):
@@ -41,6 +63,19 @@ class AdminSolutionUpsert(BaseModel):
     explanation: str
     time_complexity: str | None = None
     space_complexity: str | None = None
+
+    @field_validator("code")
+    @classmethod
+    def clean_code(cls, value: str) -> str:
+        return normalize_source_code(value)
+
+
+class AdminSolutionGenerateRequest(BaseModel):
+    language: str
+    locale: AILocale = "zh"
+    model_profile: AIModelProfile = "default"
+    problem: AdminProblemUpdate | None = None
+    solutions: list[AdminSolutionUpsert] | None = Field(default=None, max_length=7)
 
 
 class AdminTestCaseUpdate(BaseModel):
@@ -65,6 +100,27 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
     return current_user
+
+
+def _nullable_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _ensure_problem_slug_available(db: Session, slug: str, problem_id: str) -> None:
+    existing = db.query(Problem).filter(Problem.slug == slug, Problem.id != problem_id).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Slug already exists: {slug}")
+
+
+def _normalize_case_flags(is_hidden: bool, is_sample: bool) -> tuple[bool, bool]:
+    if is_hidden:
+        return True, False
+    if is_sample:
+        return False, True
+    return False, False
 
 
 @router.get("/overview")
@@ -139,6 +195,9 @@ def overview(
                     "tags": problem.tags or [],
                     "is_public": problem.is_public,
                     "mode": problem.mode,
+                    "input_format": problem.input_format,
+                    "output_format": problem.output_format,
+                    "function_signature": problem.function_signature,
                     "hint": problem.hint,
                     "time_limit": problem.time_limit,
                     "memory_limit": problem.memory_limit,
@@ -204,11 +263,27 @@ def update_problem(
             problem.difficulty = Difficulty(payload.difficulty)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid difficulty") from exc
+    if payload.slug is not None:
+        requested_slug = str(payload.slug or "").strip()
+        slug = normalize_slug(requested_slug or str(payload.title or problem.title))
+        _ensure_problem_slug_available(db, slug, problem_id)
+        problem.slug = slug
+    if payload.mode is not None:
+        if payload.mode not in {"function", "acm", "both"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid mode")
+        problem.mode = payload.mode
 
     for field in ["title", "description", "hint", "tags", "is_public"]:
         value = getattr(payload, field)
         if value is not None:
             setattr(problem, field, value)
+    for field in ["input_format", "output_format", "function_signature"]:
+        if field in payload.model_fields_set:
+            setattr(problem, field, _nullable_text(getattr(payload, field)))
+    if payload.time_limit is not None:
+        problem.time_limit = payload.time_limit
+    if payload.memory_limit is not None:
+        problem.memory_limit = payload.memory_limit
     db.commit()
     return {"success": True}
 
@@ -269,6 +344,24 @@ def delete_problem(
     }
 
 
+@router.get("/problems/{problem_id}/solutions")
+def list_solutions(
+    problem_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    solutions = (
+        db.query(Solution)
+        .filter(Solution.problem_id == problem.id)
+        .order_by(Solution.language.asc())
+        .all()
+    )
+    return {"success": True, "data": [_solution_response(solution) for solution in solutions]}
+
+
 @router.put("/problems/{problem_id}/solutions")
 def upsert_solution(
     problem_id: str,
@@ -279,9 +372,12 @@ def upsert_solution(
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
-    solution = db.query(Solution).filter(Solution.problem_id == problem.id, Solution.language == payload.language).first()
+    language = payload.language.strip().lower()
+    if not Language.is_supported(language):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported language: {language}")
+    solution = db.query(Solution).filter(Solution.problem_id == problem.id, Solution.language == language).first()
     if not solution:
-        solution = Solution(problem_id=problem.id, language=payload.language, created_by=current_user.id)
+        solution = Solution(problem_id=problem.id, language=language, created_by=current_user.id)
         db.add(solution)
     solution.code = payload.code
     solution.explanation = payload.explanation
@@ -289,7 +385,70 @@ def upsert_solution(
     solution.space_complexity = payload.space_complexity
     solution.is_official = True
     db.commit()
+    db.refresh(solution)
+    return {"success": True, "data": _solution_response(solution)}
+
+
+@router.post("/problems/{problem_id}/solutions/generate", response_model=AuthoredOfficialSolution)
+def generate_solution(
+    problem_id: str,
+    payload: AdminSolutionGenerateRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    language = payload.language.strip().lower()
+    if not Language.is_supported(language):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported language: {language}")
+    context = _solution_generation_context(problem, payload)
+    try:
+        return ProblemAuthoringAgentService(db).generate_solution_from_context(
+            context,
+            language,
+            payload.model_profile,
+        )
+    except AIProviderUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.delete("/problems/{problem_id}/solutions/{language}")
+def delete_solution(
+    problem_id: str,
+    language: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    normalized_language = language.strip().lower()
+    solution = (
+        db.query(Solution)
+        .filter(Solution.problem_id == problem.id, Solution.language == normalized_language)
+        .first()
+    )
+    if not solution:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solution not found")
+    db.delete(solution)
+    db.commit()
     return {"success": True}
+
+
+@router.post("/problems/{problem_id}/revalidate")
+def revalidate_problem(
+    problem_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    report = _validate_problem(problem)
+    return {"success": True, "data": report}
 
 
 @router.get("/problems/{problem_id}/testcases")
@@ -329,13 +488,14 @@ def create_testcase(
             .first()
         )
         order = int(latest.order) + 1 if latest else 1
+    is_hidden, is_sample = _normalize_case_flags(payload.is_hidden, payload.is_sample)
     testcase = TestCase(
         id=uuid.uuid4(),
         problem_id=problem.id,
         input=payload.input,
         output=payload.output,
-        is_hidden=payload.is_hidden,
-        is_sample=payload.is_sample,
+        is_hidden=is_hidden,
+        is_sample=is_sample,
         score=payload.score,
         order=order,
     )
@@ -359,6 +519,12 @@ def update_testcase(
         value = getattr(payload, field)
         if value is not None:
             setattr(testcase, field, value)
+    if payload.is_hidden is True:
+        testcase.is_hidden, testcase.is_sample = True, False
+    elif payload.is_sample is True:
+        testcase.is_hidden, testcase.is_sample = False, True
+    else:
+        testcase.is_hidden, testcase.is_sample = _normalize_case_flags(bool(testcase.is_hidden), bool(testcase.is_sample))
     db.commit()
     db.refresh(testcase)
     return {"success": True, "data": _testcase_response(testcase)}
@@ -390,3 +556,230 @@ def _testcase_response(testcase: TestCase) -> dict:
         "order": testcase.order,
         "created_at": testcase.created_at.isoformat() if testcase.created_at else None,
     }
+
+
+def _solution_response(solution: Solution) -> dict:
+    return {
+        "id": str(solution.id),
+        "problem_id": str(solution.problem_id),
+        "language": solution.language,
+        "code": solution.code,
+        "explanation": solution.explanation,
+        "time_complexity": solution.time_complexity,
+        "space_complexity": solution.space_complexity,
+        "is_official": solution.is_official,
+        "created_at": solution.created_at.isoformat() if solution.created_at else None,
+        "updated_at": solution.updated_at.isoformat() if solution.updated_at else None,
+    }
+
+
+def _solution_generation_context(problem: Problem, payload: AdminSolutionGenerateRequest) -> dict[str, Any]:
+    problem_patch = payload.problem or AdminProblemUpdate()
+
+    def patched(field: str, current: Any) -> Any:
+        if field in problem_patch.model_fields_set:
+            return getattr(problem_patch, field)
+        return current
+
+    ordered_testcases = sorted(
+        problem.testcases or [],
+        key=lambda item: (
+            int(item.order or 0),
+            item.created_at.isoformat() if item.created_at else "",
+        ),
+    )
+    hidden_values = [
+        str(value)
+        for testcase in ordered_testcases
+        if testcase.is_hidden
+        for value in (testcase.input, testcase.output)
+        if value is not None and len(str(value).strip()) >= 8
+    ]
+
+    def redact(value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value)
+        for secret in hidden_values:
+            text = text.replace(secret, "[hidden]")
+        return _truncate_prompt_value(text)
+
+    if payload.solutions is not None:
+        solutions = payload.solutions
+    else:
+        solutions = [
+            AdminSolutionUpsert(
+                language=str(solution.language),
+                code=str(solution.code),
+                explanation=str(solution.explanation),
+                time_complexity=solution.time_complexity,
+                space_complexity=solution.space_complexity,
+            )
+            for solution in (problem.solutions or [])
+            if solution.is_official
+        ]
+
+    return {
+        "target_language": payload.language.strip().lower(),
+        "response_language": "Simplified Chinese" if payload.locale == "zh" else "English",
+        "title": redact(patched("title", problem.title)),
+        "slug": redact(patched("slug", problem.slug)),
+        "description": redact(patched("description", problem.description)),
+        "difficulty": patched("difficulty", problem.difficulty.value),
+        "tags": patched("tags", list(problem.tags or [])),
+        "mode": patched("mode", problem.mode),
+        "input_format": redact(patched("input_format", problem.input_format)),
+        "output_format": redact(patched("output_format", problem.output_format)),
+        "function_signature": redact(patched("function_signature", problem.function_signature)),
+        "time_limit": patched("time_limit", problem.time_limit),
+        "memory_limit": patched("memory_limit", problem.memory_limit),
+        "hint": redact(patched("hint", problem.hint)),
+        "public_sample_testcases": [
+            {
+                "case_index": index,
+                "input": testcase.input,
+                "expected_output": testcase.output,
+                "explanation": None,
+            }
+            for index, testcase in enumerate(ordered_testcases, start=1)
+            if not testcase.is_hidden
+        ],
+        "hidden_testcase_count": sum(1 for testcase in ordered_testcases if testcase.is_hidden),
+        "existing_official_solutions": [
+            {
+                "language": solution.language.strip().lower(),
+                "code": redact(solution.code) or "",
+                "explanation": redact(solution.explanation) or "",
+                "time_complexity": redact(solution.time_complexity),
+                "space_complexity": redact(solution.space_complexity),
+            }
+            for solution in solutions
+            if solution.language.strip().lower() != payload.language.strip().lower()
+        ],
+    }
+
+
+def _truncate_prompt_value(value: str, limit: int = 6000) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}...[truncated]"
+
+
+def _problem_validation_failure(problem: Problem, checks: list[dict], case_results: list[dict] | None = None) -> dict:
+    public_count = sum(1 for testcase in problem.testcases if not testcase.is_hidden)
+    hidden_count = sum(1 for testcase in problem.testcases if testcase.is_hidden)
+    results = case_results or []
+    failed = sum(1 for result in results if isinstance(result, dict) and not result.get("passed"))
+    return {
+        "passed": False,
+        "summary": "validation_failed",
+        "checks": checks,
+        "case_results": results,
+        "case_summary": {"total": len(results), "failed": failed},
+        "public_sample_count": public_count,
+        "hidden_testcase_count": hidden_count,
+    }
+
+
+def _validate_problem(problem: Problem) -> dict:
+    solution_records = [solution for solution in problem.solutions if solution.is_official]
+    try:
+        solutions = [
+            AuthoredOfficialSolution(
+                language=str(solution.language),
+                code=str(solution.code),
+                explanation=str(solution.explanation),
+            )
+            for solution in solution_records
+        ]
+    except ValidationError as exc:
+        return _problem_validation_failure(
+            problem,
+            [
+                {
+                    "name": ".".join(str(part) for part in error.get("loc", ())) or "official_solution",
+                    "passed": False,
+                    "message": str(error.get("type") or "invalid"),
+                }
+                for error in exc.errors()
+            ],
+        )
+    if not solutions:
+        return _problem_validation_failure(
+            problem,
+            [{"name": "official_solutions", "passed": False, "message": "At least one official solution is required"}],
+        )
+    testcases = [
+        {
+            "input": str(testcase.input),
+            "output": str(testcase.output),
+            "is_hidden": bool(testcase.is_hidden),
+            "is_sample": bool(testcase.is_sample),
+            "explanation": None,
+            "order": int(testcase.order or index),
+        }
+        for index, testcase in enumerate(
+            sorted(
+                problem.testcases,
+                key=lambda item: (
+                    int(item.order or 0),
+                    item.created_at.isoformat() if item.created_at else "",
+                ),
+            ),
+            start=1,
+        )
+    ]
+    primary = solutions[0]
+    primary_record = solution_records[0]
+    try:
+        authored = AuthoredProblemDraft(
+            title=str(problem.title),
+            slug_candidate=str(problem.slug),
+            description=str(problem.description),
+            input_format=problem.input_format,
+            output_format=problem.output_format,
+            function_signature=problem.function_signature,
+            difficulty=problem.difficulty.value,
+            tags=list(problem.tags or []),
+            mode=str(problem.mode or "acm"),
+            time_limit=int(problem.time_limit or 1000),
+            memory_limit=int(problem.memory_limit or 256),
+            hint=problem.hint,
+            official_solution_language=primary.language,
+            official_solution_code=primary.code,
+            official_solution_explanation=primary.explanation,
+            official_solutions=solutions,
+            time_complexity=str(primary_record.time_complexity or ""),
+            space_complexity=str(primary_record.space_complexity or ""),
+            public_sample_testcases=[
+                AuthoredTestCase(
+                    input=str(testcase["input"]),
+                    output=str(testcase["output"]),
+                    explanation=None,
+                )
+                for testcase in testcases
+                if not testcase["is_hidden"]
+            ],
+            hidden_testcases=[
+                AuthoredTestCase(
+                    input=str(testcase["input"]),
+                    output=str(testcase["output"]),
+                    explanation=None,
+                )
+                for testcase in testcases
+                if testcase["is_hidden"]
+            ],
+        )
+    except ValidationError as exc:
+        return _problem_validation_failure(
+            problem,
+            [
+                {
+                    "name": ".".join(str(part) for part in error.get("loc", ())) or "problem",
+                    "passed": False,
+                    "message": str(error.get("type") or "invalid"),
+                }
+                for error in exc.errors()
+            ],
+        )
+    return ProblemDraftValidationAdapter().validate(authored, testcases, [solution.language for solution in solutions])

@@ -29,7 +29,12 @@ async def create_submission(
     service = SubmissionService(db)
     try:
         ip_address = request.client.host if request.client else None
-        submission = service.create_submission(submission_data, str(current_user.id), ip_address)
+        submission = service.create_submission(
+            submission_data,
+            str(current_user.id),
+            ip_address,
+            is_admin=current_user.role == "admin",
+        )
 
         return SubmissionResponse(
             id=str(submission.id),

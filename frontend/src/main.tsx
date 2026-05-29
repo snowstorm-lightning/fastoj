@@ -7,7 +7,10 @@ import {
   api,
   isUnauthorized,
   makeJudgeSocket,
+  type AdminSolution,
+  type AdminSolutionPayload,
   type AdminTestCase,
+  type AgentRun,
   type AgentStep,
   type AIModelProfile,
   type AIProfile,
@@ -81,7 +84,30 @@ type DraftOfficialSolution = {
   code: string;
   explanation: string;
 };
+type ProblemSolutionEdit = DraftOfficialSolution & {
+  time_complexity: string;
+  space_complexity: string;
+};
 type DraftEditState = {
+  title: string;
+  slug: string;
+  description: string;
+  difficulty: "easy" | "medium" | "hard";
+  tags: string;
+  mode: ProblemAuthoringMode;
+  target_languages: string[];
+  input_format: string;
+  output_format: string;
+  function_signature: string;
+  time_limit: string;
+  memory_limit: string;
+  hint: string;
+  official_solutions: DraftOfficialSolution[];
+  time_complexity: string;
+  space_complexity: string;
+  testcases: DraftEditCase[];
+};
+type ProblemEditState = {
   title: string;
   slug: string;
   description: string;
@@ -94,10 +120,7 @@ type DraftEditState = {
   time_limit: string;
   memory_limit: string;
   hint: string;
-  official_solutions: DraftOfficialSolution[];
-  time_complexity: string;
-  space_complexity: string;
-  testcases: DraftEditCase[];
+  solutions: ProblemSolutionEdit[];
 };
 
 const AI_PROFILE_FALLBACKS: Record<AIModelProfile, AIProfile> = {
@@ -934,6 +957,10 @@ function draftStatusClass(status: string): string {
   return `draft-status-${status.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 }
 
+function draftIsReadOnly(status: string): boolean {
+  return status === "approved" || status === "rejected";
+}
+
 function authoringModeLabel(mode: string, locale: Locale): string {
   const labels: Record<string, { zh: string; en: string }> = {
     both: { zh: "双模式", en: "both" },
@@ -941,6 +968,14 @@ function authoringModeLabel(mode: string, locale: Locale): string {
     acm: { zh: "ACM 模式", en: "acm" },
   };
   return labels[mode]?.[locale] ?? mode;
+}
+
+function modeRequiresFunction(mode: string): boolean {
+  return mode === "function" || mode === "both";
+}
+
+function modeRequiresAcmContract(mode: string): boolean {
+  return mode === "acm" || mode === "both";
 }
 
 function languageLabel(language: string): string {
@@ -954,6 +989,18 @@ function languageLabel(language: string): string {
     golang: "Go",
   };
   return labels[language] ?? language;
+}
+
+function normalizeLanguageList(values: string[]): string[] {
+  const supported = new Set<string>(LANGUAGES);
+  const result: string[] = [];
+  for (const value of values) {
+    const language = String(value || "").trim().toLowerCase();
+    if (supported.has(language) && !result.includes(language)) {
+      result.push(language);
+    }
+  }
+  return result;
 }
 
 function solutionListFromDraft(draft: ProblemDraft): DraftOfficialSolution[] {
@@ -976,6 +1023,8 @@ function solutionListFromDraft(draft: ProblemDraft): DraftOfficialSolution[] {
 }
 
 function draftEditFromDraft(draft: ProblemDraft): DraftEditState {
+  const targetLanguages = normalizeLanguageList(draft.target_languages ?? []);
+  const solutions = solutionListFromDraft(draft);
   return {
     title: draft.title ?? "",
     slug: draft.slug ?? "",
@@ -983,13 +1032,14 @@ function draftEditFromDraft(draft: ProblemDraft): DraftEditState {
     difficulty: ["easy", "medium", "hard"].includes(draft.difficulty) ? draft.difficulty as "easy" | "medium" | "hard" : "medium",
     tags: (draft.tags ?? []).join(", "),
     mode: draft.mode === "acm" || draft.mode === "both" ? draft.mode : "function",
+    target_languages: targetLanguages.length ? targetLanguages : normalizeLanguageList(solutions.map((solution) => solution.language)),
     input_format: draft.input_format ?? "",
     output_format: draft.output_format ?? "",
     function_signature: draft.function_signature ?? "",
     time_limit: String(draft.time_limit ?? 1000),
     memory_limit: String(draft.memory_limit ?? 256),
     hint: draft.hint ?? "",
-    official_solutions: solutionListFromDraft(draft),
+    official_solutions: solutions,
     time_complexity: draft.time_complexity ?? "",
     space_complexity: draft.space_complexity ?? "",
     testcases: (draft.testcases ?? []).map((testcase, index) => ({
@@ -1004,6 +1054,7 @@ function draftEditFromDraft(draft: ProblemDraft): DraftEditState {
 }
 
 function draftEditPayload(edit: DraftEditState) {
+  const targetLanguages = normalizeLanguageList(edit.target_languages);
   const officialSolutions = edit.official_solutions
     .map((solution) => ({
       language: solution.language.trim() || "python",
@@ -1023,6 +1074,7 @@ function draftEditPayload(edit: DraftEditState) {
     difficulty: edit.difficulty,
     tags: edit.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
     mode: edit.mode,
+    target_languages: targetLanguages,
     input_format: edit.input_format.trim() || null,
     output_format: edit.output_format.trim() || null,
     function_signature: edit.function_signature.trim() || null,
@@ -1055,6 +1107,37 @@ function isDraftEditDirty(draft: ProblemDraft | null, edit: DraftEditState | nul
   return draftEditKey(edit) !== draftEditKey(draftEditFromDraft(draft));
 }
 
+function draftEditValidationError(edit: DraftEditState, locale: Locale): string | null {
+  const targetLanguages = normalizeLanguageList(edit.target_languages);
+  if (!edit.title.trim()) return locale === "zh" ? "标题不能为空。" : "Title is required.";
+  if (!edit.description.trim()) return locale === "zh" ? "描述不能为空。" : "Description is required.";
+  if (modeRequiresFunction(edit.mode) && !edit.function_signature.trim()) {
+    return locale === "zh" ? "函数模式和双模式都需要函数签名。" : "Function and dual mode require a function signature.";
+  }
+  if (modeRequiresAcmContract(edit.mode) && !edit.input_format.trim()) {
+    return locale === "zh" ? "ACM 模式和双模式都需要输入格式。" : "ACM and dual mode require an input format.";
+  }
+  if (modeRequiresAcmContract(edit.mode) && !edit.output_format.trim()) {
+    return locale === "zh" ? "ACM 模式和双模式都需要输出格式。" : "ACM and dual mode require an output format.";
+  }
+  if (!targetLanguages.length) return locale === "zh" ? "至少选择一种目标语言。" : "Select at least one target language.";
+  const seen = new Set<string>();
+  for (const solution of edit.official_solutions) {
+    const language = solution.language.trim().toLowerCase();
+    if (!language) return locale === "zh" ? "官方解法语言不能为空。" : "Official solution language is required.";
+    if (seen.has(language)) return locale === "zh" ? "官方解法语言不能重复。" : "Official solution languages must be unique.";
+    seen.add(language);
+  }
+  for (const language of targetLanguages) {
+    const solution = edit.official_solutions.find((item) => item.language === language);
+    if (!solution?.code.trim()) return locale === "zh" ? `${languageLabel(language)} 官方解法代码不能为空。` : `${languageLabel(language)} solution code is required.`;
+    if (!solution?.explanation.trim()) return locale === "zh" ? `${languageLabel(language)} 官方解法说明不能为空。` : `${languageLabel(language)} solution explanation is required.`;
+  }
+  if (!edit.testcases.length) return locale === "zh" ? "至少需要一个用例。" : "At least one testcase is required.";
+  if (!edit.testcases.some((testcase) => !testcase.is_hidden)) return locale === "zh" ? "至少需要一个公开用例。" : "At least one public testcase is required.";
+  return null;
+}
+
 function validationStatusMessage(status: string, summary: unknown, locale: Locale): string {
   const report = recordValue(summary);
   const failedChecks = stringList(report.failed_checks).length
@@ -1084,6 +1167,86 @@ function draftSaveErrorMessage(error: unknown, locale: Locale): string {
     return `Slug 已被占用${slug}。请换一个唯一的 slug。`;
   }
   return message;
+}
+
+function solutionEditFromAdmin(solution: AdminSolution): ProblemSolutionEdit {
+  return {
+    language: solution.language,
+    code: solution.code ?? "",
+    explanation: solution.explanation ?? "",
+    time_complexity: solution.time_complexity ?? "",
+    space_complexity: solution.space_complexity ?? "",
+  };
+}
+
+function problemEditFromProblem(problem: any, solutions: AdminSolution[] = []): ProblemEditState {
+  return {
+    title: problem?.title ?? "",
+    slug: problem?.slug ?? "",
+    description: problem?.description ?? "",
+    difficulty: ["easy", "medium", "hard"].includes(problem?.difficulty) ? problem.difficulty : "medium",
+    tags: (problem?.tags ?? []).join(", "),
+    mode: problem?.mode === "function" || problem?.mode === "both" ? problem.mode : "acm",
+    input_format: problem?.input_format ?? "",
+    output_format: problem?.output_format ?? "",
+    function_signature: problem?.function_signature ?? "",
+    time_limit: String(problem?.time_limit ?? 1000),
+    memory_limit: String(problem?.memory_limit ?? 256),
+    hint: problem?.hint ?? "",
+    solutions: solutions.map(solutionEditFromAdmin),
+  };
+}
+
+function problemEditValidationError(edit: ProblemEditState, locale: Locale): string | null {
+  if (!edit.title.trim()) return locale === "zh" ? "标题不能为空。" : "Title is required.";
+  if (!edit.slug.trim()) return locale === "zh" ? "Slug 不能为空。" : "Slug is required.";
+  if (!edit.description.trim()) return locale === "zh" ? "描述不能为空。" : "Description is required.";
+  if (modeRequiresFunction(edit.mode) && !edit.function_signature.trim()) {
+    return locale === "zh" ? "函数模式和双模式都需要函数签名。" : "Function and dual mode require a function signature.";
+  }
+  if (modeRequiresAcmContract(edit.mode) && !edit.input_format.trim()) {
+    return locale === "zh" ? "ACM 模式和双模式都需要输入格式。" : "ACM and dual mode require an input format.";
+  }
+  if (modeRequiresAcmContract(edit.mode) && !edit.output_format.trim()) {
+    return locale === "zh" ? "ACM 模式和双模式都需要输出格式。" : "ACM and dual mode require an output format.";
+  }
+  const seen = new Set<string>();
+  for (const solution of edit.solutions) {
+    const language = solution.language.trim().toLowerCase();
+    if (!language) return locale === "zh" ? "官方解法语言不能为空。" : "Official solution language is required.";
+    if (seen.has(language)) return locale === "zh" ? "官方解法语言不能重复。" : "Official solution languages must be unique.";
+    seen.add(language);
+    if (!solution.code.trim()) return locale === "zh" ? `${languageLabel(language)} 官方解法代码不能为空。` : `${languageLabel(language)} solution code is required.`;
+    if (!solution.explanation.trim()) return locale === "zh" ? `${languageLabel(language)} 官方解法说明不能为空。` : `${languageLabel(language)} solution explanation is required.`;
+  }
+  return null;
+}
+
+function problemEditPayload(edit: ProblemEditState): Record<string, unknown> {
+  return {
+    title: edit.title.trim(),
+    slug: edit.slug.trim(),
+    description: edit.description.trim(),
+    difficulty: edit.difficulty,
+    tags: edit.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+    mode: edit.mode,
+    input_format: edit.input_format.trim() || null,
+    output_format: edit.output_format.trim() || null,
+    function_signature: edit.function_signature.trim() || null,
+    time_limit: Number(edit.time_limit) || 1000,
+    memory_limit: Number(edit.memory_limit) || 256,
+    hint: edit.hint.trim() || null,
+  };
+}
+
+function problemSolutionPayloads(edit: ProblemEditState): AdminSolutionPayload[] {
+  return edit.solutions.map((solution) => ({
+    language: solution.language.trim().toLowerCase(),
+    code: solution.code,
+    explanation: solution.explanation,
+    time_complexity: solution.time_complexity.trim() || null,
+    space_complexity: solution.space_complexity.trim() || null,
+  }));
 }
 
 function ValidationReport({ draft, locale }: { draft: ProblemDraft; locale: Locale }) {
@@ -1129,6 +1292,52 @@ function ValidationReport({ draft, locale }: { draft: ProblemDraft; locale: Loca
               </span>
             );
           })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ProblemValidationReport({ report, locale }: { report: Record<string, any> | null; locale: Locale }) {
+  if (!report) return null;
+  const normalized = recordValue(report);
+  const status = normalized.passed === true ? "validated" : "validation_failed";
+  const checks = Array.isArray(normalized.checks) ? normalized.checks.map(recordValue) : [];
+  const failedChecks = stringList(normalized.failed_checks);
+  const caseSummary = recordValue(normalized.case_summary);
+  const failedCases = Number(caseSummary.failed ?? 0);
+  return (
+    <div className="validation-report problem-validation-report">
+      <div className="validation-head">
+        <span className={`status-badge ${normalized.passed === true ? "ac" : "wa"}`}>
+          {normalized.passed === true ? "OK" : "Needs review"}
+        </span>
+        <strong>{validationStatusMessage(status, normalized, locale)}</strong>
+      </div>
+      <div className="validation-metrics">
+        <span><strong>{Number(normalized.public_sample_count ?? 0)}</strong>{locale === "zh" ? "公开样例" : "public samples"}</span>
+        <span><strong>{Number(normalized.hidden_testcase_count ?? 0)}</strong>{locale === "zh" ? "隐藏用例" : "hidden cases"}</span>
+        <span><strong>{failedCases}</strong>{locale === "zh" ? "失败用例" : "failed cases"}</span>
+      </div>
+      {checks.length ? (
+        <div className="validation-checks">
+          {checks.map((check, index) => {
+            const name = String(check.name ?? `check-${index}`);
+            const ok = check.passed === true;
+            return (
+              <span className={ok ? "validation-check passed" : "validation-check failed"} key={`${name}-${index}`}>
+                {ok ? "✓" : "!"} {validationLabel(name, locale)}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
+      {failedChecks.length ? (
+        <div className="validation-failures">
+          <strong>{locale === "zh" ? "失败检查" : "Failed checks"}</strong>
+          <ul>
+            {failedChecks.map((name) => <li key={name}>{validationLabel(name, locale)}</li>)}
+          </ul>
         </div>
       ) : null}
     </div>
@@ -2089,7 +2298,13 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       outputFormatLabel: "输出格式",
       officialSolutionsLabel: "多语言官方解法",
       officialCodeLabel: "官方解法代码",
+      functionOfficialCodeLabel: "函数式官方解法代码",
+      acmOfficialCodeLabel: "ACM 官方程序代码",
       officialExplanationLabel: "官方解法说明",
+      dualModeSolutionNote: "双模式使用一份函数式规范解法；ACM 练习会用相同的函数 JSON 参数输入和期望输出合同。",
+      aiFillSolution: "AI 填充",
+      aiFillingSolution: "正在填充...",
+      aiFillSolutionDone: "AI 已填充该语言解法，请检查后保存并重新校验。",
       timeComplexityLabel: "时间复杂度",
       spaceComplexityLabel: "空间复杂度",
       testcaseDetails: "用例管理",
@@ -2165,7 +2380,13 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       outputFormatLabel: "Output format",
       officialSolutionsLabel: "Official solutions by language",
       officialCodeLabel: "Official solution code",
+      functionOfficialCodeLabel: "Canonical function solution code",
+      acmOfficialCodeLabel: "ACM official program code",
       officialExplanationLabel: "Official solution explanation",
+      dualModeSolutionNote: "Dual mode uses one canonical function solution. ACM practice shares the same function JSON argument input and expected-output contract.",
+      aiFillSolution: "AI fill",
+      aiFillingSolution: "Filling...",
+      aiFillSolutionDone: "AI filled this language solution. Review it, then save and revalidate.",
       timeComplexityLabel: "Time complexity",
       spaceComplexityLabel: "Space complexity",
       testcaseDetails: "Testcase manager",
@@ -2192,7 +2413,11 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const [problemPage, setProblemPage] = useState(1);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
-  const [problemEdit, setProblemEdit] = useState({ title: "", description: "", tags: "", hint: "" });
+  const [problemEdit, setProblemEdit] = useState<ProblemEditState>(() => problemEditFromProblem(null));
+  const [problemSaveMessage, setProblemSaveMessage] = useState("");
+  const [problemValidationReport, setProblemValidationReport] = useState<Record<string, any> | null>(null);
+  const [problemSaving, setProblemSaving] = useState(false);
+  const [problemSolutionGenerating, setProblemSolutionGenerating] = useState<string | null>(null);
   const [testcaseEdits, setTestcaseEdits] = useState<Record<string, AdminTestCase>>({});
   const [newTestcase, setNewTestcase] = useState({
     input: "",
@@ -2202,8 +2427,8 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     score: "10",
     order: "",
   });
-  const [agentTopic, setAgentTopic] = useState("array two pointers");
-  const [agentTags, setAgentTags] = useState("array,two-pointers");
+  const [agentTopic, setAgentTopic] = useState("");
+  const [agentTags, setAgentTags] = useState("");
   const [agentDifficulty, setAgentDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [agentMode, setAgentMode] = useState<ProblemAuthoringMode>("both");
   const [agentLanguages, setAgentLanguages] = useState<string[]>(["python", "cpp", "java"]);
@@ -2211,9 +2436,13 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const [agentConstraints, setAgentConstraints] = useState("");
   const [agentMessage, setAgentMessage] = useState("");
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
+  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [draftSolutionGenerating, setDraftSolutionGenerating] = useState<string | null>(null);
   const [selectedDraft, setSelectedDraft] = useState<ProblemDraft | null>(null);
   const [draftEdit, setDraftEdit] = useState<DraftEditState | null>(null);
   const [draftSaveMessage, setDraftSaveMessage] = useState("");
+  const initializedProblemEditIdRef = useRef<string | null>(null);
   const overviewQuery = useQuery({
     queryKey: [
       "admin-overview",
@@ -2251,6 +2480,11 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     queryFn: () => api.adminProblemTestcases(selectedProblemId ?? ""),
     enabled: currentUser?.role === "admin" && Boolean(selectedProblemId),
   });
+  const problemSolutionsQuery = useQuery({
+    queryKey: ["admin-problem-solutions", selectedProblemId],
+    queryFn: () => api.adminProblemSolutions(selectedProblemId ?? ""),
+    enabled: currentUser?.role === "admin" && Boolean(selectedProblemId),
+  });
   const adminAiProfilesQuery = useQuery({
     queryKey: ["ai-profiles", "admin", currentUser?.id],
     queryFn: () => api.aiProfiles(),
@@ -2268,7 +2502,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       : !agentPreferredProfile
         ? aiUnavailableText(locale)
         : null;
-  const agentCanGenerate = Boolean(agentPreferredProfile && agentModelAvailable);
+  const agentCanGenerate = Boolean(agentPreferredProfile && agentModelAvailable && agentTopic.trim());
 
   useEffect(() => {
     const next: Record<string, AdminTestCase> = {};
@@ -2277,6 +2511,15 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     }
     setTestcaseEdits(next);
   }, [testcasesQuery.data]);
+
+  useEffect(() => {
+    if (!selectedProblemId) return;
+    if (initializedProblemEditIdRef.current === selectedProblemId) return;
+    const problem = (overviewQuery.data?.problems ?? []).find((item: any) => item.id === selectedProblemId);
+    if (!problem || !problemSolutionsQuery.data) return;
+    initializedProblemEditIdRef.current = selectedProblemId;
+    setProblemEdit(problemEditFromProblem(problem, problemSolutionsQuery.data));
+  }, [selectedProblemId, overviewQuery.data, problemSolutionsQuery.data]);
 
   useEffect(() => {
     if (!adminAiProfiles.length) return;
@@ -2324,17 +2567,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     await overviewQuery.refetch();
   }
 
-  async function savePythonSolution(problemId: string) {
-    await api.adminUpsertSolution(problemId, {
-      language: "python",
-      explanation: locale === "zh" ? "请在数据库或后续编辑器中补充完整官方题解。" : "Fill in the full official explanation in the database or the next editor pass.",
-      code: "# TODO: add official solution\n",
-      time_complexity: null,
-      space_complexity: null,
-    });
-    await overviewQuery.refetch();
-  }
-
   function toggleAgentLanguage(language: string) {
     setAgentLanguages((value) => {
       if (value.includes(language)) {
@@ -2345,6 +2577,10 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   }
 
   async function createAgentDraft() {
+    if (!agentTopic.trim()) {
+      setAgentMessage(locale === "zh" ? "请先填写主题。" : "Enter a topic first.");
+      return;
+    }
     if (!agentCanGenerate) {
       setAgentMessage(agentModelUnavailableReason ?? aiUnavailableText(locale));
       return;
@@ -2365,6 +2601,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       const run = await api.adminAgentRun(result.run_id);
       const draft = await api.adminProblemDraft(result.draft_id);
       setAgentSteps(draft.steps?.length ? draft.steps : run.steps ?? []);
+      setAgentRuns(draft.runs?.length ? draft.runs : [run]);
       setSelectedDraft(draft);
       setDraftEdit(draftEditFromDraft(draft));
       setDraftSaveMessage("");
@@ -2380,6 +2617,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     setSelectedDraft(draft);
     setDraftEdit(draftEditFromDraft(draft));
     setAgentSteps(draft.steps ?? []);
+    setAgentRuns(draft.runs ?? []);
     setDraftSaveMessage("");
   }
 
@@ -2395,6 +2633,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       setSelectedDraft(draft);
       setDraftEdit(draftEditFromDraft(draft));
       setAgentSteps(draft.steps ?? []);
+      setAgentRuns(draft.runs ?? []);
       setDraftSaveMessage("");
       await overviewQuery.refetch();
       await draftsQuery.refetch();
@@ -2411,6 +2650,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       setSelectedDraft(draft);
       setDraftEdit(draftEditFromDraft(draft));
       setAgentSteps(draft.steps ?? []);
+      setAgentRuns(draft.runs ?? []);
       setDraftSaveMessage("");
       await draftsQuery.refetch();
     } catch (error) {
@@ -2419,10 +2659,12 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   }
 
   function updateDraftEdit(patch: Partial<DraftEditState>) {
+    if (draftSaving) return;
     setDraftEdit((value) => value ? { ...value, ...patch } : value);
   }
 
   function updateDraftCase(index: number, patch: Partial<DraftEditCase>) {
+    if (draftSaving) return;
     setDraftEdit((value) => {
       if (!value) return value;
       return {
@@ -2435,10 +2677,22 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   }
 
   function updateDraftSolution(index: number, patch: Partial<DraftOfficialSolution>) {
+    if (draftSaving) return;
     setDraftEdit((value) => {
       if (!value) return value;
+      const current = value.official_solutions[index];
+      if (!current) return value;
+      let targetLanguages = value.target_languages;
+      const nextLanguage = patch.language;
+      if (nextLanguage && nextLanguage !== current.language) {
+        if (value.official_solutions.some((solution, itemIndex) => itemIndex !== index && solution.language === nextLanguage)) {
+          return value;
+        }
+        targetLanguages = value.target_languages.map((language) => language === current.language ? nextLanguage : language);
+      }
       return {
         ...value,
+        target_languages: normalizeLanguageList(targetLanguages),
         official_solutions: value.official_solutions.map((solution, itemIndex) => (
           itemIndex === index ? { ...solution, ...patch } : solution
         )),
@@ -2446,11 +2700,28 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     });
   }
 
+  function toggleDraftTargetLanguage(language: string) {
+    if (draftSaving) return;
+    setDraftEdit((value) => {
+      if (!value) return value;
+      const exists = value.target_languages.includes(language);
+      const target_languages = exists
+        ? value.target_languages.filter((item) => item !== language)
+        : [...value.target_languages, language];
+      const official_solutions = exists || value.official_solutions.some((solution) => solution.language === language)
+        ? value.official_solutions
+        : [...value.official_solutions, { language, code: "", explanation: "" }];
+      return { ...value, target_languages, official_solutions };
+    });
+  }
+
   function addDraftSolution(language: string) {
+    if (draftSaving) return;
     setDraftEdit((value) => {
       if (!value || value.official_solutions.some((solution) => solution.language === language)) return value;
       return {
         ...value,
+        target_languages: normalizeLanguageList([...value.target_languages, language]),
         official_solutions: [
           ...value.official_solutions,
           { language, code: "", explanation: "" },
@@ -2460,16 +2731,22 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   }
 
   function removeDraftSolution(index: number) {
+    if (draftSaving) return;
     setDraftEdit((value) => {
       if (!value || value.official_solutions.length <= 1) return value;
+      const removedLanguage = value.official_solutions[index]?.language;
       return {
         ...value,
+        target_languages: removedLanguage
+          ? value.target_languages.filter((language) => language !== removedLanguage)
+          : value.target_languages,
         official_solutions: value.official_solutions.filter((_, itemIndex) => itemIndex !== index),
       };
     });
   }
 
   function addDraftCase(hidden: boolean) {
+    if (draftSaving) return;
     setDraftEdit((value) => {
       if (!value) return value;
       const order = value.testcases.length + 1;
@@ -2484,6 +2761,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   }
 
   function removeDraftCase(index: number) {
+    if (draftSaving) return;
     setDraftEdit((value) => {
       if (!value) return value;
       return {
@@ -2498,16 +2776,68 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
 
   async function saveSelectedDraftEdit() {
     if (!selectedDraft || !draftEdit) return;
+    const validationError = draftEditValidationError(draftEdit, locale);
+    if (validationError) {
+      setDraftSaveMessage(validationError);
+      return;
+    }
+    setDraftSaving(true);
     try {
       const draft = await api.adminUpdateProblemDraft(selectedDraft.id, draftEditPayload(draftEdit));
       setSelectedDraft(draft);
       setDraftEdit(draftEditFromDraft(draft));
       setAgentSteps(draft.steps ?? []);
-      setDraftSaveMessage(locale === "zh" ? "草稿已保存并重新校验。" : "Draft saved and revalidated.");
+      setAgentRuns(draft.runs ?? []);
+      setDraftSaveMessage(validationStatusMessage(draft.status, draft.validation_report ?? draft.validation_summary, locale));
       setAgentMessage(validationStatusMessage(draft.status, draft.validation_report ?? draft.validation_summary, locale));
       await draftsQuery.refetch();
     } catch (error) {
       setDraftSaveMessage(draftSaveErrorMessage(error, locale));
+    } finally {
+      setDraftSaving(false);
+    }
+  }
+
+  async function generateDraftSolution(index: number) {
+    if (!selectedDraft || !draftEdit) return;
+    const solution = draftEdit.official_solutions[index];
+    if (!solution) return;
+    const language = solution.language.trim().toLowerCase();
+    if (!language) return;
+    if (!agentModelAvailable) {
+      setDraftSaveMessage(agentModelUnavailableReason ?? aiUnavailableText(locale));
+      return;
+    }
+    setDraftSolutionGenerating(language);
+    setDraftSaveMessage(locale === "zh" ? `正在生成 ${languageLabel(language)} 官方解法...` : `Generating ${languageLabel(language)} official solution...`);
+    try {
+      const generated = await api.adminGenerateProblemDraftSolution(selectedDraft.id, {
+        language,
+        locale,
+        model_profile: agentModel,
+        draft: draftEditPayload(draftEdit),
+      });
+      setDraftEdit((value) => {
+        if (!value) return value;
+        return {
+          ...value,
+          target_languages: normalizeLanguageList([...value.target_languages, generated.language]),
+          official_solutions: value.official_solutions.map((item, itemIndex) => (
+            itemIndex === index
+              ? { language: generated.language, code: generated.code, explanation: generated.explanation }
+              : item
+          )),
+        };
+      });
+      const refreshed = await api.adminProblemDraft(selectedDraft.id);
+      setSelectedDraft(refreshed);
+      setAgentSteps(refreshed.steps ?? []);
+      setAgentRuns(refreshed.runs ?? []);
+      setDraftSaveMessage(text.aiFillSolutionDone);
+    } catch (error) {
+      setDraftSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "AI 填充失败。" : "AI fill failed.");
+    } finally {
+      setDraftSolutionGenerating(null);
     }
   }
 
@@ -2517,8 +2847,10 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const problemPagination = overviewQuery.data?.pagination?.problems ?? { page: problemPage, page_size: 8, total: 0, total_pages: 0 };
   const drafts = draftsQuery.data ?? [];
   const draftHasUnsavedChanges = isDraftEditDirty(selectedDraft, draftEdit);
+  const draftEditLocked = draftSaving || Boolean(draftSolutionGenerating) || (selectedDraft ? draftIsReadOnly(selectedDraft.status) : false);
   const selectedUser = users.find((user: any) => user.id === selectedUserId) ?? null;
   const selectedProblem = problems.find((problem: any) => problem.id === selectedProblemId) ?? null;
+  const problemEditLocked = problemSaving || Boolean(problemSolutionGenerating);
 
   function pageSummary(pagination: any) {
     const totalPages = Math.max(Number(pagination.total_pages ?? 0), 1);
@@ -2529,18 +2861,19 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   }
 
   function chooseProblem(problem: any) {
+    initializedProblemEditIdRef.current = null;
     setSelectedProblemId(problem.id);
-    setProblemEdit({
-      title: problem.title ?? "",
-      description: problem.description ?? "",
-      tags: (problem.tags ?? []).join(", "),
-      hint: problem.hint ?? "",
-    });
+    setProblemEdit(problemEditFromProblem(problem));
+    setProblemSaveMessage("");
+    setProblemValidationReport(null);
   }
 
   function cancelProblemEdit() {
+    initializedProblemEditIdRef.current = null;
     setSelectedProblemId(null);
-    setProblemEdit({ title: "", description: "", tags: "", hint: "" });
+    setProblemEdit(problemEditFromProblem(null));
+    setProblemSaveMessage("");
+    setProblemValidationReport(null);
     setTestcaseEdits({});
     setNewTestcase({ input: "", output: "", is_hidden: false, is_sample: false, score: "10", order: "" });
   }
@@ -2548,7 +2881,12 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   function updateTestcaseEdit(testcaseId: string, patch: Partial<AdminTestCase>) {
     setTestcaseEdits((value) => ({
       ...value,
-      [testcaseId]: { ...value[testcaseId], ...patch },
+      [testcaseId]: {
+        ...value[testcaseId],
+        ...patch,
+        ...(patch.is_hidden ? { is_sample: false } : {}),
+        ...(patch.is_sample ? { is_hidden: false } : {}),
+      },
     }));
   }
 
@@ -2557,14 +2895,109 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     await overviewQuery.refetch();
   }
 
-  async function saveProblemEdit() {
-    if (!selectedProblemId) return;
-    await updateProblem(selectedProblemId, {
-      title: problemEdit.title,
-      description: problemEdit.description,
-      tags: problemEdit.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
-      hint: problemEdit.hint,
+  function updateProblemSolution(index: number, patch: Partial<ProblemSolutionEdit>) {
+    if (problemEditLocked) return;
+    setProblemEdit((value) => ({
+      ...value,
+      solutions: value.solutions.map((solution, itemIndex) => (
+        itemIndex === index ? { ...solution, ...patch } : solution
+      )),
+    }));
+  }
+
+  function addProblemSolution(language: string) {
+    if (problemEditLocked) return;
+    setProblemEdit((value) => {
+      if (value.solutions.some((solution) => solution.language === language)) return value;
+      return {
+        ...value,
+        solutions: [...value.solutions, { language, code: "", explanation: "", time_complexity: "", space_complexity: "" }],
+      };
     });
+  }
+
+  function removeProblemSolution(index: number) {
+    if (problemEditLocked) return;
+    setProblemEdit((value) => ({
+      ...value,
+      solutions: value.solutions.filter((_, itemIndex) => itemIndex !== index),
+    }));
+  }
+
+  async function generateProblemSolution(index: number) {
+    if (!selectedProblemId) return;
+    const solution = problemEdit.solutions[index];
+    if (!solution) return;
+    const language = solution.language.trim().toLowerCase();
+    if (!language) return;
+    if (!agentModelAvailable) {
+      setProblemSaveMessage(agentModelUnavailableReason ?? aiUnavailableText(locale));
+      return;
+    }
+    setProblemSolutionGenerating(language);
+    setProblemSaveMessage(locale === "zh" ? `正在生成 ${languageLabel(language)} 官方解法...` : `Generating ${languageLabel(language)} official solution...`);
+    try {
+      const generated = await api.adminGenerateProblemSolution(selectedProblemId, {
+        language,
+        locale,
+        model_profile: agentModel,
+        problem: problemEditPayload(problemEdit),
+        solutions: problemSolutionPayloads(problemEdit),
+      });
+      setProblemEdit((value) => ({
+        ...value,
+        solutions: value.solutions.map((item, itemIndex) => (
+          itemIndex === index
+            ? { ...item, language: generated.language, code: generated.code, explanation: generated.explanation }
+            : item
+        )),
+      }));
+      setProblemSaveMessage(text.aiFillSolutionDone);
+    } catch (error) {
+      setProblemSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "AI 填充失败。" : "AI fill failed.");
+    } finally {
+      setProblemSolutionGenerating(null);
+    }
+  }
+
+  async function saveProblemEdit(revalidate = false) {
+    if (!selectedProblemId) return;
+    const validationError = problemEditValidationError(problemEdit, locale);
+    if (validationError) {
+      setProblemSaveMessage(validationError);
+      return;
+    }
+    setProblemSaving(true);
+    try {
+      await updateProblem(selectedProblemId, problemEditPayload(problemEdit));
+      const existingLanguages = new Set((problemSolutionsQuery.data ?? []).map((solution) => solution.language));
+      const nextLanguages = new Set(problemEdit.solutions.map((solution) => solution.language));
+      for (const solution of problemEdit.solutions) {
+        await api.adminUpsertSolution(selectedProblemId, {
+          language: solution.language,
+          code: solution.code,
+          explanation: solution.explanation,
+          time_complexity: solution.time_complexity.trim() || null,
+          space_complexity: solution.space_complexity.trim() || null,
+        });
+      }
+      for (const language of existingLanguages) {
+        if (!nextLanguages.has(language)) {
+          await api.adminDeleteSolution(selectedProblemId, language);
+        }
+      }
+      const report = revalidate ? await api.adminRevalidateProblem(selectedProblemId) : null;
+      if (report) setProblemValidationReport(report);
+      setProblemSaveMessage(revalidate
+        ? validationStatusMessage(report?.passed ? "validated" : "validation_failed", report, locale)
+        : locale === "zh" ? "题目已保存，建议重新校验。" : "Problem saved. Revalidation is recommended.");
+      await problemSolutionsQuery.refetch();
+      await overviewQuery.refetch();
+    } catch (error) {
+      setProblemSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "题目保存失败。" : "Problem save failed.");
+    } finally {
+      setProblemSaving(false);
+    }
   }
 
   async function createProblemTestcase() {
@@ -2578,6 +3011,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       order: newTestcase.order.trim() ? Number(newTestcase.order) : null,
     });
     setNewTestcase({ input: "", output: "", is_hidden: false, is_sample: false, score: "10", order: "" });
+    setProblemSaveMessage(locale === "zh" ? "用例已新增，建议重新校验。" : "Testcase added. Revalidation is recommended.");
     await refreshProblemTestcases();
   }
 
@@ -2592,11 +3026,13 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       score: Number(testcase.score) || 0,
       order: Number(testcase.order) || 0,
     });
+    setProblemSaveMessage(locale === "zh" ? "用例已保存，建议重新校验。" : "Testcase saved. Revalidation is recommended.");
     await refreshProblemTestcases();
   }
 
   async function deleteProblemTestcase(testcaseId: string) {
     await api.adminDeleteTestcase(testcaseId);
+    setProblemSaveMessage(locale === "zh" ? "用例已删除，建议重新校验。" : "Testcase deleted. Revalidation is recommended.");
     await refreshProblemTestcases();
   }
 
@@ -2655,6 +3091,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
             <label>{locale === "zh" ? "额外约束" : "Constraints"}<input value={agentConstraints} onChange={(event) => setAgentConstraints(event.target.value)} /></label>
             <button className="primary" onClick={createAgentDraft} disabled={!agentCanGenerate}>{text.generateDraft}</button>
           </div>
+          {!agentTopic.trim() ? <p className="muted model-unavailable-note">{locale === "zh" ? "填写主题后才能生成草稿。" : "Enter a topic to generate a draft."}</p> : null}
           {agentModelUnavailableReason ? <p className="muted model-unavailable-note">{agentModelUnavailableReason}</p> : null}
           {agentMessage ? <p className="muted">{agentMessage}</p> : null}
           <div className="agent-workspace">
@@ -2678,7 +3115,17 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
             </div>
             <div className="agent-preview">
               <h3>{text.steps}</h3>
-              {agentSteps.length ? agentSteps.map((step) => (
+              {agentRuns.length ? agentRuns.map((run, runIndex) => (
+                <div className="agent-run-group" key={run.id}>
+                  <strong>{runIndex + 1}. {run.model_profile} / {run.status}</strong>
+                  {(run.steps ?? []).map((step) => (
+                    <article className="agent-step" key={step.id}>
+                      <strong>{step.step_index}. {step.step_type}</strong>
+                      <span>{step.status}{step.error_message ? `: ${step.error_message}` : ""}</span>
+                    </article>
+                  ))}
+                </div>
+              )) : agentSteps.length ? agentSteps.map((step) => (
                 <article className="agent-step" key={step.id}>
                   <strong>{step.step_index}. {step.step_type}</strong>
                   <span>{step.status}{step.error_message ? `: ${step.error_message}` : ""}</span>
@@ -2701,46 +3148,62 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                     <div className="draft-edit-panel">
                       <div className="testcase-panel-head">
                         <h3>{text.draftEdit}</h3>
-                        <button className="primary" disabled={selectedDraft.status === "approved"} onClick={saveSelectedDraftEdit}>{text.revalidateDraft}</button>
+                        <button className="primary" disabled={draftEditLocked} onClick={saveSelectedDraftEdit}>{draftSaving ? text.loading : text.revalidateDraft}</button>
                       </div>
                       <div className="admin-edit-grid draft-edit-grid">
-                        <label>{text.titleLabel}<input value={draftEdit.title} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ title: event.target.value })} /></label>
-                        <label>{text.slugLabel}<input value={draftEdit.slug} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ slug: event.target.value })} /></label>
+                        <label>{text.titleLabel}<input value={draftEdit.title} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ title: event.target.value })} /></label>
+                        <label>{text.slugLabel}<input value={draftEdit.slug} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ slug: event.target.value })} /></label>
                         <label>{text.modeLabel}
-                          <select value={draftEdit.mode} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ mode: event.target.value as ProblemAuthoringMode })}>
+                          <select value={draftEdit.mode} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ mode: event.target.value as ProblemAuthoringMode })}>
                             <option value="both">{authoringModeLabel("both", locale)}</option>
                             <option value="function">{authoringModeLabel("function", locale)}</option>
                             <option value="acm">{authoringModeLabel("acm", locale)}</option>
                           </select>
                         </label>
+                        <div className="agent-field language-checklist-label"><span>{text.targetLanguagesLabel}</span>
+                          <div className="language-checklist">
+                            {LANGUAGES.map((item) => (
+                              <label className="checkbox-label language-chip" key={item}>
+                                <input
+                                  type="checkbox"
+                                  checked={draftEdit.target_languages.includes(item)}
+                                  disabled={draftEditLocked}
+                                  onChange={() => toggleDraftTargetLanguage(item)}
+                                />
+                                {languageLabel(item)}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
                         <label>{locale === "zh" ? "难度" : "Difficulty"}
-                          <select value={draftEdit.difficulty} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ difficulty: event.target.value as "easy" | "medium" | "hard" })}>
+                          <select value={draftEdit.difficulty} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ difficulty: event.target.value as "easy" | "medium" | "hard" })}>
                             <option value="easy">easy</option>
                             <option value="medium">medium</option>
                             <option value="hard">hard</option>
                           </select>
                         </label>
-                        <label>{text.tagsLabel}<input value={draftEdit.tags} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ tags: event.target.value })} /></label>
-                        <label>{text.functionSignatureLabel}<input value={draftEdit.function_signature} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ function_signature: event.target.value })} /></label>
-                        <label>{text.timeLimitLabel}<input type="number" min="100" value={draftEdit.time_limit} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ time_limit: event.target.value })} /></label>
-                        <label>{text.memoryLimitLabel}<input type="number" min="16" value={draftEdit.memory_limit} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ memory_limit: event.target.value })} /></label>
-                        <label>{text.descriptionLabel}<textarea value={draftEdit.description} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ description: event.target.value })} /></label>
-                        <label>{text.hintLabel}<textarea value={draftEdit.hint} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ hint: event.target.value })} /></label>
-                        <label>{text.inputFormatLabel}<textarea value={draftEdit.input_format} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ input_format: event.target.value })} /></label>
-                        <label>{text.outputFormatLabel}<textarea value={draftEdit.output_format} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ output_format: event.target.value })} /></label>
-                        <label>{text.timeComplexityLabel}<input value={draftEdit.time_complexity} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ time_complexity: event.target.value })} /></label>
-                        <label>{text.spaceComplexityLabel}<input value={draftEdit.space_complexity} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ space_complexity: event.target.value })} /></label>
+                        <label>{text.tagsLabel}<input value={draftEdit.tags} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ tags: event.target.value })} /></label>
+                        <label>{text.functionSignatureLabel}<input value={draftEdit.function_signature} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ function_signature: event.target.value })} /></label>
+                        <label>{text.timeLimitLabel}<input type="number" min="100" value={draftEdit.time_limit} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ time_limit: event.target.value })} /></label>
+                        <label>{text.memoryLimitLabel}<input type="number" min="16" value={draftEdit.memory_limit} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ memory_limit: event.target.value })} /></label>
+                        <label>{text.descriptionLabel}<textarea value={draftEdit.description} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ description: event.target.value })} /></label>
+                        <label>{text.hintLabel}<textarea value={draftEdit.hint} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ hint: event.target.value })} /></label>
+                        <label>{text.inputFormatLabel}<textarea value={draftEdit.input_format} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ input_format: event.target.value })} /></label>
+                        <label>{text.outputFormatLabel}<textarea value={draftEdit.output_format} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ output_format: event.target.value })} /></label>
+                        <label>{text.timeComplexityLabel}<input value={draftEdit.time_complexity} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ time_complexity: event.target.value })} /></label>
+                        <label>{text.spaceComplexityLabel}<input value={draftEdit.space_complexity} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ space_complexity: event.target.value })} /></label>
                       </div>
                       <div className="testcase-panel-head">
                         <h3>{text.officialSolutionsLabel}</h3>
                         <div className="agent-actions">
                           {LANGUAGES.filter((item) => !draftEdit.official_solutions.some((solution) => solution.language === item)).map((item) => (
-                            <button key={item} disabled={selectedDraft.status === "approved"} onClick={() => addDraftSolution(item)}>
+                            <button key={item} disabled={draftEditLocked} onClick={() => addDraftSolution(item)}>
                               + {languageLabel(item)}
                             </button>
                           ))}
                         </div>
                       </div>
+                      {draftEdit.mode === "both" ? <p className="muted">{text.dualModeSolutionNote}</p> : null}
                       <div className="admin-testcase-list official-solution-list">
                         {draftEdit.official_solutions.map((solution, index) => (
                           <article className="testcase-card admin-testcase-card official-solution-card" key={`${solution.language}-${index}`}>
@@ -2750,15 +3213,30 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                             </div>
                             <div className="admin-edit-grid official-solution-grid">
                               <label>{locale === "zh" ? "语言" : "Language"}
-                                <select value={solution.language} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftSolution(index, { language: event.target.value })}>
-                                  {LANGUAGES.map((item) => <option key={item} value={item}>{languageLabel(item)}</option>)}
+                                <select value={solution.language} disabled={draftEditLocked} onChange={(event) => updateDraftSolution(index, { language: event.target.value })}>
+                                  {LANGUAGES.map((item) => (
+                                    <option
+                                      key={item}
+                                      value={item}
+                                      disabled={item !== solution.language && draftEdit.official_solutions.some((candidate) => candidate.language === item)}
+                                    >
+                                      {languageLabel(item)}
+                                    </option>
+                                  ))}
                                 </select>
                               </label>
-                              <label>{text.officialExplanationLabel}<textarea value={solution.explanation} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftSolution(index, { explanation: event.target.value })} /></label>
-                              <label>{text.officialCodeLabel}<textarea value={solution.code} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftSolution(index, { code: event.target.value })} /></label>
+                              <label>{text.officialExplanationLabel}<textarea value={solution.explanation} disabled={draftEditLocked} onChange={(event) => updateDraftSolution(index, { explanation: event.target.value })} /></label>
+                              <label>{draftEdit.mode === "acm" ? text.acmOfficialCodeLabel : text.functionOfficialCodeLabel}<textarea value={solution.code} disabled={draftEditLocked} onChange={(event) => updateDraftSolution(index, { code: event.target.value })} /></label>
                             </div>
                             <div className="agent-actions">
-                              <button disabled={selectedDraft.status === "approved" || draftEdit.official_solutions.length <= 1} onClick={() => removeDraftSolution(index)}>{text.delete}</button>
+                              <button
+                                disabled={draftEditLocked || !agentModelAvailable}
+                                title={!agentModelAvailable ? (agentModelUnavailableReason ?? undefined) : undefined}
+                                onClick={() => generateDraftSolution(index)}
+                              >
+                                {draftSolutionGenerating === solution.language ? text.aiFillingSolution : text.aiFillSolution}
+                              </button>
+                              <button disabled={draftEditLocked || draftEdit.official_solutions.length <= 1} onClick={() => removeDraftSolution(index)}>{text.delete}</button>
                             </div>
                           </article>
                         ))}
@@ -2766,8 +3244,8 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                       <div className="testcase-panel-head">
                         <h3>{text.testcaseDetails}</h3>
                         <div className="agent-actions">
-                          <button disabled={selectedDraft.status === "approved"} onClick={() => addDraftCase(false)}>{text.addPublicCase}</button>
-                          <button disabled={selectedDraft.status === "approved"} onClick={() => addDraftCase(true)}>{text.addHiddenCase}</button>
+                          <button disabled={draftEditLocked} onClick={() => addDraftCase(false)}>{text.addPublicCase}</button>
+                          <button disabled={draftEditLocked} onClick={() => addDraftCase(true)}>{text.addHiddenCase}</button>
                         </div>
                       </div>
                       <div className="admin-testcase-list">
@@ -2779,15 +3257,15 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                               {testcase.is_sample ? <span className="case-chip sample">{text.sample}</span> : null}
                             </div>
                             <div className="testcase-edit-grid">
-                              <label>{text.inputLabel}<textarea value={testcase.input} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { input: event.target.value })} /></label>
-                              <label>{text.outputLabel}<textarea value={testcase.output} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { output: event.target.value })} /></label>
-                              <label>{text.orderLabel}<input type="number" min="1" value={testcase.order} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { order: Number(event.target.value) || index + 1 })} /></label>
-                              <label>{locale === "zh" ? "解释" : "Explanation"}<input value={testcase.explanation} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { explanation: event.target.value })} /></label>
-                              <label className="checkbox-label"><input type="checkbox" checked={testcase.is_hidden} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { is_hidden: event.target.checked, is_sample: event.target.checked ? false : testcase.is_sample })} />{text.hidden}</label>
-                              <label className="checkbox-label"><input type="checkbox" checked={testcase.is_sample} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftCase(index, { is_sample: event.target.checked, is_hidden: event.target.checked ? false : testcase.is_hidden })} />{text.sample}</label>
+                              <label>{text.inputLabel}<textarea value={testcase.input} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { input: event.target.value })} /></label>
+                              <label>{text.outputLabel}<textarea value={testcase.output} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { output: event.target.value })} /></label>
+                              <label>{text.orderLabel}<input type="number" min="1" value={testcase.order} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { order: Number(event.target.value) || index + 1 })} /></label>
+                              <label>{locale === "zh" ? "解释" : "Explanation"}<input value={testcase.explanation} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { explanation: event.target.value })} /></label>
+                              <label className="checkbox-label"><input type="checkbox" checked={testcase.is_hidden} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { is_hidden: event.target.checked, is_sample: event.target.checked ? false : testcase.is_sample })} />{text.hidden}</label>
+                              <label className="checkbox-label"><input type="checkbox" checked={testcase.is_sample} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { is_sample: event.target.checked, is_hidden: event.target.checked ? false : testcase.is_hidden })} />{text.sample}</label>
                             </div>
                             <div className="agent-actions">
-                              <button disabled={selectedDraft.status === "approved"} onClick={() => removeDraftCase(index)}>{text.delete}</button>
+                              <button disabled={draftEditLocked} onClick={() => removeDraftCase(index)}>{text.delete}</button>
                             </div>
                           </article>
                         ))}
@@ -2798,10 +3276,10 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                   <ValidationReport draft={selectedDraft} locale={locale} />
                   <DraftTestcasePanel draft={selectedDraft} locale={locale} />
                   <div className="agent-actions">
-                    <button className="primary" disabled={selectedDraft.status === "approved" || !draftEdit} onClick={saveSelectedDraftEdit}>{text.revalidateDraft}</button>
-                    <button disabled={!draftHasUnsavedChanges} onClick={() => selectedDraft && setDraftEdit(draftEditFromDraft(selectedDraft))}>{text.resetDraftEdit}</button>
-                    <button className="primary" disabled={selectedDraft.status !== "validated" || draftHasUnsavedChanges} onClick={approveSelectedDraft}>{text.approveDraft}</button>
-                    <button disabled={selectedDraft.status === "approved" || selectedDraft.status === "rejected"} onClick={rejectSelectedDraft}>{text.rejectDraft}</button>
+                    <button className="primary" disabled={draftEditLocked || !draftEdit} onClick={saveSelectedDraftEdit}>{draftSaving ? text.loading : text.revalidateDraft}</button>
+                    <button disabled={draftSaving || !draftHasUnsavedChanges} onClick={() => selectedDraft && setDraftEdit(draftEditFromDraft(selectedDraft))}>{text.resetDraftEdit}</button>
+                    <button className="primary" disabled={draftSaving || selectedDraft.status !== "validated" || draftHasUnsavedChanges} onClick={approveSelectedDraft}>{text.approveDraft}</button>
+                    <button disabled={draftEditLocked || selectedDraft.status === "rejected"} onClick={rejectSelectedDraft}>{text.rejectDraft}</button>
                   </div>
                 </>
               ) : <p className="muted">{locale === "zh" ? "还没有选中的草稿。" : "No draft selected."}</p>}
@@ -2938,9 +3416,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 </button>
                 <span>{problem.testcase_count} {text.cases}</span>
                 <span>{problem.hidden_testcase_count} {text.hidden}</span>
-                <button onClick={() => savePythonSolution(problem.id)} disabled={problem.solution_count > 0}>
-                  {problem.solution_count} {text.solutions}
-                </button>
+                <span>{problem.solution_count} {text.solutions}</span>
                 <button onClick={() => selectedProblemId === problem.id ? cancelProblemEdit() : chooseProblem(problem)}>
                   {selectedProblemId === problem.id ? text.cancel : text.edit}
                 </button>
@@ -2958,24 +3434,95 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                     <span className="muted">{selectedProblem.slug} · {selectedProblem.mode} · {selectedProblem.testcase_count} {text.cases} · {selectedProblem.hidden_testcase_count} {text.hidden}</span>
                   </div>
                   <div className="agent-actions">
-                    <button className="primary" onClick={saveProblemEdit}>{text.save}</button>
-                    <button onClick={cancelProblemEdit}>{text.cancel}</button>
-                    <button className="danger" onClick={() => deleteProblem(selectedProblem.id)}>{text.deleteProblem}</button>
+                    <button className="primary" disabled={problemEditLocked} onClick={() => saveProblemEdit(false)}>{problemSaving ? text.loading : text.save}</button>
+                    <button className="primary" disabled={problemEditLocked} onClick={() => saveProblemEdit(true)}>{problemSaving ? text.loading : text.revalidateDraft}</button>
+                    <button disabled={problemEditLocked} onClick={cancelProblemEdit}>{text.cancel}</button>
+                    <button className="danger" disabled={problemEditLocked} onClick={() => deleteProblem(selectedProblem.id)}>{text.deleteProblem}</button>
                   </div>
                 </div>
-                <div className="admin-edit-grid">
-                  <label>{text.titleLabel}<input value={problemEdit.title} onChange={(event) => setProblemEdit((value) => ({ ...value, title: event.target.value }))} /></label>
-                  <label>{text.tagsLabel}<input value={problemEdit.tags} onChange={(event) => setProblemEdit((value) => ({ ...value, tags: event.target.value }))} /></label>
-                  <label>{text.descriptionLabel}<textarea value={problemEdit.description} onChange={(event) => setProblemEdit((value) => ({ ...value, description: event.target.value }))} /></label>
-                  <label>{text.hintLabel}<textarea value={problemEdit.hint} onChange={(event) => setProblemEdit((value) => ({ ...value, hint: event.target.value }))} /></label>
+                {problemSaveMessage ? <p className="muted">{problemSaveMessage}</p> : null}
+                <ProblemValidationReport report={problemValidationReport} locale={locale} />
+                <div className="admin-edit-grid problem-core-grid">
+                  <label>{text.titleLabel}<input value={problemEdit.title} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, title: event.target.value }))} /></label>
+                  <label>{text.slugLabel}<input value={problemEdit.slug} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, slug: event.target.value }))} /></label>
+                  <label>{locale === "zh" ? "难度" : "Difficulty"}
+                    <select value={problemEdit.difficulty} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, difficulty: event.target.value as "easy" | "medium" | "hard" }))}>
+                      <option value="easy">easy</option>
+                      <option value="medium">medium</option>
+                      <option value="hard">hard</option>
+                    </select>
+                  </label>
+                  <label>{text.modeLabel}
+                    <select value={problemEdit.mode} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, mode: event.target.value as ProblemAuthoringMode }))}>
+                      <option value="both">{authoringModeLabel("both", locale)}</option>
+                      <option value="function">{authoringModeLabel("function", locale)}</option>
+                      <option value="acm">{authoringModeLabel("acm", locale)}</option>
+                    </select>
+                  </label>
+                  <label>{text.tagsLabel}<input value={problemEdit.tags} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, tags: event.target.value }))} /></label>
+                  <label>{text.functionSignatureLabel}<input value={problemEdit.function_signature} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, function_signature: event.target.value }))} /></label>
+                  <label>{text.timeLimitLabel}<input type="number" min="100" value={problemEdit.time_limit} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, time_limit: event.target.value }))} /></label>
+                  <label>{text.memoryLimitLabel}<input type="number" min="16" value={problemEdit.memory_limit} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, memory_limit: event.target.value }))} /></label>
+                  <label>{text.descriptionLabel}<textarea value={problemEdit.description} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, description: event.target.value }))} /></label>
+                  <label>{text.hintLabel}<textarea value={problemEdit.hint} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, hint: event.target.value }))} /></label>
+                  <label>{text.inputFormatLabel}<textarea value={problemEdit.input_format} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, input_format: event.target.value }))} /></label>
+                  <label>{text.outputFormatLabel}<textarea value={problemEdit.output_format} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, output_format: event.target.value }))} /></label>
+                </div>
+                <div className="testcase-panel-head">
+                  <h3>{text.officialSolutionsLabel}</h3>
+                  <div className="agent-actions">
+                    {LANGUAGES.filter((item) => !problemEdit.solutions.some((solution) => solution.language === item)).map((item) => (
+                      <button key={item} disabled={problemEditLocked} onClick={() => addProblemSolution(item)}>+ {languageLabel(item)}</button>
+                    ))}
+                  </div>
+                </div>
+                {problemEdit.mode === "both" ? <p className="muted">{text.dualModeSolutionNote}</p> : null}
+                <div className="admin-testcase-list official-solution-list">
+                  {problemEdit.solutions.length ? problemEdit.solutions.map((solution, index) => (
+                    <article className="testcase-card admin-testcase-card official-solution-card" key={`${solution.language}-${index}`}>
+                      <div className="testcase-card-head">
+                        <strong>{languageLabel(solution.language)}</strong>
+                      </div>
+                      <div className="admin-edit-grid official-solution-grid">
+                        <label>{locale === "zh" ? "语言" : "Language"}
+                          <select value={solution.language} disabled={problemEditLocked} onChange={(event) => updateProblemSolution(index, { language: event.target.value })}>
+                            {LANGUAGES.map((item) => (
+                              <option
+                                key={item}
+                                value={item}
+                                disabled={item !== solution.language && problemEdit.solutions.some((candidate) => candidate.language === item)}
+                              >
+                                {languageLabel(item)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>{text.timeComplexityLabel}<input value={solution.time_complexity} disabled={problemEditLocked} onChange={(event) => updateProblemSolution(index, { time_complexity: event.target.value })} /></label>
+                        <label>{text.spaceComplexityLabel}<input value={solution.space_complexity} disabled={problemEditLocked} onChange={(event) => updateProblemSolution(index, { space_complexity: event.target.value })} /></label>
+                        <label>{text.officialExplanationLabel}<textarea value={solution.explanation} disabled={problemEditLocked} onChange={(event) => updateProblemSolution(index, { explanation: event.target.value })} /></label>
+                        <label>{problemEdit.mode === "acm" ? text.acmOfficialCodeLabel : text.functionOfficialCodeLabel}<textarea value={solution.code} disabled={problemEditLocked} onChange={(event) => updateProblemSolution(index, { code: event.target.value })} /></label>
+                      </div>
+                      <div className="agent-actions">
+                        <button
+                          disabled={problemEditLocked || !agentModelAvailable}
+                          title={!agentModelAvailable ? (agentModelUnavailableReason ?? undefined) : undefined}
+                          onClick={() => generateProblemSolution(index)}
+                        >
+                          {problemSolutionGenerating === solution.language ? text.aiFillingSolution : text.aiFillSolution}
+                        </button>
+                        <button disabled={problemEditLocked} onClick={() => removeProblemSolution(index)}>{text.delete}</button>
+                      </div>
+                    </article>
+                  )) : <p className="muted">{locale === "zh" ? "还没有官方解法。请至少新增一个语言解法后再重新校验。" : "No official solutions yet. Add at least one language before revalidation."}</p>}
                 </div>
                 <div className="agent-actions">
-                  <button className="primary" onClick={saveProblemEdit}>{text.save}</button>
-                  <button onClick={cancelProblemEdit}>{text.cancel}</button>
-                  <button onClick={() => updateProblem(selectedProblem.id, { is_public: !selectedProblem.is_public })}>
+                  <button className="primary" disabled={problemEditLocked} onClick={() => saveProblemEdit(false)}>{problemSaving ? text.loading : text.save}</button>
+                  <button className="primary" disabled={problemEditLocked} onClick={() => saveProblemEdit(true)}>{problemSaving ? text.loading : text.revalidateDraft}</button>
+                  <button disabled={problemEditLocked} onClick={cancelProblemEdit}>{text.cancel}</button>
+                  <button disabled={problemEditLocked} onClick={() => updateProblem(selectedProblem.id, { is_public: !selectedProblem.is_public })}>
                     {selectedProblem.is_public ? text.private : text.public}
                   </button>
-                  <button className="danger" onClick={() => deleteProblem(selectedProblem.id)}>{text.deleteProblem}</button>
+                  <button className="danger" disabled={problemEditLocked} onClick={() => deleteProblem(selectedProblem.id)}>{text.deleteProblem}</button>
                 </div>
                 <div className="testcase-manager">
                   <div className="testcase-panel-head">
@@ -2989,8 +3536,8 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                       <label>{text.outputLabel}<textarea value={newTestcase.output} onChange={(event) => setNewTestcase((value) => ({ ...value, output: event.target.value }))} /></label>
                       <label>{text.scoreLabel}<input type="number" min="0" value={newTestcase.score} onChange={(event) => setNewTestcase((value) => ({ ...value, score: event.target.value }))} /></label>
                       <label>{text.orderLabel}<input type="number" min="0" value={newTestcase.order} onChange={(event) => setNewTestcase((value) => ({ ...value, order: event.target.value }))} /></label>
-                      <label className="checkbox-label"><input type="checkbox" checked={newTestcase.is_hidden} onChange={(event) => setNewTestcase((value) => ({ ...value, is_hidden: event.target.checked }))} />{text.hidden}</label>
-                      <label className="checkbox-label"><input type="checkbox" checked={newTestcase.is_sample} onChange={(event) => setNewTestcase((value) => ({ ...value, is_sample: event.target.checked }))} />{text.sample}</label>
+                      <label className="checkbox-label"><input type="checkbox" checked={newTestcase.is_hidden} onChange={(event) => setNewTestcase((value) => ({ ...value, is_hidden: event.target.checked, is_sample: event.target.checked ? false : value.is_sample }))} />{text.hidden}</label>
+                      <label className="checkbox-label"><input type="checkbox" checked={newTestcase.is_sample} onChange={(event) => setNewTestcase((value) => ({ ...value, is_sample: event.target.checked, is_hidden: event.target.checked ? false : value.is_hidden }))} />{text.sample}</label>
                     </div>
                     <div className="agent-actions">
                       <button className="primary" onClick={createProblemTestcase}>{text.add}</button>

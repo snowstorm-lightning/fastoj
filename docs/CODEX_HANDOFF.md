@@ -43,7 +43,14 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Formal problem management now supports deleting published problems; deletion removes related testcases, solutions, submissions, and testcase results, while approved draft records keep their history with the approved-problem link cleared.
 - The published-problem delete action is intentionally available only inside the edit panel now; list-row/card delete controls were removed to reduce accidental deletes.
 - Admins can edit a failed authoring draft and use the save-and-revalidate action to rerun sandbox validation before approval.
+- Draft target languages are now persisted on `ProblemDraft`; manual saves and revalidation require official solution code and explanation for each selected language.
+- Draft review now supports AI-filling one missing official-solution language at a time. The solution-generation prompt includes current draft fields, public samples, and existing official solutions, but omits hidden testcase content and redacts hidden values from free text.
+- Draft detail responses include grouped run history, so original model generation, bounded repair attempts, manual edits, approval, and rejection remain inspectable in the admin timeline.
 - Authoring requests and draft editing now include a `both` mode for problems that should expose both function-mode and ACM-mode practice.
+- `both` mode now uses one canonical function-style official solution per language. Validation wraps that function solution only; ACM practice shares the same JSON-argument input/output contract instead of requiring a second stdin/stdout reference program.
+- Formal problem editing now supports slug, mode, function signature, ACM input/output formats, time/memory limits, multilingual official solution CRUD, per-language AI fill, and save-and-revalidate against all current official solutions.
+- Hidden and sample testcase flags are mutually exclusive in backend create/update paths and in the admin UI.
+- Disabled-user access tokens and judge WebSocket connections are rejected; normal users cannot run or submit private problems through direct API calls.
 - Manual draft slug edits now ignore failed, rejected, and historical approved drafts; true duplicate active slugs still show a visible error instead of silently appending `-2`/`-3`.
 - Draft action buttons now prevent approving unsaved local edits, ask for publish/reject confirmation, and only enable cancel when local edits exist.
 - Rejected drafts now render as an explicit status chip in the left draft list, and the formal-problem edit panel has a cancel action.
@@ -51,7 +58,7 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Function-mode authoring validation treats raw string output and JSON string-literal expected output as equivalent, covering no-input string-return tasks such as `print-qiu-qiu`.
 - Docker Compose now gives the API service access to the Docker judge runtime so admin draft validation can run synchronously in the API container.
 - README and README.zh-CN describe the new admin testcase management and bounded authoring-agent repair behavior.
-- Verification for this batch: `uv run ruff check .` passed; `uv run pytest` passed with 132 tests; `cd frontend && npm run build` passed; `cd frontend && npm test` passed with 9 files / 23 tests; `docker compose up --build -d api` rebuilt the API image; `docker compose ps api` reported API healthy; health passed at `http://127.0.0.1:8010/api/v1/health`; a Docker-backed authoring validation smoke for `print-qiu-qiu` passed with one public testcase.
+- Verification for this batch: `uv run ruff check .` passed; `uv run pytest` passed with 149 tests; `cd frontend && npm run build` passed; `cd frontend && npm test` passed with 9 files / 25 tests; `docker compose up --build -d api` rebuilt the API image; `docker compose ps api` reported API healthy; health passed at `http://127.0.0.1:8010/api/v1/health`.
 
 ## 2026-05-29 Workbench Run Panel And Auth Feedback
 

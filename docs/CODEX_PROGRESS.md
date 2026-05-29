@@ -37,7 +37,15 @@
 - [x] Added admin-only published problem deletion with related testcase, solution, submission, and testcase-result cleanup.
 - [x] Kept published-problem deletion inside the edit panel only, removing the row/card delete action to reduce accidental deletes.
 - [x] Added explicit draft save-and-revalidate controls so admins can edit failed AI drafts and run validation again before approval.
+- [x] Persisted draft target languages and made manual draft revalidation enforce that every selected language has a non-empty official solution and explanation.
+- [x] Added admin AI fill for one missing draft official-solution language at a time; the prompt uses current draft fields, public samples, and existing solutions while omitting hidden testcase content.
+- [x] Added grouped draft run history in admin responses/UI so generation, repair, manual edit, approval, and rejection events remain visible instead of being overwritten by the latest manual edit.
 - [x] Added authoring `both` mode so the Agent request and draft editor can represent problems that support both function and ACM practice.
+- [x] Switched `both` mode to a single canonical function-style official solution per language; validation wraps that function solution and ACM practice shares the same JSON-argument input/output contract.
+- [x] Expanded the formal problem editor to cover slug, mode, function signature, ACM input/output formats, time/memory limits, multilingual official solutions, per-language AI fill, and save-and-revalidate.
+- [x] Added admin official-solution CRUD and formal-problem revalidation endpoints; revalidation uses safe validation reports and does not expose hidden case content outside admin-only data.
+- [x] Enforced hidden/sample testcase mutual exclusion on backend create/update and mirrored that constraint in the admin UI.
+- [x] Hardened auth/submission boundaries so disabled-user tokens and judge WebSocket connections are rejected, and regular users cannot run or submit private problems directly.
 - [x] Changed manual draft slug edits to ignore failed/rejected/historical approved drafts, reject true duplicate active slugs with a visible error, and stop silently appending a numeric suffix.
 - [x] Hardened draft action buttons: approving now requires no unsaved edits and asks for confirmation; rejecting asks for confirmation; cancel is enabled only when there are local edits.
 - [x] Made rejected drafts visually distinct in the draft list and added a cancel action for the formal-problem edit panel.
@@ -45,7 +53,7 @@
 - [x] Fixed authoring validation for function solutions that return strings where expected output is represented as a JSON string literal.
 - [x] Updated Docker Compose so the API service can use the Docker judge runtime for synchronous admin draft validation.
 - [x] Updated README and Chinese README for the new admin testcase and authoring-agent behavior.
-- [x] Verification passed: `uv run ruff check .`, `uv run pytest` (132 passed), `cd frontend && npm run build`, `cd frontend && npm test` (9 files / 23 tests passed), `docker compose up --build -d api`, `docker compose ps api` healthy, API health at `http://127.0.0.1:8010/api/v1/health`, and a Docker-backed authoring validation smoke for `print-qiu-qiu`.
+- [x] Verification passed: `uv run ruff check .`, `uv run pytest` (149 passed), `cd frontend && npm run build`, `cd frontend && npm test` (9 files / 25 tests passed), `docker compose up --build -d api`, `docker compose ps api` healthy, and API health at `http://127.0.0.1:8010/api/v1/health`.
 
 ## 2026-05-29 Workbench Run Panel And Auth Feedback
 

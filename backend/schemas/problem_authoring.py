@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.ai.schemas import AILocale, AIModelProfile
+from backend.core.code_normalization import normalize_source_code
 from backend.core.languages import Language
 
 ProblemMode = Literal["function", "acm", "both"]
@@ -63,6 +64,8 @@ class ProblemAuthoringRequest(BaseModel):
         languages = list(self.target_languages or [])
         if self.target_language not in languages:
             languages.insert(0, self.target_language)
+        if len(languages) > 7:
+            raise ValueError("At most 7 target languages are supported")
         self.target_language = languages[0]
         self.target_languages = languages
         return self
@@ -89,6 +92,11 @@ class AuthoredOfficialSolution(BaseModel):
         if not Language.is_supported(language):
             raise ValueError(f"Unsupported language: {language}")
         return language
+
+    @field_validator("code")
+    @classmethod
+    def clean_code(cls, value: str) -> str:
+        return normalize_source_code(value)
 
 
 class AuthoredProblemDraft(BaseModel):
@@ -222,6 +230,7 @@ class ProblemDraftUpdate(BaseModel):
     difficulty: Literal["easy", "medium", "hard"] | None = None
     tags: list[str] | None = None
     mode: ProblemMode | None = None
+    target_languages: list[str] | None = Field(default=None, max_length=7)
     input_format: str | None = None
     output_format: str | None = None
     function_signature: str | None = None
@@ -243,6 +252,39 @@ class ProblemDraftUpdate(BaseModel):
             return None
         return [tag.strip() for tag in value if tag.strip()]
 
+    @field_validator("target_languages")
+    @classmethod
+    def clean_optional_target_languages(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned: list[str] = []
+        for item in value:
+            language = item.strip().lower()
+            if not language:
+                continue
+            if not Language.is_supported(language):
+                raise ValueError(f"Unsupported language: {language}")
+            if language not in cleaned:
+                cleaned.append(language)
+        return cleaned or None
+
+
+class ProblemDraftSolutionGenerateRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    language: str = Field(max_length=20)
+    locale: AILocale = "zh"
+    model_profile: AIModelProfile = "default"
+    draft: ProblemDraftUpdate | None = None
+
+    @field_validator("language")
+    @classmethod
+    def clean_language(cls, value: str) -> str:
+        language = value.strip().lower()
+        if not Language.is_supported(language):
+            raise ValueError(f"Unsupported language: {language}")
+        return language
+
 
 class ProblemDraftResponse(BaseModel):
     id: str
@@ -252,6 +294,7 @@ class ProblemDraftResponse(BaseModel):
     difficulty: str
     tags: list[str]
     mode: str
+    target_languages: list[str] = Field(default_factory=list)
     input_format: str | None = None
     output_format: str | None = None
     function_signature: str | None = None
@@ -272,6 +315,7 @@ class ProblemDraftResponse(BaseModel):
     created_at: str
     updated_at: str
     steps: list[AgentStepResponse] = Field(default_factory=list)
+    runs: list[AgentRunResponse] = Field(default_factory=list)
 
 
 class ProblemDraftListItem(BaseModel):
@@ -281,6 +325,7 @@ class ProblemDraftListItem(BaseModel):
     difficulty: str
     tags: list[str]
     mode: str
+    target_languages: list[str] = Field(default_factory=list)
     status: str
     validation_summary: dict
     approved_problem_id: str | None = None

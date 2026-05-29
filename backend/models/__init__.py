@@ -201,6 +201,7 @@ class ProblemDraft(Base):
     official_solution_code = Column(Text, nullable=False)
     official_solution_explanation = Column(Text, nullable=False)
     official_solutions_json = Column(Text, nullable=False, default="[]")
+    target_languages_json = Column(Text, nullable=False, default="[]")
     time_complexity = Column(String(50), nullable=True)
     space_complexity = Column(String(50), nullable=True)
     testcases_json = Column(Text, nullable=False, default="[]")

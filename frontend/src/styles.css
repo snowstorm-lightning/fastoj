@@ -805,7 +805,7 @@ p {
   min-height: 96px;
 }
 
-.problem-edit-panel .admin-edit-grid label:nth-child(n + 3) {
+.problem-core-grid label:nth-child(n + 9) {
   grid-column: 1 / -1;
 }
 
@@ -869,12 +869,12 @@ p {
   gap: 10px;
 }
 
-.official-solution-grid label:nth-child(2),
-.official-solution-grid label:nth-child(3) {
+.official-solution-grid label:nth-child(4),
+.official-solution-grid label:nth-child(5) {
   grid-column: 1 / -1;
 }
 
-.official-solution-grid label:nth-child(3) textarea {
+.official-solution-grid label:nth-child(5) textarea {
   min-height: 180px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -964,6 +964,14 @@ p {
   padding-left: 10px;
   display: grid;
   gap: 2px;
+}
+
+.agent-run-group {
+  display: grid;
+  gap: 7px;
+  border: 1px solid #2f343b;
+  border-radius: 8px;
+  padding: 9px;
 }
 
 .validation-report {

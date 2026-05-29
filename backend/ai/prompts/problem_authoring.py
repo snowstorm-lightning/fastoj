@@ -12,7 +12,19 @@ Prefer JSON-line inputs with one JSON value per argument line; a single JSON obj
 For ACM mode, provide stdin/stdout testcases and clear input_format/output_format.
 For both mode, provide both function_signature and input_format/output_format. Testcase input should use the function JSON argument format; ACM submissions receive the same input through stdin.
 Always include official solution code, explanation, time complexity, space complexity, and validation notes.
-When target_languages contains multiple languages, include one official solution per requested language."""
+When target_languages contains multiple languages, include one official solution per requested language.
+For both mode, every official solution must be a function-style canonical solution, not a main/stdin program.
+Use ASCII straight quotes inside code. Do not use curly or smart quotes."""
+
+SOLUTION_SYSTEM_PROMPT = """You are FastOJ's admin-only official solution assistant.
+Generate one correct official solution for an existing problem draft in the requested programming language.
+Return only valid JSON matching the requested schema. Do not wrap it in Markdown.
+Use the problem statement, signature, formats, public samples, and existing official solutions as context.
+Do not rely on hidden testcase content; hidden testcase content is intentionally omitted.
+For function mode, define the function represented by function_signature in the requested language.
+For ACM mode, read stdin and write stdout.
+For both mode, define the function represented by function_signature; do not include a main function or stdin parsing.
+Use ASCII straight quotes inside code. Do not use curly or smart quotes."""
 
 JSON_SCHEMA: dict[str, Any] = {
     "title": "string",
@@ -44,6 +56,12 @@ JSON_SCHEMA: dict[str, Any] = {
     "validation_notes": "string",
 }
 
+SOLUTION_JSON_SCHEMA: dict[str, Any] = {
+    "language": "requested language string",
+    "code": "complete official solution code string",
+    "explanation": "short official solution explanation string",
+}
+
 
 def build_prompt(context: dict[str, Any]) -> str:
     payload = {
@@ -58,11 +76,30 @@ def build_prompt(context: dict[str, Any]) -> str:
             "official_solutions must include exactly one solution object for every requested target_languages entry.",
             "official_solution_language/code/explanation should mirror the first official_solutions entry for backward compatibility.",
             "For function mode, every official solution should define the function represented by function_signature in that language.",
-            "For both mode, every official solution should define the function represented by function_signature; FastOJ can wrap it for validation and custom expected-output generation.",
+            "For both mode, every official solution should define only the function represented by function_signature; do not generate main methods, stdin readers, or stdout printing.",
             "For function or both mode, testcase input must be either newline-separated JSON values matching the function arguments, a single JSON array matching all arguments, or a single JSON object keyed by argument names.",
             "For function or both mode, testcase output must be the JSON-serializable return value, not printed stdout text.",
             "For combination or set-like outputs, make the official solution and expected outputs use deterministic canonical ordering.",
             "For ACM-only mode, every official solution must read stdin and write stdout.",
+            "Use only ASCII straight quotes in source code, never curly or smart quotes.",
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def build_solution_prompt(context: dict[str, Any]) -> str:
+    payload = {
+        "task": "Generate one official solution for an existing FastOJ draft.",
+        "input": context,
+        "required_json_schema": SOLUTION_JSON_SCHEMA,
+        "hard_requirements": [
+            "Return exactly one solution for target_language.",
+            "Do not include hidden testcase input or expected output.",
+            "Use deterministic canonical ordering for set-like or combination outputs.",
+            "For function or both mode, return the problem's return value from the named function; do not print from the function and do not include ACM stdin/stdout scaffolding.",
+            "For ACM-only mode, read stdin and print the answer.",
+            "Use only ASCII straight quotes in source code, never curly or smart quotes.",
+            "The explanation must describe the algorithm and why it is correct.",
         ],
     }
     return json.dumps(payload, ensure_ascii=False)

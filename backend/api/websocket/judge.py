@@ -26,7 +26,11 @@ async def judge_status_websocket(
         user_id = payload.get("sub")
         user = db.query(User).filter(User.id == user_id).first()
         query = db.query(Submission).filter(Submission.id == submission_id)
-        if not user or (user.role != "admin" and not query.filter(Submission.user_id == user.id).first()):
+        if (
+            not user
+            or not user.is_active
+            or (user.role != "admin" and not query.filter(Submission.user_id == user.id).first())
+        ):
             await websocket.close(code=4003)
             return
     except Exception:

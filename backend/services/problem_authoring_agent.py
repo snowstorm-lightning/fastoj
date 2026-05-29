@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.ai.profiles import resolve_ai_config
 from backend.ai.prompts import problem_authoring
 from backend.ai.providers import AIProviderUnavailableError, BaseAIProvider, build_provider
+from backend.core.code_normalization import normalize_source_code
 from backend.core.languages import Language
 from backend.models import (
     AgentRun,
@@ -197,55 +198,63 @@ class ProblemDraftValidationAdapter:
 
     def _run_solution(self, draft: AuthoredProblemDraft, testcases: list[dict[str, Any]]) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
+        execution_modes = ["function"] if draft.mode in {"function", "both"} else ["acm"]
         for solution in draft.official_solutions:
             language = solution.language
-            try:
-                code = (
-                    wrap_function_submission(
-                        solution.code,
-                        language,
-                        draft.slug_candidate or "generated-problem",
-                        draft.function_signature,
+            for execution_mode in execution_modes:
+                try:
+                    code = (
+                        wrap_function_submission(
+                            solution.code,
+                            language,
+                            draft.slug_candidate or "generated-problem",
+                            draft.function_signature,
+                        )
+                        if execution_mode == "function"
+                        else solution.code
                     )
-                    if draft.mode in {"function", "both"}
-                    else solution.code
-                )
-            except ValueError as exc:
-                results.append(
-                    {
-                        "case_index": None,
-                        "hidden": None,
-                        "solution_language": language,
-                        "passed": False,
-                        "status": "se",
-                        "error_message": str(exc),
-                    }
-                )
-                continue
-            for index, testcase in enumerate(testcases, start=1):
-                execution = self.executor.execute(
-                    code=code,
-                    language=language,
-                    input_data=str(testcase["input"]),
-                    time_limit=draft.time_limit,
-                    memory_limit=draft.memory_limit,
-                )
-                actual = str(execution.get("output") or "").strip()
-                expected = str(testcase["output"]).strip()
-                status_value = execution.get("status") or "se"
-                passed = status_value == "ac" and self._outputs_match(actual, expected)
-                results.append(
-                    {
-                        "case_index": index,
-                        "hidden": bool(testcase["is_hidden"]),
-                        "solution_language": language,
-                        "passed": passed,
-                        "status": "ac" if passed else status_value if status_value != "ac" else "wa",
-                        "execute_time": execution.get("execute_time", 0),
-                        "memory_used": execution.get("memory_used", 0),
-                        "error_message": self._safe_case_error(status_value, passed),
-                    }
-                )
+                except ValueError as exc:
+                    results.append(
+                        {
+                            "case_index": None,
+                            "hidden": None,
+                            "solution_language": language,
+                            "execution_mode": execution_mode,
+                            "problem_mode": draft.mode,
+                            "validation_mode": "canonical_function" if draft.mode == "both" else execution_mode,
+                            "passed": False,
+                            "status": "se",
+                            "error_message": str(exc),
+                        }
+                    )
+                    continue
+                for index, testcase in enumerate(testcases, start=1):
+                    execution = self.executor.execute(
+                        code=code,
+                        language=language,
+                        input_data=str(testcase["input"]),
+                        time_limit=draft.time_limit,
+                        memory_limit=draft.memory_limit,
+                    )
+                    actual = str(execution.get("output") or "").strip()
+                    expected = str(testcase["output"]).strip()
+                    status_value = execution.get("status") or "se"
+                    passed = status_value == "ac" and self._outputs_match(actual, expected)
+                    results.append(
+                        {
+                            "case_index": index,
+                            "hidden": bool(testcase["is_hidden"]),
+                            "solution_language": language,
+                            "execution_mode": execution_mode,
+                            "problem_mode": draft.mode,
+                            "validation_mode": "canonical_function" if draft.mode == "both" else execution_mode,
+                            "passed": passed,
+                            "status": "ac" if passed else status_value if status_value != "ac" else "wa",
+                            "execute_time": execution.get("execute_time", 0),
+                            "memory_used": execution.get("memory_used", 0),
+                            "error_message": self._safe_case_error(status_value, passed),
+                        }
+                    )
         return results
 
     def _function_name(self, draft: AuthoredProblemDraft) -> str:
@@ -314,6 +323,8 @@ class ProblemDraftValidationAdapter:
         if passed:
             return None
         status = str(status_value or "se").upper()
+        if status == "AC":
+            return "Official solution output did not match expected output during validation."
         return f"Official solution returned {status} during validation."
 
     def _case_summary(self, case_results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -452,6 +463,7 @@ class ProblemAuthoringAgentService:
                 official_solution_code=authored.official_solution_code,
                 official_solution_explanation=authored.official_solution_explanation,
                 official_solutions_json=dump_json(self._solutions(authored)),
+                target_languages_json=dump_json(payload.requested_languages()),
                 time_complexity=authored.time_complexity,
                 space_complexity=authored.space_complexity,
                 testcases_json=dump_json(testcases),
@@ -564,6 +576,8 @@ class ProblemAuthoringAgentService:
         draft = self._get_draft(draft_id)
         if draft.status == "approved":
             raise ValueError("Approved drafts cannot be edited")
+        if draft.status == "rejected":
+            raise ValueError("Rejected drafts cannot be edited")
 
         values = payload.model_dump(exclude_unset=True)
         changed_fields = sorted(values.keys())
@@ -586,6 +600,8 @@ class ProblemAuthoringAgentService:
             draft.tags = dump_json(values["tags"])
         if "mode" in values and values["mode"] is not None:
             draft.mode = values["mode"]
+        if "target_languages" in values and values["target_languages"] is not None:
+            draft.target_languages_json = dump_json(values["target_languages"])
         if "input_format" in values:
             draft.input_format = self._nullable_text(values["input_format"])
         if "output_format" in values:
@@ -635,7 +651,8 @@ class ProblemAuthoringAgentService:
             draft.testcases_json = dump_json(testcases)
 
         authored = self._draft_model_from_record(draft, testcases)
-        validation_report = self.validator.validate(authored, testcases)
+        required_languages = self._target_languages_from_record(draft, authored)
+        validation_report = self.validator.validate(authored, testcases, required_languages)
         draft.validation_report_json = dump_json(validation_report)
         draft.status = "validated" if validation_report["passed"] else "validation_failed"
 
@@ -671,6 +688,90 @@ class ProblemAuthoringAgentService:
         self.db.commit()
         self.db.refresh(draft)
         return draft
+
+    def revalidate_draft(self, draft_id: str, current_user: User) -> ProblemDraft:
+        return self.update_draft(draft_id, ProblemDraftUpdate(), current_user)
+
+    def generate_solution_for_draft(
+        self,
+        draft_id: str,
+        language: str,
+        model_profile: str,
+        locale: str,
+        current_user: User,
+        draft_update: ProblemDraftUpdate | None = None,
+    ) -> AuthoredOfficialSolution:
+        draft = self._get_draft(draft_id)
+        if draft.status in {"approved", "rejected"}:
+            raise ValueError("Approved or rejected drafts are read-only")
+        language = language.strip().lower()
+        if not Language.is_supported(language):
+            raise ValueError(f"Unsupported language: {language}")
+
+        run = AgentRun(
+            id=uuid.uuid4(),
+            run_type="problem_authoring_solution",
+            status="running",
+            input_json=dump_json({"draft_id": str(draft.id), "language": language}),
+            output_json="{}",
+            model_profile=model_profile,
+            locale=locale,
+            created_by=current_user.id,
+            draft_id=draft.id,
+        )
+        self.db.add(run)
+        self.db.flush()
+
+        try:
+            context = self._solution_generation_context(draft, language, locale, draft_update)
+            provider = self.provider
+            if provider is None:
+                config = resolve_ai_config(model_profile)
+                provider = build_provider(config)
+            raw = provider.complete_json(
+                problem_authoring.SOLUTION_SYSTEM_PROMPT,
+                problem_authoring.build_solution_prompt(context),
+            )
+            self._add_step(
+                run,
+                "solution_generation",
+                "ai_provider.complete_json",
+                {"draft_id": str(draft.id), "language": language, "model_profile": model_profile},
+                {"raw_length": len(raw)},
+                "succeeded",
+            )
+            solution = self._parse_solution_response(raw, language)
+            run.status = "succeeded"
+            run.output_json = dump_json({"language": solution.language, "code_length": len(solution.code)})
+            run.finished_at = datetime.utcnow()
+            self.db.commit()
+            return solution
+        except AIProviderUnavailableError as exc:
+            self._fail_run(run, str(exc), "solution_generation")
+            raise
+        except (ValidationError, ValueError) as exc:
+            self._fail_run(run, str(exc), "solution_generation")
+            raise
+
+    def generate_solution_from_context(
+        self,
+        context: dict[str, Any],
+        language: str,
+        model_profile: str,
+    ) -> AuthoredOfficialSolution:
+        """Generate one official solution from a sanitized admin context."""
+        language = language.strip().lower()
+        if not Language.is_supported(language):
+            raise ValueError(f"Unsupported language: {language}")
+        provider = self.provider
+        if provider is None:
+            config = resolve_ai_config(model_profile)
+            provider = build_provider(config)
+        raw = provider.complete_json(
+            problem_authoring.SOLUTION_SYSTEM_PROMPT,
+            problem_authoring.build_solution_prompt(context),
+        )
+        return self._parse_solution_response(raw, language)
 
     def _call_model(self, payload: ProblemAuthoringRequest, repair_context: dict[str, Any] | None = None) -> str:
         provider = self.provider
@@ -726,6 +827,36 @@ class ProblemAuthoringAgentService:
                 "AI problem draft JSON does not match the required schema: "
                 f"{self._validation_error_summary(exc)}"
             ) from exc
+
+    def _parse_solution_response(self, raw: str, language: str) -> AuthoredOfficialSolution:
+        data = self._extract_json(raw)
+        candidate = self._find_solution_payload(data)
+        if str(candidate.get("language") or "").strip().lower() != language:
+            candidate = {**candidate, "language": language}
+        try:
+            return AuthoredOfficialSolution.model_validate(candidate)
+        except ValidationError as exc:
+            raise ValueError(
+                "AI official solution JSON does not match the required schema: "
+                f"{self._validation_error_summary(exc)}"
+            ) from exc
+
+    def _find_solution_payload(self, data: Any) -> dict[str, Any]:
+        if isinstance(data, str):
+            return self._find_solution_payload(self._extract_json(data))
+        if not isinstance(data, dict):
+            raise ValueError("AI provider did not return a JSON object for the official solution")
+        if {"language", "code", "explanation"} & set(data):
+            return data
+        for key in ("solution", "official_solution", "data", "result", "output", "content", "json"):
+            nested = data.get(key)
+            if isinstance(nested, dict | str):
+                try:
+                    return self._find_solution_payload(nested)
+                except ValueError:
+                    continue
+        keys = ", ".join(sorted(str(key) for key in data.keys())[:8]) or "none"
+        raise ValueError(f"AI provider returned JSON without an official solution object. Top-level keys: {keys}")
 
     def _validation_error_summary(self, exc: ValidationError) -> str:
         summaries = []
@@ -825,6 +956,86 @@ class ProblemAuthoringAgentService:
             )
         return testcases
 
+    def _solution_generation_context(
+        self,
+        draft: ProblemDraft,
+        language: str,
+        locale: str,
+        draft_update: ProblemDraftUpdate | None,
+    ) -> dict[str, Any]:
+        values = draft_update.model_dump(exclude_unset=True) if draft_update else {}
+        testcases = load_json(draft.testcases_json, [])
+        if "testcases" in values and values["testcases"] is not None:
+            testcases = self._normalize_updated_testcases(values["testcases"])
+
+        solutions = self._solutions_from_record(draft)
+        if "official_solutions" in values and values["official_solutions"] is not None:
+            updated_solutions = self._normalize_updated_solutions(values["official_solutions"])
+            if updated_solutions:
+                solutions = updated_solutions
+
+        hidden_values = [
+            str(value)
+            for testcase in testcases
+            if testcase.get("is_hidden")
+            for value in (testcase.get("input"), testcase.get("output"))
+            if value is not None and len(str(value).strip()) >= 8
+        ]
+
+        def redact(value: Any) -> str | None:
+            if value is None:
+                return None
+            text = str(value)
+            for secret in hidden_values:
+                text = text.replace(secret, "[hidden]")
+            return self._truncate_for_prompt(text)
+
+        public_samples = [
+            {
+                "case_index": index,
+                "input": testcase.get("input"),
+                "expected_output": testcase.get("output"),
+                "explanation": testcase.get("explanation"),
+            }
+            for index, testcase in enumerate(testcases, start=1)
+            if not testcase.get("is_hidden")
+        ]
+
+        return {
+            "target_language": language,
+            "response_language": "Simplified Chinese" if locale == "zh" else "English",
+            "title": redact(values.get("title", draft.title)),
+            "slug": redact(values.get("slug", draft.slug)),
+            "description": redact(values.get("description", draft.description)),
+            "difficulty": values.get("difficulty", draft.difficulty),
+            "tags": values.get("tags", load_json(draft.tags, [])),
+            "mode": values.get("mode", draft.mode),
+            "input_format": redact(values.get("input_format", draft.input_format)),
+            "output_format": redact(values.get("output_format", draft.output_format)),
+            "function_signature": redact(values.get("function_signature", draft.function_signature)),
+            "time_limit": values.get("time_limit", draft.time_limit),
+            "memory_limit": values.get("memory_limit", draft.memory_limit),
+            "hint": redact(values.get("hint", draft.hint)),
+            "time_complexity": redact(values.get("time_complexity", draft.time_complexity)),
+            "space_complexity": redact(values.get("space_complexity", draft.space_complexity)),
+            "public_sample_testcases": public_samples,
+            "hidden_testcase_count": sum(1 for testcase in testcases if testcase.get("is_hidden")),
+            "existing_official_solutions": [
+                {
+                    "language": solution["language"],
+                    "code": redact(solution.get("code")) or "",
+                    "explanation": redact(solution.get("explanation")) or "",
+                }
+                for solution in solutions
+                if solution.get("language") != language
+            ],
+        }
+
+    def _truncate_for_prompt(self, value: str, limit: int = 6000) -> str:
+        if len(value) <= limit:
+            return value
+        return f"{value[:limit]}...[truncated]"
+
     def _draft_model_from_record(self, draft: ProblemDraft, testcases: list[dict[str, Any]]) -> AuthoredProblemDraft:
         public_cases: list[AuthoredTestCase] = []
         hidden_cases: list[AuthoredTestCase] = []
@@ -877,7 +1088,7 @@ class ProblemAuthoringAgentService:
         normalized = self._normalize_updated_solutions(raw_solutions)
         if normalized:
             return normalized
-        code = str(draft.official_solution_code or "")
+        code = normalize_source_code(str(draft.official_solution_code or ""))
         explanation = str(draft.official_solution_explanation or "")
         if code.strip() and explanation.strip():
             return [
@@ -889,17 +1100,43 @@ class ProblemAuthoringAgentService:
             ]
         return []
 
+    def _target_languages_from_record(
+        self,
+        draft: ProblemDraft,
+        authored: AuthoredProblemDraft | None = None,
+    ) -> list[str]:
+        raw_languages = load_json(getattr(draft, "target_languages_json", None), [])
+        languages: list[str] = []
+        if isinstance(raw_languages, list):
+            for item in raw_languages:
+                language = str(item or "").strip().lower()
+                if language and Language.is_supported(language) and language not in languages:
+                    languages.append(language)
+        if languages:
+            return languages
+        source = authored.official_solutions if authored else []
+        for solution in source:
+            language = solution.language
+            if language not in languages:
+                languages.append(language)
+        if not languages:
+            for solution in self._solutions_from_record(draft):
+                language = solution["language"]
+                if language not in languages:
+                    languages.append(language)
+        return languages
+
     def _normalize_updated_solutions(self, raw_solutions: list[Any]) -> list[dict[str, str]]:
         normalized: list[dict[str, str]] = []
         seen: set[str] = set()
         for item in raw_solutions:
             if isinstance(item, AuthoredOfficialSolution):
                 language = item.language
-                code = item.code
+                code = normalize_source_code(item.code)
                 explanation = item.explanation
             elif isinstance(item, dict):
                 language = str(item.get("language") or "").strip().lower()
-                code = str(item.get("code") or "")
+                code = normalize_source_code(str(item.get("code") or ""))
                 explanation = str(item.get("explanation") or "").strip()
             else:
                 continue
@@ -927,12 +1164,14 @@ class ProblemAuthoringAgentService:
         normalized: list[dict[str, Any]] = []
         for index, testcase in enumerate(raw_testcases, start=1):
             order = testcase.get("order") if isinstance(testcase, dict) else None
+            is_hidden = bool(testcase.get("is_hidden"))
+            is_sample = False if is_hidden else bool(testcase.get("is_sample"))
             normalized.append(
                 {
                     "input": str(testcase.get("input") or ""),
                     "output": str(testcase.get("output") or ""),
-                    "is_hidden": bool(testcase.get("is_hidden")),
-                    "is_sample": bool(testcase.get("is_sample")),
+                    "is_hidden": is_hidden,
+                    "is_sample": is_sample,
                     "explanation": self._nullable_text(testcase.get("explanation")),
                     "order": int(order) if order else index,
                 }
@@ -965,6 +1204,30 @@ class ProblemAuthoringAgentService:
         report: dict[str, Any],
         attempt: int,
     ) -> dict[str, Any]:
+        hidden_values = [
+            str(value)
+            for testcase in testcases
+            if testcase.get("is_hidden")
+            for value in (testcase.get("input"), testcase.get("output"))
+            if value is not None and len(str(value).strip()) >= 8
+        ]
+
+        def redact(value: str | None) -> str | None:
+            if value is None:
+                return None
+            text = str(value)
+            for secret in hidden_values:
+                text = text.replace(secret, "[hidden]")
+            return text
+
+        sanitized_solutions = [
+            {
+                **solution,
+                "code": redact(str(solution.get("code") or "")) or "",
+                "explanation": redact(str(solution.get("explanation") or "")) or "",
+            }
+            for solution in self._solutions(authored)
+        ]
         failed_checks = [
             {"name": check.get("name"), "message": check.get("message")}
             for check in report.get("checks", [])
@@ -1003,27 +1266,27 @@ class ProblemAuthoringAgentService:
             "case_summary": report.get("case_summary", {}),
             "public_case_results": public_results,
             "previous_draft_without_hidden_testcases": {
-                "title": authored.title,
-                "slug_candidate": authored.slug_candidate,
-                "description": authored.description,
-                "input_format": authored.input_format,
-                "output_format": authored.output_format,
-                "function_signature": authored.function_signature,
+                "title": redact(authored.title),
+                "slug_candidate": redact(authored.slug_candidate),
+                "description": redact(authored.description),
+                "input_format": redact(authored.input_format),
+                "output_format": redact(authored.output_format),
+                "function_signature": redact(authored.function_signature),
                 "difficulty": authored.difficulty,
                 "tags": authored.tags,
                 "mode": authored.mode,
                 "time_limit": authored.time_limit,
                 "memory_limit": authored.memory_limit,
-                "hint": authored.hint,
+                "hint": redact(authored.hint),
                 "official_solution_language": authored.official_solution_language,
-                "official_solution_code": authored.official_solution_code,
-                "official_solution_explanation": authored.official_solution_explanation,
-                "official_solutions": self._solutions(authored),
-                "time_complexity": authored.time_complexity,
-                "space_complexity": authored.space_complexity,
+                "official_solution_code": redact(authored.official_solution_code),
+                "official_solution_explanation": redact(authored.official_solution_explanation),
+                "official_solutions": sanitized_solutions,
+                "time_complexity": redact(authored.time_complexity),
+                "space_complexity": redact(authored.space_complexity),
                 "public_sample_testcases": public_samples,
                 "hidden_testcase_count": sum(1 for testcase in testcases if testcase.get("is_hidden")),
-                "validation_notes": authored.validation_notes,
+                "validation_notes": redact(authored.validation_notes),
             },
         }
 
