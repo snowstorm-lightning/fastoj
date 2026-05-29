@@ -58,14 +58,14 @@ class AIHintRequest(BaseModel):
     language: str | None = None
     current_code: str | None = None
     model_profile: AIModelProfile = "default"
-    locale: AILocale = "en"
+    locale: AILocale = "zh"
 
 
 class AIActionRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     model_profile: AIModelProfile = "default"
-    locale: AILocale = "en"
+    locale: AILocale = "zh"
 
 
 class AIChatRequest(BaseModel):
@@ -73,7 +73,7 @@ class AIChatRequest(BaseModel):
 
     message: str = Field(min_length=1, max_length=2000)
     model_profile: AIModelProfile = "default"
-    locale: AILocale = "en"
+    locale: AILocale = "zh"
 
 
 class AIChatResponse(BaseModel):

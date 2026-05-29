@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+Live demo: [fastoj.snowstormlightning.top](https://fastoj.snowstormlightning.top)
+
 FastOJ is an AI-assisted online judge for interview practice. It combines strict
 Docker-based judging, a Monaco coding workbench, bilingual product UI, realtime
 submission status, and AI explanations that are grounded in public judging
@@ -35,8 +37,10 @@ for that.
 
 ## Product Tour
 
-1. **Light and dark themes** - switch themes directly from the top navigation;
-   the library, workbench, graph, auth flow, and admin console all follow the
+1. **Light/dark themes and bilingual UI** - switch themes and Chinese/English
+   from the top navigation; signed-in language preference is saved on the
+   account, while guests fall back to browser language and local storage. The
+   library, workbench, graph, auth flow, and admin console all follow the
    selected theme for daytime browsing and longer night sessions.
 2. **Problem library** - search, filter by tag/difficulty, switch between visual
    cards and a dense OJ-style list, and jump into recommended practice.
@@ -57,13 +61,16 @@ for that.
    User management covers roles and account status; problem management covers
    statements, difficulty, visibility, official solutions, full testcase sets,
    and deleting retired problems. Drafts can publish dual-mode problems that
-   support both function and ACM practice. Simple drafts are allowed to use fewer
-   cases when extra hidden cases would only duplicate coverage.
+   support both function and ACM practice, and the authoring Agent can request,
+   validate, edit, and publish official solutions for multiple programming
+   languages from the same draft. Simple drafts are allowed to use fewer cases
+   when extra hidden cases would only duplicate coverage.
 
 ## Page Showcase
 
 The UI supports both light and dark themes from the top navigation. The
-screenshots below use the English UI; Chinese can be toggled from the header.
+screenshots below use the English UI; Chinese can be toggled from the header and
+is saved to the user profile after sign-in.
 
 | Problem Library | Coding Workbench |
 | --- | --- |
@@ -523,6 +530,8 @@ ignores `.env` and `.env.*`; `.env.example` contains safe placeholders only.
 - In Docker Compose, the API service also mounts the Docker socket so the
   admin-only Problem Authoring Agent can synchronously sandbox-check official
   draft solutions before approval or after an admin edit/revalidation pass.
+  Multi-language drafts are checked per official solution language before they
+  can be approved.
 - Sandbox containers run with network disabled, memory limits, pid limits,
   dropped capabilities, `no-new-privileges`, non-root execution, output
   truncation, timeout kill, and cleanup.

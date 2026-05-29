@@ -1,7 +1,5 @@
 """Tests for database models (enum tests only)."""
 
-import pytest
-
 from backend.models import (
     Difficulty,
     Language,

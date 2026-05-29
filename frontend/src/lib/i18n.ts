@@ -3,6 +3,42 @@ import { PROBLEM_ZH_EXTRA } from "./problemZh";
 
 export type Locale = "zh" | "en";
 
+export const DEFAULT_LOCALE: Locale = "zh";
+export const LOCALE_STORAGE_KEY = "fastoj.locale";
+
+export function normalizeLocale(value: unknown): Locale | null {
+  return value === "zh" || value === "en" ? value : null;
+}
+
+function browserLocale(): Locale {
+  if (typeof navigator === "undefined") return DEFAULT_LOCALE;
+  const languages = [...(navigator.languages ?? []), navigator.language].filter((language): language is string => Boolean(language));
+  for (const language of languages) {
+    const normalized = language.toLowerCase();
+    if (normalized.startsWith("zh")) return "zh";
+    if (normalized.startsWith("en")) return "en";
+  }
+  return DEFAULT_LOCALE;
+}
+
+export function readStoredLocale(): Locale {
+  if (typeof localStorage === "undefined") return browserLocale();
+  try {
+    return normalizeLocale(localStorage.getItem(LOCALE_STORAGE_KEY)) ?? browserLocale();
+  } catch {
+    return browserLocale();
+  }
+}
+
+export function writeStoredLocale(locale: Locale) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  } catch {
+    // Ignore storage failures so the UI language can still switch in-memory.
+  }
+}
+
 export const UI = {
   zh: {
     navLibrary: "题库",
@@ -13,7 +49,6 @@ export const UI = {
     register: "注册",
     logout: "退出",
     loggedIn: "已登录",
-    language: "中文",
     authMessage: "登录后可以提交、查看个人轨迹并使用 AI 解释。",
     authExpired: "登录已过期，请重新登录。",
     authSuccess: "认证成功，正在进入题库。",
@@ -22,8 +57,6 @@ export const UI = {
     authAlreadyRegistered: "用户名或邮箱已被注册。",
     authInvalidFields: "请检查用户名、邮箱和密码格式。",
     authPanelTitle: "进入训练空间",
-    loginTitle: "登录训练空间",
-    registerTitle: "创建训练账号",
     accountCopy: "题库、代码草稿、提交记录和AI反馈会在同一个账号下持续保存。",
     username: "用户名",
     email: "邮箱",
@@ -66,12 +99,8 @@ export const UI = {
     page: "第",
     backLibrary: "返回题库",
     workbench: "练习台",
-    statement: "题面",
-    result: "AI 辅助",
     resetTemplate: "重置模板",
-    run: "运行",
     runTitle: "运行公开样例",
-    submit: "提交",
     submitTitle: "提交完整评测",
     publicCases: "用例",
     solution: "题解",
@@ -87,7 +116,6 @@ export const UI = {
     noSolution: "当前语言暂无官方题解。",
     acmFrame: "ACM 模式：请自行处理标准输入和标准输出。",
     noFunctionFrame: "当前题目没有函数模式模板。",
-    functionPythonOnly: "当前题目的此语言函数评测暂未接入；请切回 Python 或使用 ACM 模式。",
     modeFunctionTitle: "点击切换到 ACM 模式。当前只需要补全题目给定函数。",
     modeAcmTitle: "点击切换到函数模式。当前需要自行处理标准输入输出。",
     modeAcmOnlyTitle: "当前题目不支持函数模式，只能使用 ACM 模式。",
@@ -102,9 +130,8 @@ export const UI = {
     expandRight: "展开 AI 辅助",
     pickLanguage: "选择提交语言",
     settingsTitle: "账号设置",
-    settingsCopy: "管理本地显示偏好和训练体验。账号资料接口接入后，这里可以扩展为真实资料设置。",
+    settingsCopy: "管理账号资料、语言偏好和本地训练体验。",
     displayName: "显示名称",
-    theme: "主题",
     compactMode: "紧凑模式",
     saveSettings: "保存设置",
     discussionTitle: "讨论区",
@@ -121,7 +148,6 @@ export const UI = {
     register: "Sign up",
     logout: "Log out",
     loggedIn: "Signed in",
-    language: "English",
     authMessage: "Sign in to submit, review your attempts, and use AI explanations.",
     authExpired: "Your session has expired. Please log in again.",
     authSuccess: "Authenticated. Opening the problem library.",
@@ -130,8 +156,6 @@ export const UI = {
     authAlreadyRegistered: "Username or email already registered.",
     authInvalidFields: "Please check the username, email, and password fields.",
     authPanelTitle: "Enter the Training Space",
-    loginTitle: "Log in to FastOJ",
-    registerTitle: "Create an account",
     accountCopy: "Problem sets, code drafts, submission history, and AI feedback stay saved under the same account.",
     username: "Username",
     email: "Email",
@@ -174,12 +198,8 @@ export const UI = {
     page: "Page",
     backLibrary: "Back to problems",
     workbench: "Workbench",
-    statement: "Statement",
-    result: "Result",
     resetTemplate: "Reset template",
-    run: "Run",
     runTitle: "Run public samples",
-    submit: "Submit",
     submitTitle: "Submit full judging",
     publicCases: "Cases",
     solution: "Solution",
@@ -195,7 +215,6 @@ export const UI = {
     noSolution: "No official solution for this language yet.",
     acmFrame: "ACM mode: read stdin and print stdout yourself.",
     noFunctionFrame: "This problem has no function-mode template.",
-    functionPythonOnly: "This problem's function judge is not available for this language yet. Switch to Python or ACM mode.",
     modeFunctionTitle: "Click to switch to ACM mode. You only complete the given function now.",
     modeAcmTitle: "Click to switch to function mode. You handle stdin/stdout now.",
     modeAcmOnlyTitle: "This problem only supports ACM mode.",
@@ -210,9 +229,8 @@ export const UI = {
     expandRight: "Open result",
     pickLanguage: "Choose language",
     settingsTitle: "Account Settings",
-    settingsCopy: "Manage local display preferences and training experience. Profile APIs can extend this later.",
+    settingsCopy: "Manage your profile, language preference, and local training experience.",
     displayName: "Display name",
-    theme: "Theme",
     compactMode: "Compact mode",
     saveSettings: "Save settings",
     discussionTitle: "Discussion",
@@ -337,6 +355,7 @@ const TAG_LABELS: Record<string, string> = {
 };
 
 const TAG_CANONICAL_BY_ZH = new Map(Object.entries(TAG_LABELS).map(([tag, label]) => [label, tag]));
+const TAG_CANONICAL_BY_LOWER = new Map(Object.keys(TAG_LABELS).map((tag) => [tag.toLowerCase(), tag]));
 
 export function localizeDifficulty(difficulty: string | null | undefined, locale: Locale): string {
   if (!difficulty) return "";
@@ -353,12 +372,15 @@ export function localizeTags(tags: string[] | null | undefined, locale: Locale):
 }
 
 export function canonicalTagQuery(value: string, locale: Locale): string {
-  if (locale === "en") return value;
+  const parts = value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean);
+  if (locale === "en") {
+    return parts.map((tag) => TAG_CANONICAL_BY_LOWER.get(tag.toLowerCase()) ?? tag).join(", ");
+  }
   return value
-    .split(",")
+    .split(/[,，]/)
     .map((tag) => {
       const trimmed = tag.trim();
-      return TAG_CANONICAL_BY_ZH.get(trimmed) ?? trimmed;
+      return TAG_CANONICAL_BY_ZH.get(trimmed) ?? TAG_CANONICAL_BY_LOWER.get(trimmed.toLowerCase()) ?? trimmed;
     })
     .filter(Boolean)
     .join(", ");

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, EmailStr
@@ -21,6 +23,7 @@ class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
+    locale: Literal["zh", "en"] = "zh"
 
 
 class UserResponse(BaseModel):
@@ -28,6 +31,7 @@ class UserResponse(BaseModel):
     username: str
     email: str
     avatar_url: str | None = None
+    locale: Literal["zh", "en"] = "zh"
     role: str = "user"
     is_active: bool = True
     created_at: str
@@ -39,6 +43,7 @@ class UserUpdate(BaseModel):
     username: str | None = None
     email: EmailStr | None = None
     avatar_url: str | None = None
+    locale: Literal["zh", "en"] | None = None
     current_password: str | None = None
     new_password: str | None = None
 
@@ -48,6 +53,10 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str
     expires_in: int
+
+
+def _normalize_locale(value: str | None) -> Literal["zh", "en"]:
+    return "en" if value == "en" else "zh"
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -66,6 +75,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         username=user_data.username,
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
+        locale=user_data.locale,
     )
     db.add(user)
     db.commit()
@@ -76,6 +86,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         username=user.username,  # type: ignore[arg-type]
         email=user.email,  # type: ignore[arg-type]
         avatar_url=user.avatar_url,  # type: ignore[arg-type]
+        locale=_normalize_locale(user.locale),  # type: ignore[arg-type]
         role=user.role or "user",  # type: ignore[arg-type]
         is_active=True if user.is_active is None else bool(user.is_active),
         created_at=user.created_at.isoformat(),
@@ -167,6 +178,7 @@ def _user_response(user: User) -> UserResponse:
         username=user.username,  # type: ignore[arg-type]
         email=user.email,  # type: ignore[arg-type]
         avatar_url=user.avatar_url,  # type: ignore[arg-type]
+        locale=_normalize_locale(user.locale),  # type: ignore[arg-type]
         role=user.role or "user",  # type: ignore[arg-type]
         is_active=True if user.is_active is None else bool(user.is_active),
         created_at=user.created_at.isoformat(),
@@ -196,6 +208,8 @@ def update_me(
         current_user.email = payload.email
     if payload.avatar_url is not None:
         current_user.avatar_url = payload.avatar_url
+    if payload.locale is not None:
+        current_user.locale = payload.locale
     if payload.new_password:
         if not payload.current_password or not verify_password(payload.current_password, current_user.password_hash):  # type: ignore[arg-type]
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")

@@ -14,6 +14,7 @@ import {
   type CurrentUser,
   type ProblemDraft,
   type ProblemFilters,
+  type UpdateMePayload,
 } from "./lib/api";
 import {
   type AIExplain,
@@ -40,9 +41,12 @@ import {
   localizeTags,
   localizedProblem,
   matchesLocalizedProblem,
+  normalizeLocale,
+  readStoredLocale,
   type Locale,
   UI,
   verdictInfo,
+  writeStoredLocale,
 } from "./lib/i18n";
 import { measureTrainingText } from "./lib/textLayout";
 import { LANGUAGES, useAppStore } from "./stores/useAppStore";
@@ -72,6 +76,11 @@ type DraftEditCase = {
   is_sample: boolean;
   order: number;
 };
+type DraftOfficialSolution = {
+  language: string;
+  code: string;
+  explanation: string;
+};
 type DraftEditState = {
   title: string;
   slug: string;
@@ -85,9 +94,7 @@ type DraftEditState = {
   time_limit: string;
   memory_limit: string;
   hint: string;
-  official_solution_language: string;
-  official_solution_code: string;
-  official_solution_explanation: string;
+  official_solutions: DraftOfficialSolution[];
   time_complexity: string;
   space_complexity: string;
   testcases: DraftEditCase[];
@@ -308,7 +315,7 @@ function AuthPage({
     setBusy(true);
     try {
       if (mode === "register") {
-        await api.register(username, email, password);
+        await api.register(username, email, password, locale);
       }
       await api.login(username, password);
       setMessage(text.authSuccess);
@@ -387,6 +394,7 @@ function SettingsPage({
   currentUser,
   theme,
   onTheme,
+  onLocaleChange,
   onClose,
   onProfileSaved,
 }: {
@@ -394,6 +402,7 @@ function SettingsPage({
   currentUser: CurrentUser | null;
   theme: AppTheme;
   onTheme: (theme: AppTheme) => void;
+  onLocaleChange: (locale: Locale) => void;
   onClose: () => void;
   onProfileSaved: (user: CurrentUser) => void;
 }) {
@@ -416,10 +425,11 @@ function SettingsPage({
 
   async function save() {
     localStorage.setItem("fastoj.compactMode", String(compact));
-    const payload: Record<string, unknown> = {
+    const payload: UpdateMePayload = {
       username: username.trim(),
       email: email.trim(),
       avatar_url: avatarUrl.trim() || null,
+      locale,
     };
     if (newPassword) {
       payload.current_password = currentPassword;
@@ -465,6 +475,17 @@ function SettingsPage({
           <input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} />
           {text.compactMode}
         </label>
+        <div className="theme-settings">
+          <span>{locale === "zh" ? "界面语言" : "Interface language"}</span>
+          <div className="segmented theme-segmented" role="group" aria-label={locale === "zh" ? "界面语言" : "Interface language"}>
+            <button type="button" className={locale === "zh" ? "active" : ""} aria-pressed={locale === "zh"} onClick={() => onLocaleChange("zh")}>
+              中文
+            </button>
+            <button type="button" className={locale === "en" ? "active" : ""} aria-pressed={locale === "en"} onClick={() => onLocaleChange("en")}>
+              English
+            </button>
+          </div>
+        </div>
         <div className="theme-settings">
           <span>{locale === "zh" ? "界面主题" : "Theme"}</span>
           <div className="segmented theme-segmented" role="group" aria-label={locale === "zh" ? "界面主题" : "Theme"}>
@@ -879,6 +900,8 @@ function validationLabel(name: string, locale: Locale): string {
   const labels: Record<string, { zh: string; en: string }> = {
     title: { zh: "题目标题", en: "Title" },
     description: { zh: "题目描述", en: "Description" },
+    official_solutions: { zh: "多语言官方解法", en: "Official solutions" },
+    official_solution_languages: { zh: "目标语言解法", en: "Target language solutions" },
     official_solution_code: { zh: "官方解法代码", en: "Official solution code" },
     official_solution_explanation: { zh: "官方解法说明", en: "Official solution explanation" },
     time_complexity: { zh: "时间复杂度", en: "Time complexity" },
@@ -920,6 +943,38 @@ function authoringModeLabel(mode: string, locale: Locale): string {
   return labels[mode]?.[locale] ?? mode;
 }
 
+function languageLabel(language: string): string {
+  const labels: Record<string, string> = {
+    python: "Python",
+    c: "C",
+    cpp: "C++",
+    java: "Java",
+    javascript: "JavaScript",
+    typescript: "TypeScript",
+    golang: "Go",
+  };
+  return labels[language] ?? language;
+}
+
+function solutionListFromDraft(draft: ProblemDraft): DraftOfficialSolution[] {
+  const raw = Array.isArray(draft.official_solutions) ? draft.official_solutions : [];
+  const solutions = raw
+    .map((solution) => ({
+      language: String(solution.language ?? "").trim() || "python",
+      code: String(solution.code ?? ""),
+      explanation: String(solution.explanation ?? ""),
+    }))
+    .filter((solution, index, list) => (
+      solution.code.trim() && list.findIndex((item) => item.language === solution.language) === index
+    ));
+  if (solutions.length) return solutions;
+  return [{
+    language: draft.official_solution_language ?? "python",
+    code: draft.official_solution_code ?? "",
+    explanation: draft.official_solution_explanation ?? "",
+  }];
+}
+
 function draftEditFromDraft(draft: ProblemDraft): DraftEditState {
   return {
     title: draft.title ?? "",
@@ -934,9 +989,7 @@ function draftEditFromDraft(draft: ProblemDraft): DraftEditState {
     time_limit: String(draft.time_limit ?? 1000),
     memory_limit: String(draft.memory_limit ?? 256),
     hint: draft.hint ?? "",
-    official_solution_language: draft.official_solution_language ?? "python",
-    official_solution_code: draft.official_solution_code ?? "",
-    official_solution_explanation: draft.official_solution_explanation ?? "",
+    official_solutions: solutionListFromDraft(draft),
     time_complexity: draft.time_complexity ?? "",
     space_complexity: draft.space_complexity ?? "",
     testcases: (draft.testcases ?? []).map((testcase, index) => ({
@@ -951,6 +1004,18 @@ function draftEditFromDraft(draft: ProblemDraft): DraftEditState {
 }
 
 function draftEditPayload(edit: DraftEditState) {
+  const officialSolutions = edit.official_solutions
+    .map((solution) => ({
+      language: solution.language.trim() || "python",
+      code: solution.code,
+      explanation: solution.explanation.trim(),
+    }))
+    .filter((solution, index, list) => (
+      solution.code.trim()
+      && solution.explanation
+      && list.findIndex((item) => item.language === solution.language) === index
+    ));
+  const primary = officialSolutions[0] ?? { language: "python", code: "", explanation: "" };
   return {
     title: edit.title.trim(),
     slug: edit.slug.trim(),
@@ -964,9 +1029,10 @@ function draftEditPayload(edit: DraftEditState) {
     time_limit: Number(edit.time_limit) || 1000,
     memory_limit: Number(edit.memory_limit) || 256,
     hint: edit.hint.trim() || null,
-    official_solution_language: edit.official_solution_language.trim() || "python",
-    official_solution_code: edit.official_solution_code,
-    official_solution_explanation: edit.official_solution_explanation.trim(),
+    official_solution_language: primary.language,
+    official_solution_code: primary.code,
+    official_solution_explanation: primary.explanation,
+    official_solutions: officialSolutions,
     time_complexity: edit.time_complexity.trim() || null,
     space_complexity: edit.space_complexity.trim() || null,
     testcases: edit.testcases.map((testcase, index) => ({
@@ -1075,18 +1141,23 @@ function DraftTestcasePanel({ draft, locale }: { draft: ProblemDraft; locale: Lo
   const [filter, setFilter] = useState<DraftCaseFilter>("all");
   const report = recordValue(draft.validation_report ?? draft.validation_summary);
   const caseResults = Array.isArray(report.case_results) ? report.case_results.map(recordValue) : [];
-  const resultByIndex = new Map(caseResults.map((result) => [Number(result.case_index), result]));
+  const resultsByIndex = new Map<number, Record<string, unknown>[]>();
+  for (const result of caseResults) {
+    const index = Number(result.case_index);
+    if (!Number.isFinite(index) || index <= 0) continue;
+    resultsByIndex.set(index, [...(resultsByIndex.get(index) ?? []), result]);
+  }
   const testcases = (draft.testcases ?? []).map(recordValue);
   const labels = locale === "zh"
     ? { title: "用例详情", all: "全部", public: "公开", hidden: "隐藏", failed: "失败", input: "输入", output: "预期输出", explanation: "解释", noCases: "没有用例数据。" }
     : { title: "Testcase details", all: "All", public: "Public", hidden: "Hidden", failed: "Failed", input: "Input", output: "Expected output", explanation: "Explanation", noCases: "No testcase data." };
   const visibleCases = testcases
-    .map((testcase, index) => ({ testcase, index: index + 1, result: resultByIndex.get(index + 1) }))
-    .filter(({ testcase, result }) => {
+    .map((testcase, index) => ({ testcase, index: index + 1, results: resultsByIndex.get(index + 1) ?? [] }))
+    .filter(({ testcase, results }) => {
       const hidden = testcase.is_hidden === true;
       if (filter === "public") return !hidden;
       if (filter === "hidden") return hidden;
-      if (filter === "failed") return Boolean(result) && result?.passed !== true;
+      if (filter === "failed") return results.some((result) => result.passed !== true);
       return true;
     });
   return (
@@ -1101,16 +1172,24 @@ function DraftTestcasePanel({ draft, locale }: { draft: ProblemDraft; locale: Lo
           ))}
         </div>
       </div>
-      {visibleCases.length ? visibleCases.map(({ testcase, index, result }) => {
+      {visibleCases.length ? visibleCases.map(({ testcase, index, results }) => {
         const hidden = testcase.is_hidden === true;
-        const passed = result?.passed === true;
-        const statusText = result ? String(result.status ?? (passed ? "ac" : "wa")) : locale === "zh" ? "未运行" : "not run";
+        const hasResults = results.length > 0;
         return (
           <article className="testcase-card" key={`${index}-${String(testcase.input ?? "")}`}>
             <div className="testcase-card-head">
               <strong>{locale === "zh" ? "用例" : "Case"} {index}</strong>
               <span className={hidden ? "case-chip hidden" : "case-chip public"}>{hidden ? labels.hidden : labels.public}</span>
-              {result ? <span className={passed ? "case-chip passed" : "case-chip failed"}>{statusText}</span> : null}
+              {hasResults ? results.map((result) => {
+                const passed = result.passed === true;
+                const language = String(result.solution_language ?? draft.official_solution_language ?? "python");
+                const statusText = String(result.status ?? (passed ? "ac" : "wa"));
+                return (
+                  <span className={passed ? "case-chip passed" : "case-chip failed"} key={`${language}-${statusText}`}>
+                    {languageLabel(language)} {statusText}
+                  </span>
+                );
+              }) : null}
             </div>
             <div className="testcase-code-grid">
               <label>{labels.input}<pre>{String(testcase.input ?? "")}</pre></label>
@@ -1119,7 +1198,11 @@ function DraftTestcasePanel({ draft, locale }: { draft: ProblemDraft; locale: Lo
             {testcase.explanation ? (
               <p className="muted"><strong>{labels.explanation}: </strong>{String(testcase.explanation)}</p>
             ) : null}
-            {result?.error_message ? <p className="muted">{String(result.error_message)}</p> : null}
+            {results.map((result) => result.error_message ? (
+              <p className="muted" key={`${String(result.solution_language ?? "")}-${String(result.error_message)}`}>
+                {String(result.solution_language ?? draft.official_solution_language ?? "python")}: {String(result.error_message)}
+              </p>
+            ) : null)}
           </article>
         );
       }) : <p className="muted">{labels.noCases}</p>}
@@ -1186,7 +1269,6 @@ function Workspace({
   const displayProblem = localizedProblem(problem, locale);
   const modeInfo = getProblemMode(problem);
   const draftKey = `${language}.${judgeMode}`;
-  const functionBlocked = false;
   const aiProfiles = aiProfilesQuery.data ?? [];
   const aiPreferredProfile = preferredAIProfile(aiProfiles);
   const aiDisabledReason = !authenticated
@@ -1205,6 +1287,7 @@ function Workspace({
   useEffect(() => { localStorage.setItem("fastoj.editorHeight", String(editorHeight)); }, [editorHeight]);
   useEffect(() => { localStorage.setItem("fastoj.aiModel", aiModel); }, [aiModel]);
   useEffect(() => { if (problemId) setRecentProblemId(problemId); }, [problemId, setRecentProblemId]);
+  useEffect(() => { clearCopilotState(); }, [locale]);
   useEffect(() => {
     if (!aiProfiles.length) return;
     if (!aiProfiles.some((profile) => profile.available && profile.value === aiModel)) {
@@ -1360,7 +1443,7 @@ function Workspace({
   }
 
   async function judge(runOnly: boolean) {
-    if (!problemId || functionBlocked) return;
+    if (!problemId) return;
     if (!authenticated || !localStorage.getItem("fastoj.jwt")) {
       onRequireAuth();
       return;
@@ -1376,7 +1459,7 @@ function Workspace({
     activeSubmissionIdRef.current = null;
     clearCopilotState();
     setSubmission(null);
-    setRunSnapshot({ submissionId: "", code, cases: panelCases, kind: runOnly ? "run" : "submit" });
+    setRunSnapshot({ submissionId: "", cases: panelCases });
     setDetailTab("judge");
     setLeftOpen(true);
     setEvents([{ type: "pending", status: "pending", progress: 0 }]);
@@ -1384,7 +1467,7 @@ function Workspace({
       const created = await api.submit(problemId, language, code, runOnly, judgeMode, runPayload);
       if (activeProblemIdRef.current !== requestProblemId || judgeRequestRef.current !== requestId) return;
       activeSubmissionIdRef.current = created.id;
-      setRunSnapshot({ submissionId: created.id, code, cases: panelCases, kind: runOnly ? "run" : "submit" });
+      setRunSnapshot({ submissionId: created.id, cases: panelCases });
       setSubmission(created as SubmissionDetail);
       connectStatus(created.id);
     } catch (error) {
@@ -1647,10 +1730,10 @@ function Workspace({
             </select>
             <AIModelDropdown value={aiModel} locale={locale} profiles={aiProfiles} disabledReason={aiDisabledReason} onChange={setAiModel} />
             <button className="icon-button tip" data-tip={text.resetTemplate} onClick={resetEditorTemplate}><IconGlyph>R</IconGlyph></button>
-            <button className="icon-button run-action tip" data-tip={text.runTitle} onClick={() => judge(true)} disabled={functionBlocked}><IconGlyph>▶</IconGlyph></button>
-            <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)} disabled={functionBlocked}><IconGlyph>↑</IconGlyph></button>
+            <button className="icon-button run-action tip" data-tip={text.runTitle} onClick={() => judge(true)}><IconGlyph>▶</IconGlyph></button>
+            <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)}><IconGlyph>↑</IconGlyph></button>
           </div>
-          <FunctionFrame problem={problem} mode={judgeMode} language={language} blocked={functionBlocked} locale={locale} />
+          <FunctionFrame problem={problem} mode={judgeMode} language={language} locale={locale} />
           <CodeEditor language={language} value={code} onChange={updateCode} theme={theme} />
           <div
             className="editor-result-resizer"
@@ -1666,7 +1749,7 @@ function Workspace({
             activeIndex={activeRunCase}
             submission={submission}
             snapshot={runSnapshot}
-            canRun={Boolean(problem) && !functionBlocked}
+            canRun={Boolean(problem)}
             onActiveIndex={setActiveRunCase}
             onChangeInput={updateRunCase}
             onAddCase={addRunCase}
@@ -1810,7 +1893,7 @@ function functionSignaturePreview(starter: string, language: string, fallback: s
   return (line ?? fallback).replace(/\s*\{\s*$/, "");
 }
 
-function FunctionFrame({ problem, mode, language, blocked, locale }: { problem?: ProblemDetail; mode: JudgeMode; language: string; blocked: boolean; locale: Locale }) {
+function FunctionFrame({ problem, mode, language, locale }: { problem?: ProblemDetail; mode: JudgeMode; language: string; locale: Locale }) {
   const text = UI[locale];
   if (mode !== "function") return <div className="function-frame">{text.acmFrame}</div>;
   const spec = getFunctionSpec(problem);
@@ -1820,9 +1903,9 @@ function FunctionFrame({ problem, mode, language, blocked, locale }: { problem?:
     ? spec.signature
     : functionSignaturePreview(starter, language, spec.signature);
   return (
-    <div className={blocked ? "function-frame warning" : "function-frame"}>
+    <div className="function-frame">
       <strong>{signature}</strong>
-      <span>{blocked ? text.functionPythonOnly : getLocalizedFunctionDescription(problem, locale)}</span>
+      <span>{getLocalizedFunctionDescription(problem, locale)}</span>
     </div>
   );
 }
@@ -1963,7 +2046,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       solutions: "题解",
       public: "公开",
       private: "隐藏",
-      saveSolution: "保存 Python 题解",
       problemAgent: "出题 Agent",
       agentNotice: "AI 生成内容只保存为草稿，管理员审批前不会发布。",
       generateDraft: "生成草稿",
@@ -1971,7 +2053,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       rejectDraft: "拒绝草稿",
       draftPreview: "草稿预览",
       draftEdit: "草稿编辑",
-      saveDraft: "保存草稿",
       revalidateDraft: "保存并重新校验",
       resetDraftEdit: "取消更改",
       confirmApproveDraft: "确定发布当前已保存并通过校验的草稿吗？未保存的更改不会被发布。",
@@ -2000,11 +2081,13 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       hintLabel: "提示",
       tagsLabel: "标签（逗号分隔）",
       modeLabel: "模式",
+      targetLanguagesLabel: "目标语言",
       timeLimitLabel: "时间限制",
       memoryLimitLabel: "内存限制",
       functionSignatureLabel: "函数签名",
       inputFormatLabel: "输入格式",
       outputFormatLabel: "输出格式",
+      officialSolutionsLabel: "多语言官方解法",
       officialCodeLabel: "官方解法代码",
       officialExplanationLabel: "官方解法说明",
       timeComplexityLabel: "时间复杂度",
@@ -2039,7 +2122,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       solutions: "solutions",
       public: "Public",
       private: "Private",
-      saveSolution: "Save Python solution",
       problemAgent: "Problem Agent",
       agentNotice: "AI-generated content is saved as a draft and is never published before admin approval.",
       generateDraft: "Generate draft",
@@ -2047,7 +2129,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       rejectDraft: "Reject",
       draftPreview: "Draft preview",
       draftEdit: "Draft editor",
-      saveDraft: "Save draft",
       revalidateDraft: "Save and revalidate",
       resetDraftEdit: "Discard changes",
       confirmApproveDraft: "Publish the current saved and validated draft? Unsaved edits will not be published.",
@@ -2076,11 +2157,13 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       hintLabel: "Hint",
       tagsLabel: "Tags, comma separated",
       modeLabel: "Mode",
+      targetLanguagesLabel: "Target languages",
       timeLimitLabel: "Time limit",
       memoryLimitLabel: "Memory limit",
       functionSignatureLabel: "Function signature",
       inputFormatLabel: "Input format",
       outputFormatLabel: "Output format",
+      officialSolutionsLabel: "Official solutions by language",
       officialCodeLabel: "Official solution code",
       officialExplanationLabel: "Official solution explanation",
       timeComplexityLabel: "Time complexity",
@@ -2123,6 +2206,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const [agentTags, setAgentTags] = useState("array,two-pointers");
   const [agentDifficulty, setAgentDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [agentMode, setAgentMode] = useState<ProblemAuthoringMode>("both");
+  const [agentLanguages, setAgentLanguages] = useState<string[]>(["python", "cpp", "java"]);
   const [agentModel, setAgentModel] = useState<AIModelProfile>("default");
   const [agentConstraints, setAgentConstraints] = useState("");
   const [agentMessage, setAgentMessage] = useState("");
@@ -2251,6 +2335,15 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     await overviewQuery.refetch();
   }
 
+  function toggleAgentLanguage(language: string) {
+    setAgentLanguages((value) => {
+      if (value.includes(language)) {
+        return value.length > 1 ? value.filter((item) => item !== language) : value;
+      }
+      return [...value, language];
+    });
+  }
+
   async function createAgentDraft() {
     if (!agentCanGenerate) {
       setAgentMessage(agentModelUnavailableReason ?? aiUnavailableText(locale));
@@ -2263,7 +2356,8 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         difficulty: agentDifficulty,
         tags: agentTags.split(",").map((tag) => tag.trim()).filter(Boolean),
         mode: agentMode,
-        target_language: "python",
+        target_language: agentLanguages[0] ?? "python",
+        target_languages: agentLanguages,
         locale,
         model_profile: agentModel,
         constraints: agentConstraints.trim() || null,
@@ -2336,6 +2430,41 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         testcases: value.testcases.map((testcase, itemIndex) => (
           itemIndex === index ? { ...testcase, ...patch } : testcase
         )),
+      };
+    });
+  }
+
+  function updateDraftSolution(index: number, patch: Partial<DraftOfficialSolution>) {
+    setDraftEdit((value) => {
+      if (!value) return value;
+      return {
+        ...value,
+        official_solutions: value.official_solutions.map((solution, itemIndex) => (
+          itemIndex === index ? { ...solution, ...patch } : solution
+        )),
+      };
+    });
+  }
+
+  function addDraftSolution(language: string) {
+    setDraftEdit((value) => {
+      if (!value || value.official_solutions.some((solution) => solution.language === language)) return value;
+      return {
+        ...value,
+        official_solutions: [
+          ...value.official_solutions,
+          { language, code: "", explanation: "" },
+        ],
+      };
+    });
+  }
+
+  function removeDraftSolution(index: number) {
+    setDraftEdit((value) => {
+      if (!value || value.official_solutions.length <= 1) return value;
+      return {
+        ...value,
+        official_solutions: value.official_solutions.filter((_, itemIndex) => itemIndex !== index),
       };
     });
   }
@@ -2500,6 +2629,20 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 <option value="acm">{authoringModeLabel("acm", locale)}</option>
               </select>
             </label>
+            <div className="agent-field language-checklist-label"><span>{text.targetLanguagesLabel}</span>
+              <div className="language-checklist">
+                {LANGUAGES.map((item) => (
+                  <label className="checkbox-label language-chip" key={item}>
+                    <input
+                      type="checkbox"
+                      checked={agentLanguages.includes(item)}
+                      onChange={() => toggleAgentLanguage(item)}
+                    />
+                    {languageLabel(item)}
+                  </label>
+                ))}
+              </div>
+            </div>
             <label>{locale === "zh" ? "模型" : "Model"}
               <select value={agentModel} onChange={(event) => setAgentModel(event.target.value as AIModelProfile)}>
                 {(adminAiProfiles.length ? adminAiProfiles : [AI_PROFILE_FALLBACKS.default]).map((profile) => (
@@ -2585,10 +2728,40 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                         <label>{text.hintLabel}<textarea value={draftEdit.hint} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ hint: event.target.value })} /></label>
                         <label>{text.inputFormatLabel}<textarea value={draftEdit.input_format} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ input_format: event.target.value })} /></label>
                         <label>{text.outputFormatLabel}<textarea value={draftEdit.output_format} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ output_format: event.target.value })} /></label>
-                        <label>{text.officialCodeLabel}<textarea value={draftEdit.official_solution_code} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ official_solution_code: event.target.value })} /></label>
-                        <label>{text.officialExplanationLabel}<textarea value={draftEdit.official_solution_explanation} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ official_solution_explanation: event.target.value })} /></label>
                         <label>{text.timeComplexityLabel}<input value={draftEdit.time_complexity} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ time_complexity: event.target.value })} /></label>
                         <label>{text.spaceComplexityLabel}<input value={draftEdit.space_complexity} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftEdit({ space_complexity: event.target.value })} /></label>
+                      </div>
+                      <div className="testcase-panel-head">
+                        <h3>{text.officialSolutionsLabel}</h3>
+                        <div className="agent-actions">
+                          {LANGUAGES.filter((item) => !draftEdit.official_solutions.some((solution) => solution.language === item)).map((item) => (
+                            <button key={item} disabled={selectedDraft.status === "approved"} onClick={() => addDraftSolution(item)}>
+                              + {languageLabel(item)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="admin-testcase-list official-solution-list">
+                        {draftEdit.official_solutions.map((solution, index) => (
+                          <article className="testcase-card admin-testcase-card official-solution-card" key={`${solution.language}-${index}`}>
+                            <div className="testcase-card-head">
+                              <strong>{languageLabel(solution.language)}</strong>
+                              {index === 0 ? <span className="case-chip sample">{locale === "zh" ? "主解法" : "Primary"}</span> : null}
+                            </div>
+                            <div className="admin-edit-grid official-solution-grid">
+                              <label>{locale === "zh" ? "语言" : "Language"}
+                                <select value={solution.language} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftSolution(index, { language: event.target.value })}>
+                                  {LANGUAGES.map((item) => <option key={item} value={item}>{languageLabel(item)}</option>)}
+                                </select>
+                              </label>
+                              <label>{text.officialExplanationLabel}<textarea value={solution.explanation} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftSolution(index, { explanation: event.target.value })} /></label>
+                              <label>{text.officialCodeLabel}<textarea value={solution.code} disabled={selectedDraft.status === "approved"} onChange={(event) => updateDraftSolution(index, { code: event.target.value })} /></label>
+                            </div>
+                            <div className="agent-actions">
+                              <button disabled={selectedDraft.status === "approved" || draftEdit.official_solutions.length <= 1} onClick={() => removeDraftSolution(index)}>{text.delete}</button>
+                            </div>
+                          </article>
+                        ))}
                       </div>
                       <div className="testcase-panel-head">
                         <h3>{text.testcaseDetails}</h3>
@@ -2864,13 +3037,18 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(recentProblemId);
   const [view, setView] = useState<View>(recentProblemId ? "workbench" : "library");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [locale, setLocale] = useState<Locale>(() => (localStorage.getItem("fastoj.locale") === "en" ? "en" : "zh"));
+  const [locale, setLocale] = useState<Locale>(() => readStoredLocale());
   const [theme, setTheme] = useState<AppTheme>(() => (localStorage.getItem("fastoj.theme") === "light" ? "light" : "dark"));
   const [authenticated, setAuthenticated] = useState(Boolean(localStorage.getItem("fastoj.jwt")));
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [graphTag, setGraphTag] = useState("");
   const problemsQuery = useQuery({ queryKey: ["problems", "graph"], queryFn: () => api.problems({}) });
   const problems = useMemo(() => problemsQuery.data ?? [], [problemsQuery.data]);
+
+  useEffect(() => {
+    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+    writeStoredLocale(locale);
+  }, [locale]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -2895,6 +3073,8 @@ function App() {
       .then((user) => {
         if (!cancelled && localStorage.getItem("fastoj.jwt") === authToken) {
           setCurrentUser(user);
+          const userLocale = normalizeLocale(user.locale);
+          if (userLocale) setLocale(userLocale);
         }
       })
       .catch((error) => {
@@ -2920,11 +3100,16 @@ function App() {
   }
 
   function toggleLocale() {
-    setLocale((current) => {
-      const next = current === "zh" ? "en" : "zh";
-      localStorage.setItem("fastoj.locale", next);
-      return next;
-    });
+    setLocalePreference(locale === "zh" ? "en" : "zh");
+  }
+
+  function setLocalePreference(next: Locale) {
+    setLocale(next);
+    if (!currentUser) return;
+    setCurrentUser({ ...currentUser, locale: next });
+    api.updateMe({ locale: next })
+      .then(setCurrentUser)
+      .catch(() => undefined);
   }
 
   function logout() {
@@ -2938,7 +3123,7 @@ function App() {
     <div className="app-shell" data-theme={theme}>
       <AuthBar view={view} authenticated={authenticated} currentUser={currentUser} locale={locale} theme={theme} onView={setView} onAuth={openAuth} onLogout={logout} onLocale={toggleLocale} onTheme={setTheme} />
       {view === "auth" ? <AuthPage mode={authMode} locale={locale} onMode={setAuthMode} onDone={() => { setAuthenticated(true); setView("library"); }} /> : null}
-      {view === "settings" ? <SettingsPage locale={locale} currentUser={currentUser} theme={theme} onTheme={setTheme} onClose={() => setView("library")} onProfileSaved={setCurrentUser} /> : null}
+      {view === "settings" ? <SettingsPage locale={locale} currentUser={currentUser} theme={theme} onTheme={setTheme} onLocaleChange={setLocalePreference} onClose={() => setView("library")} onProfileSaved={setCurrentUser} /> : null}
       {view === "admin" ? <AdminPage locale={locale} currentUser={currentUser} onBack={() => setView("library")} /> : null}
       {view === "library" ? <LibraryPage selectedId={selectedId} selectedTag={graphTag} locale={locale} onSelect={openProblem} onGraph={() => setView("graph")} /> : null}
       {view === "workbench" ? (

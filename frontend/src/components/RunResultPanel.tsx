@@ -9,9 +9,7 @@ export type EditableRunCase = {
 
 export type RunSnapshot = {
   submissionId: string;
-  code: string;
   cases: EditableRunCase[];
-  kind: "run" | "submit";
 };
 
 type DiffSegment = {

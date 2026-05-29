@@ -10,7 +10,6 @@ type AnyProblem = Pick<ProblemDetail | ProblemListItem, "slug" | "title" | "tags
 };
 
 type FunctionSpec = {
-  functionName: string;
   signature: string;
   description: Record<Locale, string>;
   starter: string;
@@ -27,7 +26,6 @@ const TODO_ZH = "TODO: 在这里实现你的解法";
 
 const FUNCTION_SPECS: Record<string, FunctionSpec> = {
   "two-sum": {
-    functionName: "two_sum",
     signature: "def two_sum(nums: list[int], target: int) -> list[int]",
     description: {
       zh: "返回两个下标，提交区只需要补全函数体。",
@@ -38,7 +36,6 @@ ${TODO}    return []
 `,
   },
   "add-two-numbers": {
-    functionName: "add_two_numbers",
     signature: "def add_two_numbers(l1: list[int], l2: list[int]) -> list[int]",
     description: {
       zh: "这里用数组模拟逆序链表节点，专注练习进位逻辑。",
@@ -49,7 +46,6 @@ ${TODO}    return []
 `,
   },
   "longest-substring-without-repeating": {
-    functionName: "length_of_longest_substring",
     signature: "def length_of_longest_substring(s: str) -> int",
     description: {
       zh: "维护无重复窗口，返回最长长度。",
@@ -60,7 +56,6 @@ ${TODO}    return 0
 `,
   },
   "valid-parentheses": {
-    functionName: "is_valid_parentheses",
     signature: "def is_valid_parentheses(s: str) -> bool",
     description: {
       zh: "判断括号串是否有效，提交区只需要补全函数体。",
@@ -71,7 +66,6 @@ ${TODO}    return False
 `,
   },
   "logistic-regression-sigmoid": {
-    functionName: "predict_probability",
     signature: "def predict_probability(weights: list[float], bias: float, features: list[float]) -> float",
     description: {
       zh: "实现 sigmoid(w dot x + b)，输出概率会按 4 位小数比较。",
@@ -85,7 +79,6 @@ ${TODO}    return 0.0
 `,
   },
   "knn-majority-vote": {
-    functionName: "predict_knn",
     signature: "def predict_knn(points: list[list[float]], labels: list[str], query: list[float], k: int) -> str",
     description: {
       zh: "按欧氏距离找 k 个近邻，票数相同按标签字典序稳定决策。",
@@ -96,7 +89,6 @@ ${TODO}    return ""
 `,
   },
   "kmeans-one-iteration": {
-    functionName: "assign_clusters",
     signature: "def assign_clusters(points: list[list[float]], centroids: list[list[float]]) -> list[int]",
     description: {
       zh: "完成一次 KMeans 分配步骤，返回每个样本最近的中心编号。",
@@ -107,7 +99,6 @@ ${TODO}    return []
 `,
   },
   "scaled-dot-product-attention": {
-    functionName: "attention_row",
     signature: "def attention_row(query: list[float], keys: list[list[float]], values: list[list[float]]) -> list[float]",
     description: {
       zh: "手写单个 query 的 scaled dot-product attention，输出向量按 4 位小数比较。",
@@ -121,7 +112,6 @@ ${TODO}    return []
 `,
   },
   "softmax-cross-entropy": {
-    functionName: "cross_entropy_loss",
     signature: "def cross_entropy_loss(logits: list[float], target: int) -> float",
     description: {
       zh: "实现稳定 softmax cross entropy，输出按 4 位小数比较。",
@@ -135,7 +125,6 @@ ${TODO}    return 0.0
 `,
   },
   "attention-mask-apply": {
-    functionName: "masked_softmax",
     signature: "def masked_softmax(scores: list[float], mask: list[int]) -> list[float]",
     description: {
       zh: "对注意力分数应用 mask，被 mask 的位置概率必须为 0。",
@@ -671,10 +660,7 @@ export function getFunctionSpec(problem?: AnyProblem | null): FunctionSpec | nul
   if (fixed) return fixed;
   if ((problem.mode === "function" || problem.mode === "both") && problem.function_signature) {
     const signature = problem.function_signature.replace(/:\s*$/, "");
-    const match = signature.match(/def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
-    const functionName = match?.[1] ?? "solve";
     return {
-      functionName,
       signature,
       description: {
         zh: "按函数签名补全函数体；测试数据使用 JSON-line 参数输入。",

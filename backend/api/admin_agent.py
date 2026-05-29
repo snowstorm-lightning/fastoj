@@ -197,6 +197,7 @@ def _draft_response(db: Session, draft: ProblemDraft) -> ProblemDraftResponse:
         official_solution_language=draft.official_solution_language,
         official_solution_code=draft.official_solution_code,
         official_solution_explanation=draft.official_solution_explanation,
+        official_solutions=_draft_solutions(draft),
         time_complexity=draft.time_complexity,
         space_complexity=draft.space_complexity,
         testcases=load_json(draft.testcases_json, []),
@@ -225,6 +226,27 @@ def _draft_list_item(draft: ProblemDraft) -> ProblemDraftListItem:
         created_at=draft.created_at.isoformat(),
         updated_at=draft.updated_at.isoformat(),
     )
+
+
+def _draft_solutions(draft: ProblemDraft) -> list[dict]:
+    raw = load_json(getattr(draft, "official_solutions_json", None), [])
+    if isinstance(raw, list) and raw:
+        return [
+            {
+                "language": str(solution.get("language") or "python"),
+                "code": str(solution.get("code") or ""),
+                "explanation": str(solution.get("explanation") or ""),
+            }
+            for solution in raw
+            if isinstance(solution, dict)
+        ]
+    return [
+        {
+            "language": str(draft.official_solution_language or "python"),
+            "code": str(draft.official_solution_code or ""),
+            "explanation": str(draft.official_solution_explanation or ""),
+        }
+    ]
 
 
 def _validation_summary(report: dict) -> dict:

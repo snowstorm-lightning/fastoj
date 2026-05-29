@@ -1,7 +1,5 @@
 """Tests for configuration settings."""
 
-import pytest
-
 
 class TestSettings:
     """Test cases for Settings configuration."""

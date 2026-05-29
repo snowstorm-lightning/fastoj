@@ -11,7 +11,8 @@ For function mode, provide a clear Python-style function_signature and testcase 
 Prefer JSON-line inputs with one JSON value per argument line; a single JSON object keyed by argument name is also acceptable.
 For ACM mode, provide stdin/stdout testcases and clear input_format/output_format.
 For both mode, provide both function_signature and input_format/output_format. Testcase input should use the function JSON argument format; ACM submissions receive the same input through stdin.
-Always include official solution code, explanation, time complexity, space complexity, and validation notes."""
+Always include official solution code, explanation, time complexity, space complexity, and validation notes.
+When target_languages contains multiple languages, include one official solution per requested language."""
 
 JSON_SCHEMA: dict[str, Any] = {
     "title": "string",
@@ -26,9 +27,12 @@ JSON_SCHEMA: dict[str, Any] = {
     "time_limit": "integer milliseconds",
     "memory_limit": "integer MB",
     "hint": "string",
-    "official_solution_language": "python",
-    "official_solution_code": "string",
-    "official_solution_explanation": "string",
+    "official_solution_language": "primary language string",
+    "official_solution_code": "primary official solution code string",
+    "official_solution_explanation": "primary official solution explanation string",
+    "official_solutions": [
+        {"language": "python | cpp | java | javascript | typescript | golang | c", "code": "string", "explanation": "string"}
+    ],
     "time_complexity": "string",
     "space_complexity": "string",
     "public_sample_testcases": [
@@ -51,13 +55,14 @@ def build_prompt(context: dict[str, Any]) -> str:
             "Use enough total testcases to cover meaningful behavior and boundaries; do not pad duplicate cases.",
             "Hidden testcases are recommended for non-trivial problems, but simple deterministic or no-input tasks may use zero hidden_testcases.",
             "Every testcase output must be non-empty.",
-            "official_solution_language should match target_language when possible.",
-            "For function mode, official_solution_code should define the function named in function_signature.",
-            "For both mode, official_solution_code should also define the function named in function_signature; FastOJ can wrap it for validation and custom expected-output generation.",
+            "official_solutions must include exactly one solution object for every requested target_languages entry.",
+            "official_solution_language/code/explanation should mirror the first official_solutions entry for backward compatibility.",
+            "For function mode, every official solution should define the function represented by function_signature in that language.",
+            "For both mode, every official solution should define the function represented by function_signature; FastOJ can wrap it for validation and custom expected-output generation.",
             "For function or both mode, testcase input must be either newline-separated JSON values matching the function arguments, a single JSON array matching all arguments, or a single JSON object keyed by argument names.",
             "For function or both mode, testcase output must be the JSON-serializable return value, not printed stdout text.",
             "For combination or set-like outputs, make the official solution and expected outputs use deterministic canonical ordering.",
-            "For ACM-only mode, official_solution_code must read stdin and write stdout.",
+            "For ACM-only mode, every official solution must read stdin and write stdout.",
         ],
     }
     return json.dumps(payload, ensure_ascii=False)

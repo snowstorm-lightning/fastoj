@@ -35,7 +35,7 @@ ZH_EXPLANATIONS["longest-substring-without-repeating-characters"] = ZH_EXPLANATI
 async def get_problem_solutions(
     problem_id: str,
     language: str | None = None,
-    locale: str = "en",
+    locale: str = "zh",
     db: Session = Depends(get_db),
 ):
     """Get solutions for a problem."""

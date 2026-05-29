@@ -1,7 +1,5 @@
 """Tests for language runners."""
 
-import pytest
-
 from backend.sandbox.languages.cpp import CppRunner, CRunner
 from backend.sandbox.languages.golang import GolangRunner
 from backend.sandbox.languages.java import JavaRunner

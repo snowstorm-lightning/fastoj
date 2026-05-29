@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class RunTestCaseInput(BaseModel):
     input: str = Field(..., max_length=32768)
-    expected_output: str | None = Field(default="", max_length=32768)
 
 
 class SubmissionCreate(BaseModel):
@@ -15,12 +14,6 @@ class SubmissionCreate(BaseModel):
     language: str
     judge_mode: Literal["acm", "function"] = "acm"
     run_testcases: list[RunTestCaseInput] | None = Field(default=None, max_length=8)
-
-
-class SubmissionRun(BaseModel):
-    problem_id: str
-    code: str = Field(..., max_length=65536)
-    language: str
 
 
 class TestCaseResultResponse(BaseModel):

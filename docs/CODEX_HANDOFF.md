@@ -6,6 +6,25 @@ Updated: 2026-05-29
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
 
+## 2026-05-29 Account-Backed Locale Preference
+
+- User profiles now persist `locale` (`zh`/`en`) through a new `users.locale` column and `/api/v1/auth/me` response/update support.
+- Registration records the active UI language. Header/settings language changes update local storage immediately and sync to the signed-in account when available.
+- Guest users still work without an account preference: the frontend uses a normalized local-storage value, then browser language, then Chinese as the final fallback.
+- The frontend sets `<html lang>` from the active locale, clears stale AI copilot content on language changes, and requires explicit locale arguments for AI/solution API methods.
+- Tag search normalization now accepts Chinese commas and common case variants before querying/filtering.
+- Verification for this batch: `uv run ruff check .` passed; `uv run pytest` passed with 141 tests; `cd frontend && npm run build` passed; `cd frontend && npm test` passed with 9 files / 25 tests.
+
+## 2026-05-29 Multi-Language Authoring Draft Solutions
+
+- Admin Problem Authoring Agent requests now accept `target_languages` while keeping the legacy `target_language` field for compatibility.
+- Problem draft payloads and API responses now include `official_solutions`, a per-language list of official solution code and explanation. The legacy single official-solution fields remain populated from the primary solution.
+- A new Alembic migration adds `problem_drafts.official_solutions_json`; existing drafts fall back to their legacy single official solution.
+- Authoring validation requires all requested solution languages to be present and runs each official solution language through the sandbox. Validation reports show solution language per case without exposing hidden testcase content.
+- Draft approval creates one official `Solution` row per draft language.
+- The admin authoring UI now has target-language checkboxes, a per-language official solution editor, and per-language validation chips in testcase details.
+- Verification for this batch: `uv run ruff check .` passed; `uv run pytest` passed with 137 tests; `cd frontend && npm run build` passed; `cd frontend && npm test` passed with 9 files / 23 tests.
+
 ## 2026-05-29 Dynamic AI Profile Availability
 
 - AI model choices are now served by `GET /api/v1/ai/profiles` instead of being hard-coded in the frontend.

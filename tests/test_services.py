@@ -3,9 +3,6 @@
 import uuid
 from unittest.mock import MagicMock
 
-import pytest
-
-from backend.models import Difficulty, Problem
 from backend.services.problem_service import ProblemService
 from backend.services.submission_service import SubmissionService
 

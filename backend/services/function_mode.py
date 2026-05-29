@@ -972,22 +972,6 @@ def _split_signature_parameters(params: str) -> list[str]:
     return parts
 
 
-def _parameter_names_from_signature(function_signature: str) -> list[str]:
-    function_name = _function_name_from_signature(function_signature)
-    match = re.search(rf"def\s+{re.escape(function_name)}\s*\((?P<params>.*?)\)", function_signature, re.DOTALL)
-    if not match:
-        raise ValueError("Function mode requires a parseable Python function signature")
-    names: list[str] = []
-    for item in _split_signature_parameters(match.group("params")):
-        cleaned = item.strip()
-        if not cleaned or cleaned.startswith("*"):
-            continue
-        name = cleaned.split(":", 1)[0].split("=", 1)[0].strip()
-        if name and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
-            names.append(name)
-    return names
-
-
 def _parameter_specs_from_signature(function_signature: str) -> list[tuple[str, str]]:
     function_name = _function_name_from_signature(function_signature)
     match = re.search(rf"def\s+{re.escape(function_name)}\s*\((?P<params>.*?)\)", function_signature, re.DOTALL)

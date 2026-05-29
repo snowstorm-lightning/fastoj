@@ -1,6 +1,14 @@
 import { describe, expect, test } from "vitest";
 
-import { localizedProblem, matchesLocalizedProblem } from "./i18n";
+import {
+  LOCALE_STORAGE_KEY,
+  canonicalTagQuery,
+  localizedProblem,
+  matchesLocalizedProblem,
+  normalizeLocale,
+  readStoredLocale,
+  writeStoredLocale,
+} from "./i18n";
 import type { ProblemListItem } from "./schemas";
 
 const twoSum: ProblemListItem = {
@@ -22,5 +30,20 @@ describe("localized problem search", () => {
     expect(localizedProblem(twoSum, "zh")?.title).toBe("\u4e24\u6570\u4e4b\u548c");
     expect(matchesLocalizedProblem(twoSum, "zh", "\u4e24\u6570\u4e4b\u548c")).toBe(true);
     expect(matchesLocalizedProblem(twoSum, "zh", "Two Sum")).toBe(true);
+  });
+
+  test("normalizes and persists supported interface locales", () => {
+    localStorage.removeItem(LOCALE_STORAGE_KEY);
+    expect(normalizeLocale("zh")).toBe("zh");
+    expect(normalizeLocale("en")).toBe("en");
+    expect(normalizeLocale("fr")).toBeNull();
+
+    writeStoredLocale("en");
+    expect(readStoredLocale()).toBe("en");
+  });
+
+  test("canonical tag search accepts Chinese comma and case variants", () => {
+    expect(canonicalTagQuery("数组，双指针", "zh")).toBe("Array, Two Pointers");
+    expect(canonicalTagQuery("array, two pointers", "en")).toBe("Array, Two Pointers");
   });
 });

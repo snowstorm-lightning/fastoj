@@ -4,8 +4,9 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
-from backend.api.auth import UserCreate, login, register
+from backend.api.auth import UserCreate, UserUpdate, get_me, login, register, update_me
 from backend.core.security import get_password_hash
 from backend.models import User
 
@@ -46,7 +47,18 @@ def test_register_success():
         db,
     )
     assert response.username == "alice"
+    assert response.locale == "zh"
     assert len(db.users) == 1
+
+
+def test_register_accepts_locale_preference():
+    db = FakeAuthDb()
+    response = register(
+        UserCreate(username="alice", email="alice@example.com", password="password123", locale="en"),
+        db,
+    )
+    assert response.locale == "en"
+    assert db.users[0].locale == "en"
 
 
 def test_register_duplicate_username_or_email_fails():
@@ -78,3 +90,37 @@ def test_login_wrong_password_fails():
     with pytest.raises(HTTPException) as exc:
         login(SimpleNamespace(username="alice", password="wrong"), FakeAuthDb([user]))
     assert exc.value.status_code == 401
+
+
+def test_update_me_persists_locale_preference():
+    user = User(
+        id=uuid4(),
+        username="alice",
+        email="alice@example.com",
+        password_hash=get_password_hash("password123"),
+        locale="zh",
+        is_active=True,
+        created_at=datetime.utcnow(),
+    )
+    response = update_me(UserUpdate(locale="en"), FakeAuthDb([user]), user)
+    assert response.locale == "en"
+    assert user.locale == "en"
+
+
+def test_get_me_returns_locale_preference():
+    user = User(
+        id=uuid4(),
+        username="alice",
+        email="alice@example.com",
+        password_hash=get_password_hash("password123"),
+        locale="en",
+        is_active=True,
+        created_at=datetime.utcnow(),
+    )
+    response = get_me(user)
+    assert response.locale == "en"
+
+
+def test_user_update_rejects_invalid_locale():
+    with pytest.raises(ValidationError):
+        UserUpdate(locale="fr")

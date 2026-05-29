@@ -27,7 +27,7 @@ class AIService:
         self.config = resolve_ai_config(model_profile)
         self.provider = provider or build_provider(self.config)
 
-    def explain_submission(self, submission_id: str, current_user: User, locale: str = "en") -> AIExplainResponse:
+    def explain_submission(self, submission_id: str, current_user: User, locale: str = "zh") -> AIExplainResponse:
         submission = self._get_allowed_submission(submission_id, current_user)
         context = self._submission_context(submission)
         context["response_language"] = self._response_language(locale)
@@ -37,7 +37,7 @@ class AIService:
         )
         return self._parse_explain(raw, context)
 
-    def review_submission(self, submission_id: str, current_user: User, locale: str = "en") -> AIReviewResponse:
+    def review_submission(self, submission_id: str, current_user: User, locale: str = "zh") -> AIReviewResponse:
         submission = self._get_allowed_submission(submission_id, current_user)
         context = self._submission_context(submission, include_results=False)
         context["response_language"] = self._response_language(locale)
@@ -52,7 +52,7 @@ class AIService:
         submission_id: str,
         message: str,
         current_user: User,
-        locale: str = "en",
+        locale: str = "zh",
     ) -> AIChatResponse:
         submission = self._get_allowed_submission(submission_id, current_user)
         context = self._submission_context(submission)
@@ -75,7 +75,7 @@ class AIService:
         level: int,
         language: str | None,
         current_code: str | None,
-        locale: str = "en",
+        locale: str = "zh",
     ) -> AIHintResponse:
         problem = self.db.query(Problem).filter(Problem.id == problem_id, Problem.is_public.is_(True)).first()
         if not problem:
@@ -301,7 +301,7 @@ class AIService:
             return f"Start from the main pattern suggested by the tags: {', '.join(problem.tags or [])}."
         if level == 2:
             return "Identify the invariant that lets you avoid checking every possible answer."
-            return "Write pseudocode first: parse input, maintain the needed state, update the answer, then print exactly the required output."
+        return "Write pseudocode first: parse input, maintain the needed state, update the answer, then print exactly the required output."
 
     def _coerce_text(self, value: Any, fallback: str) -> str:
         if value is None:

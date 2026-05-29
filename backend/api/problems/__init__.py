@@ -1,16 +1,10 @@
 import math
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-from backend.schemas.problem import (
-    PaginationInfo,
-    ProblemDetail,
-    ProblemFilter,
-    ProblemListItem,
-)
+from backend.schemas.problem import ProblemFilter
 from backend.services.problem_service import ProblemService
 
 router = APIRouter(prefix="/problems", tags=["problems"])

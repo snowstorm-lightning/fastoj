@@ -15,6 +15,7 @@ import {
   type SubmissionDetail,
 } from "./schemas";
 import type { JudgeMode } from "./problemModes";
+import type { Locale } from "./i18n";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -44,7 +45,8 @@ export type ProblemAgentRequest = {
   tags: string[];
   mode: "function" | "acm" | "both";
   target_language: string;
-  locale: "zh" | "en";
+  target_languages?: string[];
+  locale: Locale;
   model_profile: AIModelProfile;
   constraints?: string | null;
 };
@@ -75,6 +77,7 @@ export type ProblemDraft = {
   official_solution_language?: string;
   official_solution_code?: string;
   official_solution_explanation?: string;
+  official_solutions?: Array<{ language: string; code: string; explanation: string }>;
   time_complexity?: string | null;
   space_complexity?: string | null;
   validation_summary?: Record<string, unknown>;
@@ -99,6 +102,7 @@ export type ProblemDraftUpdatePayload = {
   official_solution_language?: string;
   official_solution_code?: string;
   official_solution_explanation?: string;
+  official_solutions?: Array<{ language: string; code: string; explanation: string }>;
   time_complexity?: string | null;
   space_complexity?: string | null;
   testcases?: Array<Record<string, unknown>>;
@@ -127,8 +131,17 @@ export type CurrentUser = {
   username: string;
   email: string;
   avatar_url?: string | null;
+  locale: Locale;
   role: string;
   is_active: boolean;
+};
+export type UpdateMePayload = {
+  username?: string;
+  email?: string;
+  avatar_url?: string | null;
+  locale?: Locale;
+  current_password?: string;
+  new_password?: string;
 };
 export type AdminOverviewFilters = {
   userQuery?: string;
@@ -252,10 +265,10 @@ async function request<T>(path: string, options: RequestInit, parse: (data: unkn
 }
 
 export const api = {
-  async register(username: string, email: string, password: string) {
+  async register(username: string, email: string, password: string, locale: Locale) {
     return request("/api/v1/auth/register", {
       method: "POST",
-      body: JSON.stringify({ username, email, password }),
+      body: JSON.stringify({ username, email, password, locale }),
     }, (data) => data);
   },
   async login(username: string, password: string) {
@@ -273,7 +286,7 @@ export const api = {
   async me(): Promise<CurrentUser> {
     return request("/api/v1/auth/me", { method: "GET" }, (data: any) => data);
   },
-  async updateMe(payload: Record<string, unknown>): Promise<CurrentUser> {
+  async updateMe(payload: UpdateMePayload): Promise<CurrentUser> {
     return request("/api/v1/auth/me", {
       method: "PATCH",
       body: JSON.stringify(payload),
@@ -415,7 +428,7 @@ export const api = {
     if (problemId) params.set("problem_id", problemId);
     return request(`/api/v1/submissions?${params}`, { method: "GET" }, (data: any) => data.data ?? []);
   },
-  async solutions(problemId: string, language?: string, locale = "en") {
+  async solutions(problemId: string, language: string | undefined, locale: Locale) {
     const params = new URLSearchParams();
     if (language) params.set("language", language);
     params.set("locale", locale);
@@ -423,7 +436,7 @@ export const api = {
       data.data ?? [],
     );
   },
-  async explain(submissionId: string, model_profile: AIModelProfile = "default", locale = "en"): Promise<AIExplain> {
+  async explain(submissionId: string, model_profile: AIModelProfile, locale: Locale): Promise<AIExplain> {
     return request(`/api/v1/ai/submissions/${submissionId}/explain`, {
       method: "POST",
       body: JSON.stringify({ model_profile, locale }),
@@ -431,7 +444,7 @@ export const api = {
       aiExplainSchema.parse(data),
     );
   },
-  async review(submissionId: string, model_profile: AIModelProfile = "default", locale = "en"): Promise<AIReview> {
+  async review(submissionId: string, model_profile: AIModelProfile, locale: Locale): Promise<AIReview> {
     return request(`/api/v1/ai/submissions/${submissionId}/review`, {
       method: "POST",
       body: JSON.stringify({ model_profile, locale }),
@@ -439,7 +452,7 @@ export const api = {
       aiReviewSchema.parse(data),
     );
   },
-  async chat(submissionId: string, message: string, model_profile: AIModelProfile = "default", locale = "en"): Promise<AIChat> {
+  async chat(submissionId: string, message: string, model_profile: AIModelProfile, locale: Locale): Promise<AIChat> {
     return request(`/api/v1/ai/submissions/${submissionId}/chat`, {
       method: "POST",
       body: JSON.stringify({ message, model_profile, locale }),
@@ -450,8 +463,8 @@ export const api = {
     level: 1 | 2 | 3,
     language: string | null,
     current_code: string | null,
-    model_profile: AIModelProfile = "default",
-    locale = "en",
+    model_profile: AIModelProfile,
+    locale: Locale,
   ): Promise<AIHint> {
     return request(`/api/v1/ai/problems/${problemId}/hint`, {
       method: "POST",

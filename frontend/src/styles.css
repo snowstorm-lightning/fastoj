@@ -817,19 +817,12 @@ p {
 .draft-edit-grid label:nth-child(9),
 .draft-edit-grid label:nth-child(10),
 .draft-edit-grid label:nth-child(11),
-.draft-edit-grid label:nth-child(12),
-.draft-edit-grid label:nth-child(13),
-.draft-edit-grid label:nth-child(14) {
+.draft-edit-grid label:nth-child(12) {
   grid-column: 1 / -1;
 }
 
 .draft-edit-grid textarea {
   min-height: 104px;
-}
-
-.draft-edit-grid label:nth-child(13) textarea {
-  min-height: 190px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .problem-agent-panel {
@@ -843,11 +836,47 @@ p {
   align-items: end;
 }
 
-.agent-form label {
+.agent-form label,
+.agent-form .agent-field {
   display: grid;
   gap: 6px;
   color: #a3aab7;
   font-size: 12px;
+}
+
+.language-checklist-label {
+  grid-column: span 2;
+}
+
+.language-checklist {
+  display: flex;
+  min-height: 48px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.language-chip {
+  width: auto;
+  border: 1px solid #47515c;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #f8fafc;
+  font-size: 12px;
+}
+
+.official-solution-list {
+  gap: 10px;
+}
+
+.official-solution-grid label:nth-child(2),
+.official-solution-grid label:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.official-solution-grid label:nth-child(3) textarea {
+  min-height: 180px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .model-unavailable-note {
@@ -2955,6 +2984,7 @@ p {
 .admin-row span,
 .admin-edit-grid label,
 .agent-form label,
+.agent-form .agent-field,
 .model-copy small,
 .model-select-menu button small,
 .discussion-post small {

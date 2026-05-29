@@ -60,7 +60,6 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/*" = ["F401", "F811"]
-"tests/conftest.py" = ["N806"]
 "mock_server.py" = ["N802"]
 "main.py" = ["E402"]
 

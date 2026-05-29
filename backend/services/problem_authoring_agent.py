@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.ai.profiles import resolve_ai_config
 from backend.ai.prompts import problem_authoring
 from backend.ai.providers import AIProviderUnavailableError, BaseAIProvider, build_provider
+from backend.core.languages import Language
 from backend.models import (
     AgentRun,
     AgentStep,
@@ -22,11 +23,13 @@ from backend.models import (
 )
 from backend.sandbox.executor import SandboxExecutor
 from backend.schemas.problem_authoring import (
+    AuthoredOfficialSolution,
     AuthoredProblemDraft,
     AuthoredTestCase,
     ProblemAuthoringRequest,
     ProblemDraftUpdate,
 )
+from backend.services.function_mode import wrap_function_submission
 
 MAX_AUTHORING_REPAIR_ATTEMPTS = 2
 SLUG_RESERVED_DRAFT_STATUSES = {"draft", "validating", "validated"}
@@ -93,7 +96,12 @@ class ProblemDraftValidationAdapter:
     def __init__(self, executor: SandboxExecutor | None = None):
         self.executor = executor or SandboxExecutor()
 
-    def validate(self, draft: AuthoredProblemDraft, testcases: list[dict[str, Any]]) -> dict[str, Any]:
+    def validate(
+        self,
+        draft: AuthoredProblemDraft,
+        testcases: list[dict[str, Any]],
+        required_languages: list[str] | None = None,
+    ) -> dict[str, Any]:
         checks: list[dict[str, Any]] = []
 
         def check(name: str, passed: bool, message: str) -> None:
@@ -102,13 +110,15 @@ class ProblemDraftValidationAdapter:
         required_fields = {
             "title": draft.title,
             "description": draft.description,
-            "official_solution_code": draft.official_solution_code,
-            "official_solution_explanation": draft.official_solution_explanation,
+            "official_solutions": draft.official_solutions,
             "time_complexity": draft.time_complexity,
             "space_complexity": draft.space_complexity,
         }
         for field, value in required_fields.items():
-            check(field, bool(str(value or "").strip()), f"{field} is required")
+            if isinstance(value, list):
+                check(field, bool(value), f"{field} is required")
+            else:
+                check(field, bool(str(value or "").strip()), f"{field} is required")
 
         requires_acm = draft.mode in {"acm", "both"}
         requires_function = draft.mode in {"function", "both"}
@@ -125,8 +135,15 @@ class ProblemDraftValidationAdapter:
         public_count = sum(1 for testcase in testcases if not testcase["is_hidden"])
         hidden_count = sum(1 for testcase in testcases if testcase["is_hidden"])
         total_count = len(testcases)
+        solution_languages = [solution.language for solution in draft.official_solutions]
+        missing_languages = sorted(set(required_languages or []) - set(solution_languages))
         check("testcase_count", total_count >= 1, "At least 1 testcase is required")
         check("public_sample_count", public_count >= 1, "At least 1 public sample testcase is required")
+        check(
+            "official_solution_languages",
+            not missing_languages,
+            f"Missing official solutions for: {', '.join(missing_languages)}",
+        )
         check(
             "non_empty_outputs",
             all(str(testcase.get("output") or "").strip() for testcase in testcases),
@@ -179,94 +196,57 @@ class ProblemDraftValidationAdapter:
         }
 
     def _run_solution(self, draft: AuthoredProblemDraft, testcases: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        language = draft.official_solution_language
-        if draft.mode in {"function", "both"}:
-            if language != "python":
-                return [
+        results: list[dict[str, Any]] = []
+        for solution in draft.official_solutions:
+            language = solution.language
+            try:
+                code = (
+                    wrap_function_submission(
+                        solution.code,
+                        language,
+                        draft.slug_candidate or "generated-problem",
+                        draft.function_signature,
+                    )
+                    if draft.mode in {"function", "both"}
+                    else solution.code
+                )
+            except ValueError as exc:
+                results.append(
                     {
                         "case_index": None,
                         "hidden": None,
+                        "solution_language": language,
                         "passed": False,
                         "status": "se",
-                        "error_message": "Function-mode draft validation currently supports Python only.",
+                        "error_message": str(exc),
                     }
-                ]
-            code = self._build_python_function_harness(draft)
-        else:
-            code = draft.official_solution_code
-
-        results: list[dict[str, Any]] = []
-        for index, testcase in enumerate(testcases, start=1):
-            execution = self.executor.execute(
-                code=code,
-                language=language,
-                input_data=str(testcase["input"]),
-                time_limit=draft.time_limit,
-                memory_limit=draft.memory_limit,
-            )
-            actual = str(execution.get("output") or "").strip()
-            expected = str(testcase["output"]).strip()
-            status_value = execution.get("status") or "se"
-            passed = status_value == "ac" and self._outputs_match(actual, expected)
-            results.append(
-                {
-                    "case_index": index,
-                    "hidden": bool(testcase["is_hidden"]),
-                    "passed": passed,
-                    "status": "ac" if passed else status_value if status_value != "ac" else "wa",
-                    "execute_time": execution.get("execute_time", 0),
-                    "memory_used": execution.get("memory_used", 0),
-                    "error_message": self._safe_case_error(status_value, passed),
-                }
-            )
+                )
+                continue
+            for index, testcase in enumerate(testcases, start=1):
+                execution = self.executor.execute(
+                    code=code,
+                    language=language,
+                    input_data=str(testcase["input"]),
+                    time_limit=draft.time_limit,
+                    memory_limit=draft.memory_limit,
+                )
+                actual = str(execution.get("output") or "").strip()
+                expected = str(testcase["output"]).strip()
+                status_value = execution.get("status") or "se"
+                passed = status_value == "ac" and self._outputs_match(actual, expected)
+                results.append(
+                    {
+                        "case_index": index,
+                        "hidden": bool(testcase["is_hidden"]),
+                        "solution_language": language,
+                        "passed": passed,
+                        "status": "ac" if passed else status_value if status_value != "ac" else "wa",
+                        "execute_time": execution.get("execute_time", 0),
+                        "memory_used": execution.get("memory_used", 0),
+                        "error_message": self._safe_case_error(status_value, passed),
+                    }
+                )
         return results
-
-    def _build_python_function_harness(self, draft: AuthoredProblemDraft) -> str:
-        function_name = self._function_name(draft)
-        parameter_names = self._function_parameters(draft)
-        parameter_names_json = json.dumps(parameter_names, ensure_ascii=False)
-        return f"""{draft.official_solution_code.rstrip()}
-
-if __name__ == "__main__":
-    import json
-    import sys
-
-    def _fastoj_load_args(raw, parameter_names):
-        lines = [line.strip() for line in raw.splitlines() if line.strip()]
-        if not lines:
-            return []
-        if len(lines) > 1:
-            return [json.loads(line) for line in lines]
-        value = json.loads(lines[0])
-        names = [name for name in parameter_names if name not in ("self", "cls")]
-        if isinstance(value, dict) and names:
-            if all(name in value for name in names):
-                return [value[name] for name in names]
-            args_value = value.get("args")
-            if isinstance(args_value, list):
-                return args_value
-            return [value]
-        if isinstance(value, list) and len(names) > 1 and len(value) == len(names):
-            return value
-        return [value]
-
-    raw = sys.stdin.read().strip()
-    args = _fastoj_load_args(raw, {parameter_names_json})
-    fn = globals().get("{function_name}")
-    if not callable(fn) and "Solution" in globals():
-        candidate = getattr(Solution(), "{function_name}", None)
-        if callable(candidate):
-            fn = candidate
-    if not callable(fn):
-        raise NameError("Expected function {function_name}")
-    result = fn(*args)
-    if isinstance(result, bool):
-        print(str(result).lower())
-    elif isinstance(result, (list, dict)):
-        print(json.dumps(result, separators=(",", ":")))
-    else:
-        print(result)
-"""
 
     def _function_name(self, draft: AuthoredProblemDraft) -> str:
         signature = draft.function_signature or ""
@@ -376,7 +356,11 @@ class ProblemAuthoringAgentService:
             run,
             "plan",
             "problem_authoring_agent",
-            {"topic": payload.topic, "mode": payload.mode, "target_language": payload.target_language},
+            {
+                "topic": payload.topic,
+                "mode": payload.mode,
+                "target_languages": payload.requested_languages(),
+            },
             {
                 "plan": [
                     "generate structured draft",
@@ -433,7 +417,7 @@ class ProblemAuthoringAgentService:
 
                 slug = self._unique_slug(authored.slug_candidate or authored.title)
                 testcases = self._testcases(authored)
-                validation_report = self.validator.validate(authored, testcases)
+                validation_report = self.validator.validate(authored, testcases, payload.requested_languages())
                 self._add_step(
                     run,
                     "validation",
@@ -467,6 +451,7 @@ class ProblemAuthoringAgentService:
                 official_solution_language=authored.official_solution_language,
                 official_solution_code=authored.official_solution_code,
                 official_solution_explanation=authored.official_solution_explanation,
+                official_solutions_json=dump_json(self._solutions(authored)),
                 time_complexity=authored.time_complexity,
                 space_complexity=authored.space_complexity,
                 testcases_json=dump_json(testcases),
@@ -543,19 +528,20 @@ class ProblemAuthoringAgentService:
                 )
             )
 
-        self.db.add(
-            Solution(
-                id=uuid.uuid4(),
-                problem_id=problem.id,
-                language=draft.official_solution_language,
-                code=draft.official_solution_code,
-                explanation=draft.official_solution_explanation,
-                time_complexity=draft.time_complexity,
-                space_complexity=draft.space_complexity,
-                is_official=True,
-                created_by=current_user.id,
+        for solution in self._solutions_from_record(draft):
+            self.db.add(
+                Solution(
+                    id=uuid.uuid4(),
+                    problem_id=problem.id,
+                    language=solution["language"],
+                    code=solution["code"],
+                    explanation=solution["explanation"],
+                    time_complexity=draft.time_complexity,
+                    space_complexity=draft.space_complexity,
+                    is_official=True,
+                    created_by=current_user.id,
+                )
             )
-        )
         draft.status = "approved"
         draft.approved_problem_id = problem.id
         self._add_approval_step(draft, current_user, "approved", {"problem_id": str(problem.id)})
@@ -618,6 +604,26 @@ class ProblemAuthoringAgentService:
             draft.official_solution_code = str(values["official_solution_code"])
         if "official_solution_explanation" in values and values["official_solution_explanation"] is not None:
             draft.official_solution_explanation = str(values["official_solution_explanation"]).strip()
+        if "official_solutions" in values and values["official_solutions"] is not None:
+            updated_solutions = self._normalize_updated_solutions(values["official_solutions"])
+            if not updated_solutions:
+                raise ValueError("At least one official solution is required")
+            draft.official_solutions_json = dump_json(updated_solutions)
+            primary = self._solutions_from_record(draft)[0]
+            draft.official_solution_language = primary["language"]
+            draft.official_solution_code = primary["code"]
+            draft.official_solution_explanation = primary["explanation"]
+        elif any(
+            key in values
+            for key in (
+                "official_solution_language",
+                "official_solution_code",
+                "official_solution_explanation",
+            )
+        ):
+            draft.official_solutions_json = dump_json(
+                self._merge_primary_solution_into_solutions(draft)
+            )
         if "time_complexity" in values:
             draft.time_complexity = self._nullable_text(values["time_complexity"])
         if "space_complexity" in values:
@@ -667,8 +673,10 @@ class ProblemAuthoringAgentService:
         return draft
 
     def _call_model(self, payload: ProblemAuthoringRequest, repair_context: dict[str, Any] | None = None) -> str:
-        config = resolve_ai_config(payload.model_profile)
-        provider = self.provider or build_provider(config)
+        provider = self.provider
+        if provider is None:
+            config = resolve_ai_config(payload.model_profile)
+            provider = build_provider(config)
         context = payload.model_dump()
         context["response_language"] = "Simplified Chinese" if payload.locale == "zh" else "English"
         if repair_context:
@@ -680,12 +688,22 @@ class ProblemAuthoringAgentService:
         authored: AuthoredProblemDraft,
         payload: ProblemAuthoringRequest,
     ) -> AuthoredProblemDraft:
+        requested = payload.requested_languages()
+        solutions = self._ordered_solutions_for_languages(authored.official_solutions, requested)
+        primary = solutions[0] if solutions else AuthoredOfficialSolution(
+            language=payload.target_language,
+            code=authored.official_solution_code,
+            explanation=authored.official_solution_explanation,
+        )
         return authored.model_copy(
             update={
                 "difficulty": payload.difficulty,
                 "mode": payload.mode,
                 "tags": payload.tags or authored.tags,
-                "official_solution_language": payload.target_language or authored.official_solution_language,
+                "official_solution_language": primary.language,
+                "official_solution_code": primary.code,
+                "official_solution_explanation": primary.explanation,
+                "official_solutions": solutions,
             }
         )
 
@@ -739,7 +757,7 @@ class ProblemAuthoringAgentService:
         if not isinstance(data, dict):
             raise ValueError("AI provider did not return a JSON object for the problem draft")
 
-        required_signal = {"title", "description", "official_solution_code"}
+        required_signal = {"title", "description", "official_solution_code", "official_solutions"}
         if required_signal & set(data):
             return data
 
@@ -753,6 +771,32 @@ class ProblemAuthoringAgentService:
 
         keys = ", ".join(sorted(str(key) for key in data.keys())[:8]) or "none"
         raise ValueError(f"AI provider returned JSON without a problem draft object. Top-level keys: {keys}")
+
+    def _solutions(self, authored: AuthoredProblemDraft) -> list[dict[str, str]]:
+        return [
+            {
+                "language": solution.language,
+                "code": solution.code,
+                "explanation": solution.explanation,
+            }
+            for solution in authored.official_solutions
+        ]
+
+    def _ordered_solutions_for_languages(
+        self,
+        solutions: list[AuthoredOfficialSolution],
+        requested_languages: list[str],
+    ) -> list[AuthoredOfficialSolution]:
+        by_language = {solution.language: solution for solution in solutions}
+        ordered: list[AuthoredOfficialSolution] = []
+        for language in requested_languages:
+            solution = by_language.get(language)
+            if solution:
+                ordered.append(solution)
+        for solution in solutions:
+            if solution.language not in {item.language for item in ordered}:
+                ordered.append(solution)
+        return ordered
 
     def _testcases(self, authored: AuthoredProblemDraft) -> list[dict[str, Any]]:
         testcases: list[dict[str, Any]] = []
@@ -794,6 +838,10 @@ class ProblemAuthoringAgentService:
                 hidden_cases.append(case)
             else:
                 public_cases.append(case)
+        solutions = self._solutions_from_record(draft)
+        if not solutions:
+            raise ValueError("At least one official solution is required")
+        primary = solutions[0]
         return AuthoredProblemDraft(
             title=str(draft.title),
             slug_candidate=str(draft.slug),
@@ -807,14 +855,73 @@ class ProblemAuthoringAgentService:
             time_limit=int(draft.time_limit or 1000),
             memory_limit=int(draft.memory_limit or 256),
             hint=draft.hint,
-            official_solution_language=str(draft.official_solution_language or "python"),
-            official_solution_code=str(draft.official_solution_code),
-            official_solution_explanation=str(draft.official_solution_explanation),
+            official_solution_language=primary["language"],
+            official_solution_code=primary["code"],
+            official_solution_explanation=primary["explanation"],
+            official_solutions=[
+                AuthoredOfficialSolution(
+                    language=solution["language"],
+                    code=solution["code"],
+                    explanation=solution["explanation"],
+                )
+                for solution in solutions
+            ],
             time_complexity=str(draft.time_complexity or ""),
             space_complexity=str(draft.space_complexity or ""),
             public_sample_testcases=public_cases,
             hidden_testcases=hidden_cases,
         )
+
+    def _solutions_from_record(self, draft: ProblemDraft) -> list[dict[str, str]]:
+        raw_solutions = load_json(getattr(draft, "official_solutions_json", None), [])
+        normalized = self._normalize_updated_solutions(raw_solutions)
+        if normalized:
+            return normalized
+        code = str(draft.official_solution_code or "")
+        explanation = str(draft.official_solution_explanation or "")
+        if code.strip() and explanation.strip():
+            return [
+                {
+                    "language": str(draft.official_solution_language or "python"),
+                    "code": code,
+                    "explanation": explanation,
+                }
+            ]
+        return []
+
+    def _normalize_updated_solutions(self, raw_solutions: list[Any]) -> list[dict[str, str]]:
+        normalized: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in raw_solutions:
+            if isinstance(item, AuthoredOfficialSolution):
+                language = item.language
+                code = item.code
+                explanation = item.explanation
+            elif isinstance(item, dict):
+                language = str(item.get("language") or "").strip().lower()
+                code = str(item.get("code") or "")
+                explanation = str(item.get("explanation") or "").strip()
+            else:
+                continue
+            if not language or language in seen or not Language.is_supported(language):
+                continue
+            if not code.strip() or not explanation:
+                continue
+            normalized.append({"language": language, "code": code, "explanation": explanation})
+            seen.add(language)
+        return normalized
+
+    def _merge_primary_solution_into_solutions(self, draft: ProblemDraft) -> list[dict[str, str]]:
+        primary = {
+            "language": str(draft.official_solution_language or "python").strip().lower() or "python",
+            "code": str(draft.official_solution_code or ""),
+            "explanation": str(draft.official_solution_explanation or "").strip(),
+        }
+        solutions = [primary]
+        for solution in self._solutions_from_record(draft):
+            if solution["language"] != primary["language"]:
+                solutions.append(solution)
+        return self._normalize_updated_solutions(solutions)
 
     def _normalize_updated_testcases(self, raw_testcases: list[dict[str, Any]]) -> list[dict[str, Any]]:
         normalized: list[dict[str, Any]] = []
@@ -848,6 +955,7 @@ class ProblemAuthoringAgentService:
             "requested_mode": payload.mode,
             "requested_difficulty": payload.difficulty,
             "requested_tags": payload.tags,
+            "requested_languages": payload.requested_languages(),
         }
 
     def _validation_repair_context(
@@ -910,6 +1018,7 @@ class ProblemAuthoringAgentService:
                 "official_solution_language": authored.official_solution_language,
                 "official_solution_code": authored.official_solution_code,
                 "official_solution_explanation": authored.official_solution_explanation,
+                "official_solutions": self._solutions(authored),
                 "time_complexity": authored.time_complexity,
                 "space_complexity": authored.space_complexity,
                 "public_sample_testcases": public_samples,

@@ -6,7 +6,6 @@ type TrailItem = {
   language: string;
   result?: string | null;
   execute_time?: number | null;
-  memory_used?: number | null;
   created_at: string;
   error_message?: string | null;
 };

@@ -228,6 +228,28 @@ def authored_both_payload() -> str:
     )
 
 
+def authored_multilanguage_payload() -> str:
+    payload = json.loads(authored_payload(public_count=1, hidden_count=0))
+    payload["official_solutions"] = [
+        {
+            "language": "python",
+            "code": "import sys\nprint(sys.stdin.read().strip())\n",
+            "explanation": "Echo stdin in Python.",
+        },
+        {
+            "language": "cpp",
+            "code": "#include <bits/stdc++.h>\nusing namespace std;\nint main(){string s; getline(cin,s); cout<<s<<'\\n';}\n",
+            "explanation": "Echo stdin in C++.",
+        },
+        {
+            "language": "java",
+            "code": "import java.util.*; class Solution { public static void main(String[] args){ Scanner sc = new Scanner(System.in); if(sc.hasNextLine()) System.out.println(sc.nextLine()); }}",
+            "explanation": "Echo stdin in Java.",
+        },
+    ]
+    return json.dumps(payload)
+
+
 def request_payload() -> ProblemAuthoringRequest:
     return ProblemAuthoringRequest(
         topic="echo number",
@@ -235,6 +257,19 @@ def request_payload() -> ProblemAuthoringRequest:
         tags=["io"],
         mode="acm",
         target_language="python",
+        locale="en",
+        model_profile="default",
+    )
+
+
+def multilanguage_request_payload() -> ProblemAuthoringRequest:
+    return ProblemAuthoringRequest(
+        topic="echo number",
+        difficulty="easy",
+        tags=["io"],
+        mode="acm",
+        target_language="python",
+        target_languages=["python", "cpp", "java"],
         locale="en",
         model_profile="default",
     )
@@ -280,6 +315,42 @@ def test_create_draft_saves_draft_run_and_steps():
     assert len(db.data[ProblemDraft]) == 1
     assert len(db.data[AgentRun]) == 1
     assert {step.step_type for step in db.data[AgentStep]} >= {"plan", "model_call", "validation", "persistence"}
+
+
+def test_create_and_approve_draft_with_multiple_official_solution_languages():
+    db = FakeSession()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=FakeProvider(authored_multilanguage_payload()),
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+    user = admin_user()
+
+    draft, _run = service.create_draft(multilanguage_request_payload(), user)
+    approved = service.approve_draft(str(draft.id), user)
+
+    assert draft.status == "approved"
+    assert approved.approved_problem_id is not None
+    assert {solution.language for solution in db.data[Solution]} == {"python", "cpp", "java"}
+    report = json.loads(draft.validation_report_json)
+    assert {result["solution_language"] for result in report["case_results"]} == {"python", "cpp", "java"}
+
+
+def test_create_draft_requires_requested_official_solution_languages():
+    db = FakeSession()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=SequenceProvider([authored_payload(public_count=1, hidden_count=0)] * 3),
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+
+    draft, _run = service.create_draft(multilanguage_request_payload(), admin_user())
+
+    assert draft.status == "validation_failed"
+    report = json.loads(draft.validation_report_json)
+    assert "official_solution_languages" in {
+        check["name"] for check in report["checks"] if not check["passed"]
+    }
 
 
 def test_update_draft_revalidates_and_records_manual_step():

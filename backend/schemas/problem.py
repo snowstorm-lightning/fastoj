@@ -2,42 +2,9 @@
 from pydantic import BaseModel, ConfigDict
 
 
-class TestCaseBase(BaseModel):
-    input: str
-    output: str
-    is_hidden: bool = False
-    is_sample: bool = False
-
-
-class TestCaseCreate(TestCaseBase):
-    pass
-
-
-class TestCaseResponse(TestCaseBase):
-    id: str
-    problem_id: str
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class SampleTestCase(BaseModel):
     input: str
     output: str
-
-
-class ProblemBase(BaseModel):
-    title: str
-    slug: str
-    description: str
-    difficulty: str
-    time_limit: int = 1000
-    memory_limit: int = 256
-    tags: list[str] = []
-    hint: str | None = None
-
-
-class ProblemCreate(ProblemBase):
-    pass
 
 
 class ProblemListItem(BaseModel):
@@ -88,10 +55,3 @@ class ProblemFilter(BaseModel):
     keyword: str | None = None
     sort: str = "created_at"
     order: str = "desc"
-
-
-class PaginationInfo(BaseModel):
-    page: int
-    page_size: int
-    total: int
-    total_pages: int

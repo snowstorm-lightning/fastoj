@@ -1,5 +1,24 @@
 # Codex Progress
 
+## 2026-05-29 Account-Backed Locale Preference
+
+- [x] Added a persisted `users.locale` profile field with an Alembic migration and `/auth/me` response/update support.
+- [x] Updated registration to save the active UI language and made the header/settings language switch sync to the signed-in account while still supporting guest local storage.
+- [x] Added frontend locale helpers for normalization, browser-language fallback, storage writes, and `<html lang>` updates.
+- [x] Made AI-related frontend API methods require an explicit `Locale` argument so new calls do not silently default to English.
+- [x] Cleared stale AI copilot state on UI language changes and improved tag query normalization for Chinese commas and case variants.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (141 passed); `cd frontend && npm run build`; `cd frontend && npm test` (9 files / 25 tests passed).
+
+## 2026-05-29 Multi-Language Authoring Draft Solutions
+
+- [x] Added `target_languages` to admin Problem Authoring Agent requests while keeping the legacy `target_language` field compatible.
+- [x] Added multi-language `official_solutions` draft schema/API support, persisted draft solution lists, and an Alembic migration for `problem_drafts.official_solutions_json`.
+- [x] Updated draft validation to require requested solution languages and sandbox-check every official solution language before approval.
+- [x] Updated draft approval to publish one official `Solution` row per generated/edited language.
+- [x] Updated the admin authoring UI with target-language checkboxes, per-language official solution editors, and per-language testcase validation chips.
+- [x] Updated README and Chinese README for multi-language authoring behavior.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (137 passed); `cd frontend && npm run build`; `cd frontend && npm test` (9 files / 23 tests passed).
+
 ## 2026-05-29 Dynamic AI Profile Availability
 
 - [x] Planned and implemented dynamic AI profile discovery for `default`, `deepseek`, and `qwen-local` through `GET /api/v1/ai/profiles`.

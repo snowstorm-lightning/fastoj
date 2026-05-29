@@ -125,7 +125,6 @@ export const aiChatSchema = z.object({
 export type ProblemListItem = z.infer<typeof problemListItemSchema>;
 export type ProblemDetail = z.infer<typeof problemDetailSchema>;
 export type SubmissionDetail = z.infer<typeof submissionDetailSchema>;
-export type TestCaseResult = z.infer<typeof testCaseResultSchema>;
 export type AIExplain = z.infer<typeof aiExplainSchema>;
 export type AIReview = z.infer<typeof aiReviewSchema>;
 export type AIHint = z.infer<typeof aiHintSchema>;
