@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Live demo: [fastoj.snowstormlightning.top](https://fastoj.snowstormlightning.top)
+Live demo: [fastoj.snowstormlightning.top](http://fastoj.snowstormlightning.top)
 
 FastOJ is an AI-assisted online judge for interview practice. It combines strict
 Docker-based judging, a Monaco coding workbench, bilingual product UI, realtime

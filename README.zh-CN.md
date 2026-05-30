@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-在线体验：[fastoj.snowstormlightning.top](https://fastoj.snowstormlightning.top)
+在线体验：[fastoj.snowstormlightning.top](http://fastoj.snowstormlightning.top)
 
 FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。它把 Docker 沙箱判题、
 Monaco 编程工作台、双语界面、实时提交状态和安全的 AI 解释整合在一起，让
