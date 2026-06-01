@@ -1,5 +1,15 @@
 # Codex Progress
 
+## 2026-06-01 CI/CD And Tencent Cloud Deployment Prep
+
+- [x] Added GitHub Actions CI for backend lint/tests and frontend build/tests on PRs and `master` pushes.
+- [x] Added a self-contained deploy workflow that runs the same quality gate, builds API/worker/judge images on GitHub Actions, pushes them to GHCR, SSHes as `ubuntu`, uploads the production Compose file, pulls images, and restarts services on Tencent Cloud.
+- [x] Added `docker-compose.prod.yml` for server-side image-based deployment without source bind mounts.
+- [x] Kept `.env` as the only runtime environment filename for both local and server use; added `.env.prod.example` for `/opt/projects/fastoj/.env` and documented that `.env.dev` is optional and unnecessary for the normal local-plus-server flow.
+- [x] Updated local Compose to expose PostgreSQL, Redis, and API ports through `.env` variables while retaining loopback defaults.
+- [x] Added Chinese deployment documentation in `docs/DEPLOYMENT.md` and linked it from both READMEs.
+- [x] Docker Compose config validation passed for local `.env.example` and production `.env.prod.example`; production Compose was tightened to avoid passing unrelated `.env` keys into containers.
+
 ## 2026-05-29 Account-Backed Locale Preference
 
 - [x] Added a persisted `users.locale` profile field with an Alembic migration and `/auth/me` response/update support.

@@ -121,7 +121,7 @@ docker compose up --build
 Open:
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8010
 ```
 
 Seed the bundled problem set:
@@ -518,6 +518,23 @@ References: [Qwen GGUF quickstart](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-
 
 Real secrets belong in `.env` or deployment environment variables. The repository
 ignores `.env` and `.env.*`; `.env.example` contains safe placeholders only.
+
+## CI/CD Deployment
+
+FastOJ includes GitHub Actions for pull-request checks and Tencent Cloud
+deployment:
+
+- `.github/workflows/ci.yml` runs backend lint/tests and frontend build/tests.
+- `.github/workflows/deploy.yml` builds API, worker, and judge images in GitHub
+  Actions, pushes them to GHCR, then SSHes to the Tencent Cloud server as
+  `ubuntu` to pull and restart containers.
+
+Use `.env` as the runtime environment filename in both places. Locally, copy
+`.env.example` to `.env`; on the server, copy `.env.prod.example` to
+`/opt/projects/fastoj/.env` and edit real secrets there. A separate `.env.dev` is not
+required for the normal local-plus-server workflow.
+
+Full deployment steps are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Safety Model
 

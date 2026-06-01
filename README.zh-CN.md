@@ -101,7 +101,7 @@ docker compose up --build
 打开：
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8010
 ```
 
 导入内置题库：
@@ -490,6 +490,22 @@ PowerShell：
 
 真实密钥放在 `.env` 或部署环境变量中。仓库已经忽略 `.env` 和 `.env.*`；
 `.env.example` 只保留安全占位值。
+
+## CI/CD 部署
+
+FastOJ 已包含 GitHub Actions：
+
+- `.github/workflows/ci.yml`：在 PR 和 `master` 推送时运行后端 lint/test、
+  前端 build/test。
+- `.github/workflows/deploy.yml`：在 GitHub Actions 里构建 API、worker 和
+  judge 镜像，推送到 GHCR，然后用 `ubuntu` 用户 SSH 到腾讯云服务器，拉取镜像
+  并重启容器。
+
+本机和服务器都使用 `.env` 作为运行时环境文件名。本机从 `.env.example` 复制出
+`.env`；服务器从 `.env.prod.example` 复制到 `/opt/projects/fastoj/.env` 并填写真实密钥。
+常规“本机 + 一台服务器”流程不需要单独维护 `.env.dev`。
+
+完整步骤见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。
 
 ## 安全模型
 

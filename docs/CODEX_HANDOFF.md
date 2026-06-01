@@ -1,10 +1,20 @@
 # Codex Handoff
 
-Updated: 2026-05-29
+Updated: 2026-06-01
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-06-01 CI/CD And Tencent Cloud Deployment Prep
+
+- GitHub Actions now has `.github/workflows/ci.yml` for backend lint/tests and frontend build/tests on PRs and `master` pushes.
+- `.github/workflows/deploy.yml` now runs a quality gate, builds API/worker/judge images in GitHub Actions, pushes them to GHCR, SSHes to the Tencent Cloud server as `ubuntu`, uploads `docker-compose.prod.yml`, pulls images, and restarts services.
+- Production deployment uses `/opt/projects/fastoj/.env` plus `docker-compose.prod.yml`; the server no longer needs to build source locally during normal deploys.
+- Local and server runtime configuration intentionally use the same filename, `.env`. Local `.env` comes from `.env.example`; server `.env` comes from `.env.prod.example`. `.env.dev` is not required for the normal local-plus-server workflow.
+- Local Compose now exposes PostgreSQL, Redis, and API ports through `.env` variables (`POSTGRES_PORT`, `REDIS_PORT`, `FASTOJ_PORT`) with loopback defaults.
+- Chinese deployment steps live in `docs/DEPLOYMENT.md`, including required GitHub secrets, Tencent Cloud server preparation, first seed/admin commands, and reverse-proxy guidance.
+- Docker Compose config validation passed for local `.env.example` and production `.env.prod.example`; production Compose was tightened to avoid passing unrelated `.env` keys into containers.
 
 ## 2026-05-29 Account-Backed Locale Preference
 

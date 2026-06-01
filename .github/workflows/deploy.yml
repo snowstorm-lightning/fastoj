@@ -1,0 +1,184 @@
+name: Build and Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  DEPLOY_USER: ubuntu
+  DEPLOY_PORT: ${{ secrets.TENCENT_PORT || '22' }}
+  DEPLOY_PATH: ${{ vars.TENCENT_DEPLOY_PATH || '/opt/projects/fastoj' }}
+
+jobs:
+  quality:
+    name: Quality gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: python -m pip install uv==0.10.2
+
+      - name: Install backend dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Lint backend
+        run: uv run ruff check .
+
+      - name: Test backend
+        run: uv run pytest
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+
+      - name: Test frontend
+        run: npm test
+        working-directory: frontend
+
+  build:
+    name: Build and push images
+    runs-on: ubuntu-latest
+    needs: quality
+
+    outputs:
+      image_owner: ${{ steps.image.outputs.owner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve image owner
+        id: image
+        run: |
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          echo "owner=${owner}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-api:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-api:latest
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.worker
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-worker:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-worker:latest
+
+      - name: Build and push judge image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.judge
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-judge:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-judge:latest
+
+  deploy:
+    name: Deploy to Tencent Cloud
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
+          TENCENT_SSH_PRIVATE_KEY: ${{ secrets.TENCENT_SSH_PRIVATE_KEY }}
+        run: |
+          test -n "${TENCENT_HOST}"
+          test -n "${TENCENT_SSH_PRIVATE_KEY}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${TENCENT_SSH_PRIVATE_KEY}" > ~/.ssh/tencent
+          chmod 600 ~/.ssh/tencent
+          ssh-keyscan -p "${DEPLOY_PORT}" "${TENCENT_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Upload production compose file
+        env:
+          TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
+        run: |
+          ssh -i ~/.ssh/tencent -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${TENCENT_HOST}" \
+            "sudo mkdir -p '${DEPLOY_PATH}' && sudo chown '${DEPLOY_USER}:${DEPLOY_USER}' '${DEPLOY_PATH}'"
+          scp -i ~/.ssh/tencent -P "${DEPLOY_PORT}" docker-compose.prod.yml \
+            "${DEPLOY_USER}@${TENCENT_HOST}:${DEPLOY_PATH}/docker-compose.yml"
+
+      - name: Log in to GHCR on server when needed
+        env:
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          GHCR_READ_USER: ${{ secrets.GHCR_READ_USER }}
+          TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
+        run: |
+          if [ -n "${GHCR_READ_TOKEN}" ]; then
+            ghcr_user="${GHCR_READ_USER:-${{ github.repository_owner }}}"
+            printf '%s' "${GHCR_READ_TOKEN}" | ssh -i ~/.ssh/tencent -p "${DEPLOY_PORT}" \
+              "${DEPLOY_USER}@${TENCENT_HOST}" "docker login '${REGISTRY}' -u '${ghcr_user}' --password-stdin"
+          else
+            echo "GHCR_READ_TOKEN is not set; assuming images are public or the server is already logged in."
+          fi
+
+      - name: Pull images and restart services
+        env:
+          TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
+          IMAGE_OWNER: ${{ needs.build.outputs.image_owner }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/tencent -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${TENCENT_HOST}" "
+            set -e
+            cd '${DEPLOY_PATH}'
+            test -f .env || { echo 'Missing ${DEPLOY_PATH}/.env on server' >&2; exit 1; }
+            FASTOJ_IMAGE_REGISTRY='${REGISTRY}' FASTOJ_IMAGE_OWNER='${IMAGE_OWNER}' FASTOJ_IMAGE_TAG='${IMAGE_TAG}' docker compose -f docker-compose.yml pull
+            FASTOJ_IMAGE_REGISTRY='${REGISTRY}' FASTOJ_IMAGE_OWNER='${IMAGE_OWNER}' FASTOJ_IMAGE_TAG='${IMAGE_TAG}' docker compose -f docker-compose.yml up -d --remove-orphans
+            docker image prune -f
+            docker compose -f docker-compose.yml ps
+          "
