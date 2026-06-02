@@ -1,19 +1,20 @@
 # FastOJ 项目深度教学指南
 
-这组文档是给新人快速上手 FastOJ 用的。阅读顺序按“先全局、再链路、再细节、最后面试表达”设计，目标不是背代码，而是让你能解释每个关键设计为什么存在、请求如何流动、数据如何落库、哪里有安全边界。
+这组文档是给新人快速上手 FastOJ 用的。阅读顺序按“先全局、再链路、再细节、最后对外讲解”设计，目标不是背代码，而是让你能解释每个关键设计为什么存在、请求如何流动、数据如何落库、哪里有安全边界。
 
-如果你只有 20 分钟准备 Google call，先读 [07-interview-playbook.md](07-interview-playbook.md)，再回来看判题链路和 AI 安全边界。
+如果只想快速把项目主线讲清楚，先读 [07-project-explainer.md](07-project-explainer.md)，再回来看判题链路和 AI 安全边界。
 
 ## 学习路线
 
 如果是第一次读，建议先把每篇当成“流程说明”看，不要一开始就逐个点击代码锚点。第一遍只建立系统地图；第二遍从一个请求追到数据库、队列和前端状态；第三遍再打开锚点确认实现细节。
 
 1. 先读 [01-architecture.md](01-architecture.md)：知道 FastOJ 是什么，服务如何部署，FastAPI、PostgreSQL、Redis、Worker、Docker 和 React 如何配合。
-2. 再读 [02-judge-pipeline.md](02-judge-pipeline.md)：这是最容易被追问的核心，重点理解提交从前端到 Docker 沙箱再回到 WebSocket 的全过程。
+2. 再读 [02-judge-pipeline.md](02-judge-pipeline.md)：这是项目的核心链路，重点理解提交从前端到 Docker 沙箱再回到 WebSocket 的全过程。
 3. 接着读 [03-data-and-problem-modes.md](03-data-and-problem-modes.md)：把表结构、题目模式、测试用例和提交结果串起来。
 4. 然后读 [04-ai-and-safety.md](04-ai-and-safety.md)：讲清楚 AI 如何接入、为什么不会泄露隐藏用例。
 5. 再读 [05-frontend-tour.md](05-frontend-tour.md)：理解单页 React 应用、工作台状态、API client、WebSocket 和 polling fallback。
-6. 最后读 [06-ops-and-testing.md](06-ops-and-testing.md)：知道如何启动、验证、部署、排障。
+6. 再读 [06-ops-and-testing.md](06-ops-and-testing.md)：知道如何启动、验证、部署、排障。
+7. 最后读 [07-project-explainer.md](07-project-explainer.md)：把前面的内容整理成一条可以对外讲清楚的项目主线。
 
 ## 文档目录
 
@@ -25,13 +26,13 @@
 | [04-ai-and-safety.md](04-ai-and-safety.md) | “AI 接入在哪里？隐藏用例怎么保护？” |
 | [05-frontend-tour.md](05-frontend-tour.md) | “前端页面和状态怎么组织？” |
 | [06-ops-and-testing.md](06-ops-and-testing.md) | “怎么启动、测试、部署和排障？” |
-| [07-interview-playbook.md](07-interview-playbook.md) | “20 分钟电话里怎么讲得像项目 owner？” |
+| [07-project-explainer.md](07-project-explainer.md) | “如何用一条清晰主线讲 FastOJ？” |
 
 ## 总体架构图
 
 ![FastOJ 总体运行架构](assets/architecture.svg)
 
-这个图可以作为面试回答的第一层：前端负责交互，API 负责鉴权和业务入口，数据库保存题目/提交/结果，Redis Streams 解耦异步判题，Worker parent 监督 judge child 调 Docker 沙箱执行用户代码，WebSocket 把进度推回页面，AI 服务只拿到安全上下文。
+这个图可以作为项目讲解的第一层：前端负责交互，API 负责鉴权和业务入口，数据库保存题目/提交/结果，Redis Streams 解耦异步判题，Worker parent 监督 judge child 调 Docker 沙箱执行用户代码，WebSocket 把进度推回页面，AI 服务只拿到安全上下文。
 
 ## 代码导航
 
@@ -56,7 +57,7 @@
 
 每篇文档里的代码行号只是定位入口，不是要背诵的数字。如果代码后续继续移动，优先确认函数名、类名和职责是否仍然一致。
 
-## 面试准备优先级
+## 讲解优先级
 
 必须能讲清楚：
 

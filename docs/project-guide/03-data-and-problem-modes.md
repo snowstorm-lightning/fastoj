@@ -103,8 +103,8 @@ JudgeTask 写 `TestCaseResult` 时对隐藏用例做了空值处理：[backend/w
 - 前端 starter 生成：[frontend/src/lib/problemModes.ts:712](../../frontend/src/lib/problemModes.ts#L712)
 - 隐藏结果写入保护：[backend/worker/tasks/judge_task.py:219](../../backend/worker/tasks/judge_task.py#L219)
 
-## 面试讲法
+## 讲解口径
 
-如果被问到 “Function mode 怎么实现”，可以这样回答：
+讲 Function mode 时可以按这条主线说明：
 
 Function mode is implemented as a transformation layer. The user writes only the target function, but before judging we wrap it with a generated harness based on the problem signature. The harness parses JSON-line input, calls the user function, formats the return value, and then the sandbox still executes a normal stdin/stdout program. This lets the judge pipeline stay unified for both ACM and Function mode.

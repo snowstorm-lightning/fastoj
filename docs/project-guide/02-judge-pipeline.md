@@ -1,6 +1,6 @@
 # 02. 判题链路深度讲解
 
-判题链路是 FastOJ 最核心、最值得在面试中展开的部分。你需要能从前端按钮一路讲到 Docker 容器执行，再讲回数据库和 WebSocket。
+判题链路是 FastOJ 最核心、最值得在项目讲解中展开的部分。你需要能从前端按钮一路讲到 Docker 容器执行，再讲回数据库和 WebSocket。
 
 第一次读这篇时，先记住五个关键词：`Submission` 是一次判题请求，`TestCaseResult` 是每个用例的结果，Redis Stream message 是异步任务，worker heartbeat 表示是否有判题服务在线，active task marker 用来排障当前卡住的任务。
 

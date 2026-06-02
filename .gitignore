@@ -57,6 +57,7 @@ logs/
 # Local deployment notes and machine-specific configuration
 docs/local-*.md
 docs/*.local.md
+docs/project-guide/07-interview-playbook.md
 local-config/
 models/
 

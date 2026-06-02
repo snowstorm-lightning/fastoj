@@ -148,8 +148,8 @@ AI 面板入口在 [frontend/src/main.tsx:1799](../../frontend/src/main.tsx#L179
 - locale registry：[frontend/src/lib/i18n.ts:4](../../frontend/src/lib/i18n.ts#L4)
 - locale fallback helpers：[frontend/src/lib/i18n.ts:52](../../frontend/src/lib/i18n.ts#L52)
 
-## 面试讲法
+## 讲解口径
 
-前端回答不要只说 “React”。更好的说法是：
+讲前端时不要只说 “React”。更好的说法是：
 
 The frontend is organized around the learner workflow. The workbench owns the active problem, language, judge mode, code draft, run cases, submission state, WebSocket events, polling fallback, and AI panel state. TanStack Query handles server data like problems, solutions, profiles, and submission history, while local UI preferences such as theme, panel sizes, drafts, and locale are stored locally or synced to the user profile.

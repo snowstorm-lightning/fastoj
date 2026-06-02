@@ -1,21 +1,21 @@
-# 07. Google 20 分钟项目通话速查
+# 07. 项目讲解速查
 
-这篇是为 20 分钟电话准备的。目标不是把所有技术细节讲完，而是让对方快速感到：你真的做过这个项目，知道架构、取舍、安全边界、测试和后续改进。
+这篇用于帮助读者用一条清晰主线讲 FastOJ。目标不是把所有技术细节一次性讲完，而是先建立项目轮廓，再按需要深入架构、判题、安全边界、测试和后续改进。
 
-## 20 分钟建议节奏
+## 建议讲解顺序
 
-| 时间 | 你要做什么 |
+| 阶段 | 讲解重点 |
 | --- | --- |
-| 0-2 分钟 | 60 秒项目介绍，再补一句你负责/实现的核心部分。 |
-| 2-6 分钟 | 讲整体架构：React、FastAPI、PostgreSQL、Redis Streams、Worker、Docker judge、AI provider。 |
-| 6-11 分钟 | 深讲判题链路：Run/Submit、SubmissionService、QueueService、Worker、Sandbox、WebSocket。 |
-| 11-15 分钟 | 深讲一个亮点：隐藏用例隔离或 Function mode 包装。 |
-| 15-18 分钟 | 讲测试、部署和可靠性。 |
-| 18-20 分钟 | 讲你会怎么继续改进，并反问对方下一步流程或关注点。 |
+| 开场 | 用一段话说明 FastOJ 是什么、解决什么问题、核心链路是什么。 |
+| 架构 | 讲整体拓扑：React、FastAPI、PostgreSQL、Redis Streams、Worker、Docker judge、AI provider。 |
+| 核心链路 | 深讲判题：Run/Submit、SubmissionService、QueueService、Worker、Sandbox、WebSocket。 |
+| 设计亮点 | 选择一个重点展开：隐藏用例隔离、Function mode 包装、队列可靠性或 Docker sandbox。 |
+| 工程质量 | 讲测试、部署、生产/开发环境边界和可观测性。 |
+| 后续方向 | 说明还可以如何继续增强，例如 e2e、队列仪表盘、多 Worker 压测和更强 sandbox。 |
 
 ## 60 秒英文项目介绍
 
-FastOJ is an AI-assisted online judge for interview practice. It provides a LeetCode-like workflow with a React and TypeScript frontend, a FastAPI backend, PostgreSQL persistence, Redis Streams for asynchronous judging, and Docker-based sandbox execution for untrusted user code. The core flow is that a user submits code from the workbench, the API creates a submission, pushes a judge task to Redis, a worker consumes it, runs the code in a restricted Docker container, stores testcase results, and streams progress back through WebSocket with polling as a fallback. I also added AI features for hints, explanations, code review, and problem authoring, with a strong safety boundary: hidden testcase inputs, expected outputs, and actual outputs are never sent to users or AI providers.
+FastOJ is an AI-assisted online judge for algorithm practice. It provides a LeetCode-like workflow with a React and TypeScript frontend, a FastAPI backend, PostgreSQL persistence, Redis Streams for asynchronous judging, and Docker-based sandbox execution for untrusted user code. The core flow is that a user submits code from the workbench, the API creates a submission, pushes a judge task to Redis, a worker consumes it, runs the code in a restricted Docker container, stores testcase results, and streams progress back through WebSocket with polling as a fallback. The project also includes AI features for hints, explanations, code review, and problem authoring, with a strong safety boundary: hidden testcase inputs, expected outputs, and actual outputs are never sent to users or AI providers.
 
 ## 中文版本
 
@@ -35,11 +35,11 @@ FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。前端用 Re
 - OpenAI-compatible AI provider profiles
 - Admin-only problem authoring workflow
 
-## 最可能被问的问题和回答要点
+## 常见技术问题和回答要点
 
 ### 1. Why did you use Redis Streams for judging?
 
-I needed more than fire-and-forget queueing. Redis Streams gives message ids, consumer groups, ack, pending messages, and a path for reclaiming or dead-lettering failed work. That fits judge workers because tasks can be slow, workers can crash, and multiple workers should be able to consume from the same stream safely.
+The judge queue needs more than fire-and-forget delivery. Redis Streams gives message ids, consumer groups, ack, pending messages, and a path for reclaiming or dead-lettering failed work. That fits judge workers because tasks can be slow, workers can crash, and multiple workers should be able to consume from the same stream safely.
 
 代码锚点：[QueueService.push_task](../../backend/services/queue_service.py#L116)、[QueueService.pop_stream_task](../../backend/services/queue_service.py#L134)、[retry_or_dead_letter](../../backend/services/queue_service.py#L155)。
 
@@ -75,11 +75,11 @@ After a submission is created, the workbench opens a WebSocket for that submissi
 
 ### 7. How did you test it?
 
-I used backend unit tests for queue semantics, submission fallback, worker behavior, sandbox execution, Function mode wrapping, AI safety, and auth. On the frontend, tests cover API error formatting, schemas, i18n, problem mode helpers, and major UI panels. For integration confidence, the project has Docker Compose smoke checks and a manual browser acceptance harness that specifically checks hidden-test safety.
+The project uses backend unit tests for queue semantics, submission fallback, worker behavior, sandbox execution, Function mode wrapping, AI safety, and auth. On the frontend, tests cover API error formatting, schemas, i18n, problem mode helpers, and major UI panels. For integration confidence, the project has Docker Compose smoke checks and a manual browser acceptance harness that specifically checks hidden-test safety.
 
 参考：[tests](../../tests)、[acceptance harness](../ACCEPTANCE_HARNESS.md)。
 
-## 可以主动强调的项目亮点
+## 可强调的项目亮点
 
 - **Real judge pipeline**：不是浏览器模拟，不是直接 host subprocess。
 - **Reliability-aware queue**：Redis Streams、ack、retry、dead-letter、pending reclaim。
@@ -89,7 +89,7 @@ I used backend unit tests for queue semantics, submission fallback, worker behav
 - **Extensible i18n**：前端 locale registry 和后端 dynamic locale validator 支持长期扩展，不把语言逻辑写成 `zh/en` 二分。
 - **Deployment-ready shape**：Docker Compose、本地/生产配置、GitHub Actions、部署文档。
 
-## 如果被问到 tradeoff
+## 常见取舍
 
 ### 为什么没有一开始就用 Kubernetes？
 
@@ -101,7 +101,7 @@ The current frontend prioritized product completeness and fast iteration. The st
 
 ### 如何扩展第三种语言？
 
-I would add the locale metadata and fallback labels in the frontend registry, add backend locale metadata and validation in one place, then fill UI copy incrementally through `localeText`/`localeValue` fallback helpers. That avoids scattering binary language checks across components and keeps API validation tied to the supported locale list.
+The extension path is to add locale metadata and fallback labels in the frontend registry, add backend locale metadata and validation in one place, then fill UI copy incrementally through `localeText`/`localeValue` fallback helpers. That avoids scattering binary language checks across components and keeps API validation tied to the supported locale list.
 
 代码锚点：[frontend LOCALE_META](../../frontend/src/lib/i18n.ts#L4)、[backend locale validator](../../backend/core/locales.py#L30)、[App lang sync](../../frontend/src/main.tsx#L3462)。
 
@@ -109,7 +109,7 @@ I would add the locale metadata and fallback labels in the frontend registry, ad
 
 The product goal is training, not answer dumping. AI is constrained to hints, explanation, review, and safe conversation. It should help the learner debug and reason while preserving the integrity of hidden tests and the learning experience.
 
-## 你可以说的改进计划
+## 后续改进方向
 
 1. Add automated Playwright e2e coverage for auth, library search, run/submit, WebSocket fallback, AI stale-state cleanup, and admin workflows.
 2. Add queue observability: worker heartbeat dashboard, pending count, dead-letter count, average judge latency, and per-language failure rate.
@@ -117,12 +117,11 @@ The product goal is training, not answer dumping. AI is constrained to hints, ex
 4. Improve sandbox isolation further with stronger seccomp profiles, per-run filesystem isolation, and stricter CPU accounting.
 5. Add multi-worker load testing and explicit pending reclaim scheduling.
 
-## 最后反问
+## 可继续深入的方向
 
-可以用简短英文结尾：
+读者可以继续深入这些主题：
 
-I can go deeper into the judge queue, the Docker sandbox, or the AI safety design. Which part would be most useful for you to hear more about?
-
-如果是 recruiter 电话，也可以问：
-
-What areas will the next interview focus on: backend systems, frontend product work, distributed systems, or coding fundamentals?
+- Judge queue：Redis Streams、ack、retry、dead-letter、pending reclaim。
+- Docker sandbox：容器限制、非 root、网络隔离、输出截断和后续 seccomp 加固。
+- AI safety：隐藏用例隔离、prompt 输入边界、管理员出题工作流。
+- Frontend architecture：工作台状态、WebSocket + polling、重组件懒加载。

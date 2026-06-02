@@ -185,8 +185,8 @@ Docker 执行入口在 [backend/sandbox/executor.py:92](../../backend/sandbox/ex
 - 部署文档：[docs/DEPLOYMENT.md](../DEPLOYMENT.md)
 - 验收手册：[docs/ACCEPTANCE_HARNESS.md](../ACCEPTANCE_HARNESS.md)
 
-## 面试讲法
+## 讲解口径
 
 运维和测试可以这样讲：
 
-For confidence, I split verification into unit-level backend tests, frontend component/schema tests, build checks, and Docker-level smoke tests. The most critical path is the real judge workflow, because it crosses API, Redis, Worker, Docker, database writes, WebSocket events, and frontend rendering. I also documented a manual acceptance harness for browser scenarios and hidden-test safety checks.
+Verification is split into unit-level backend tests, frontend component/schema tests, build checks, and Docker-level smoke tests. The most critical path is the real judge workflow, because it crosses API, Redis, Worker, Docker, database writes, WebSocket events, and frontend rendering. The project also documents a manual acceptance harness for browser scenarios and hidden-test safety checks.
