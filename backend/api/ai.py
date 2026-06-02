@@ -16,6 +16,7 @@ from backend.ai.schemas import (
 from backend.ai.service import AIService
 from backend.api.auth import get_current_user
 from backend.core.database import get_db
+from backend.core.locales import DEFAULT_LOCALE
 from backend.models import User
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -35,7 +36,7 @@ def explain_submission(
 ):
     try:
         model_profile = payload.model_profile if payload else "default"
-        locale = payload.locale if payload else "en"
+        locale = payload.locale if payload else DEFAULT_LOCALE
         return AIService(db, model_profile=model_profile).explain_submission(submission_id, current_user, locale)
     except AIProviderUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
@@ -52,7 +53,7 @@ def review_submission(
 ):
     try:
         model_profile = payload.model_profile if payload else "default"
-        locale = payload.locale if payload else "en"
+        locale = payload.locale if payload else DEFAULT_LOCALE
         return AIService(db, model_profile=model_profile).review_submission(submission_id, current_user, locale)
     except AIProviderUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))

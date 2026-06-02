@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="540" viewBox="0 0 1000 540" role="img" aria-labelledby="title desc">
+  <title id="title">QueueService Redis Streams design</title>
+  <desc id="desc">API pushes judge tasks to Redis stream, workers consume with a consumer group, ack success, retry or dead-letter failures, and publish status events.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .box { fill: #ffffff; stroke: #111827; stroke-width: 2; rx: 12; }
+      .stream { fill: #ecfdf5; stroke: #059669; }
+      .worker { fill: #fff7ed; stroke: #ea580c; }
+      .bad { fill: #fef2f2; stroke: #dc2626; }
+      .status { fill: #eff6ff; stroke: #2563eb; }
+      .title { font: 700 22px Arial, "Microsoft YaHei", sans-serif; fill: #111827; }
+      .label { font: 700 16px Arial, "Microsoft YaHei", sans-serif; fill: #111827; }
+      .small { font: 13px Arial, "Microsoft YaHei", sans-serif; fill: #374151; }
+      .arrow { stroke: #2563eb; stroke-width: 2.3; fill: none; marker-end: url(#arrow); }
+      .warn { stroke: #dc2626; stroke-width: 2.3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1000" height="540"/>
+  <text x="48" y="52" class="title">QueueService：Redis Streams 判题队列</text>
+
+  <rect x="60" y="125" width="160" height="100" class="box status"/>
+  <text x="94" y="162" class="label">API</text>
+  <text x="90" y="190" class="small">push_task</text>
+  <text x="90" y="212" class="small">publish pending</text>
+
+  <rect x="330" y="105" width="230" height="140" class="box stream"/>
+  <text x="370" y="145" class="label">judge:tasks stream</text>
+  <text x="365" y="175" class="small">payload: JSON task</text>
+  <text x="365" y="199" class="small">attempt counter</text>
+  <text x="365" y="223" class="small">consumer group: judge-workers</text>
+
+  <rect x="680" y="75" width="200" height="90" class="box worker"/>
+  <text x="728" y="112" class="label">Worker A</text>
+  <text x="712" y="140" class="small">xreadgroup + ack</text>
+
+  <rect x="680" y="205" width="200" height="90" class="box worker"/>
+  <text x="728" y="242" class="label">Worker B</text>
+  <text x="712" y="270" class="small">xreadgroup + ack</text>
+
+  <rect x="330" y="340" width="230" height="95" class="box bad"/>
+  <text x="370" y="376" class="label">judge:dead-letter</text>
+  <text x="365" y="404" class="small">max retries reached</text>
+
+  <rect x="680" y="360" width="200" height="95" class="box status"/>
+  <text x="718" y="396" class="label">judge:status</text>
+  <text x="710" y="424" class="small">Pub/Sub to API relay</text>
+
+  <path class="arrow" d="M220 175 H330"/>
+  <text x="250" y="160" class="small">XADD</text>
+  <path class="arrow" d="M560 145 C610 125, 635 115, 680 115"/>
+  <path class="arrow" d="M560 205 C610 235, 635 250, 680 250"/>
+  <text x="590" y="186" class="small">XREADGROUP</text>
+  <path class="warn" d="M680 285 C610 330, 565 360, 560 385"/>
+  <text x="592" y="348" class="small">retry_or_dead_letter</text>
+  <path class="arrow" d="M780 295 V360"/>
+  <text x="792" y="332" class="small">publish_status</text>
+  <path class="arrow" d="M680 410 C520 495, 260 455, 190 225"/>
+  <text x="300" y="492" class="small">API relay broadcasts to WebSocket clients</text>
+</svg>

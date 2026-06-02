@@ -8,6 +8,7 @@ from backend.ai.profiles import resolve_ai_config
 from backend.ai.prompts import chat, explain_submission, hint, review_code
 from backend.ai.providers import AIProviderUnavailableError, BaseAIProvider, build_provider
 from backend.ai.schemas import AIChatResponse, AIExplainResponse, AIHintResponse, AIReviewResponse
+from backend.core.locales import ai_response_language, localized_system_prompt
 from backend.models import Problem, Submission, SubmissionResult, TestCaseResult, User
 
 RESULT_TO_VERDICT = {
@@ -310,12 +311,10 @@ class AIService:
         return text or fallback
 
     def _response_language(self, locale: str) -> str:
-        return "Simplified Chinese" if locale == "zh" else "English"
+        return ai_response_language(locale)
 
     def _localized_system_prompt(self, prompt: str, locale: str) -> str:
-        if locale == "zh":
-            return f"{prompt}\nRespond in Simplified Chinese for every user-facing string inside the JSON values."
-        return f"{prompt}\nRespond in English for every user-facing string inside the JSON values."
+        return localized_system_prompt(prompt, locale)
 
 
 __all__ = ["AIProviderUnavailableError", "AIService"]

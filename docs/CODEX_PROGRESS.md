@@ -1,5 +1,14 @@
 # Codex Progress
 
+## 2026-06-02 Production Judge Dispatch Hardening
+
+- [x] Added an explicit judge inline fallback policy: fallback follows `DEBUG` by default, can be overridden by `JUDGE_INLINE_FALLBACK`, and is disabled in local/production Docker Compose.
+- [x] Changed production judge dispatch so missing Redis/Worker availability returns `503 Judge service unavailable` instead of running user submissions inline in the API process.
+- [x] Split queue enqueue success from status publishing so a post-`XADD` pub/sub failure cannot trigger duplicate inline judging.
+- [x] Added background worker heartbeat refresh, pending-message claim processing, live-owner reclaim protection, and non-terminal retry handling before final dead-letter errors.
+- [x] Clarified the workbench discussion tab as browser-local notes and disabled local posting while logged out.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (162 passed); `cd frontend && npm run build`; `cd frontend && npm test` (9 files / 26 tests); `docker compose config`; `docker compose up --build -d api worker`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps` reported API, worker, PostgreSQL, and Redis healthy.
+
 ## 2026-06-01 CI/CD And Tencent Cloud Deployment Prep
 
 - [x] Added GitHub Actions CI for backend lint/tests and frontend build/tests on PRs and `master` pushes.
@@ -68,7 +77,7 @@
 ## 2026-05-29 Workbench Run Panel And Auth Feedback
 
 - [x] Added a LeetCode-style run result panel below the editor with editable public inputs, official-solution generated expected output, actual output, and red-highlighted diff lines for mismatches.
-- [x] Added judge-worker heartbeat detection so async submissions fall back to inline Docker judging when Redis is up but no worker is alive, preventing runs from staying pending forever.
+- [x] Added judge-worker heartbeat detection. This originally allowed inline fallback when Redis was up but no worker was alive; the 2026-06-02 dispatch hardening now limits that fallback to debug/local policy and returns 503 in production.
 - [x] Made the frontend polling fallback append a final result/error event when WebSocket terminal events are missed.
 - [x] Changed public-run custom cases so clients submit only input; the judge ignores client-provided expected output and generates it server-side from an official/reference solution, with public-sample fallback only for already visible samples.
 - [x] Added backend support for public-only custom run cases while keeping hidden testcase inputs, expected outputs, actual outputs, and hidden progress metadata out of API/WebSocket responses.

@@ -5,7 +5,7 @@ from backend.api.auth import get_current_user
 from backend.core.database import get_db
 from backend.models import User
 from backend.schemas.submission import SubmissionCreate, SubmissionResponse
-from backend.services.submission_service import SubmissionService
+from backend.services.submission_service import JudgeServiceUnavailableError, SubmissionService
 
 router = APIRouter(prefix="/submissions/run", tags=["run"])
 
@@ -43,6 +43,8 @@ async def run_code(
             created_at=submission.created_at.isoformat(),
             finished_at=submission.finished_at.isoformat() if submission.finished_at else None,
         )
+    except JudgeServiceUnavailableError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except ValueError as e:
         if "Unsupported language" in str(e) or "Function mode" in str(e):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

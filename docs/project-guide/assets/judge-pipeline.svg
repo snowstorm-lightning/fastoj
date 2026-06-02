@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">FastOJ judge pipeline</title>
+  <desc id="desc">Run or Submit creates a submission, queues a Redis task, worker executes code in Docker, stores results, and streams status back.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .box { fill: #ffffff; stroke: #111827; stroke-width: 2; rx: 12; }
+      .api { fill: #eff6ff; stroke: #2563eb; }
+      .queue { fill: #f0fdf4; stroke: #16a34a; }
+      .judge { fill: #fff7ed; stroke: #ea580c; }
+      .status { fill: #fdf2f8; stroke: #db2777; }
+      .title { font: 700 24px Arial, "Microsoft YaHei", sans-serif; fill: #111827; }
+      .label { font: 700 16px Arial, "Microsoft YaHei", sans-serif; fill: #111827; }
+      .small { font: 13px Arial, "Microsoft YaHei", sans-serif; fill: #374151; }
+      .arrow { stroke: #0f766e; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #db2777; stroke-width: 2.4; stroke-dasharray: 7 6; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="760"/>
+  <text x="52" y="54" class="title">Run / Submit 判题链路</text>
+  <text x="52" y="82" class="small">主路径是异步队列；开发可 inline fallback，生产无 Worker 时返回 503</text>
+
+  <rect x="55" y="150" width="150" height="110" class="box api"/>
+  <text x="82" y="184" class="label">1. Workbench</text>
+  <text x="80" y="212" class="small">Run 或 Submit</text>
+  <text x="80" y="236" class="small">带代码、语言、模式</text>
+
+  <rect x="245" y="150" width="160" height="110" class="box api"/>
+  <text x="277" y="184" class="label">2. API route</text>
+  <text x="272" y="212" class="small">鉴权 + 参数校验</text>
+  <text x="272" y="236" class="small">run / submit 分流</text>
+
+  <rect x="445" y="150" width="190" height="110" class="box api"/>
+  <text x="473" y="184" class="label">3. SubmissionService</text>
+  <text x="472" y="212" class="small">写 pending 提交</text>
+  <text x="472" y="236" class="small">Function mode 包装</text>
+
+  <rect x="675" y="150" width="160" height="110" class="box queue"/>
+  <text x="707" y="184" class="label">4. Redis Stream</text>
+  <text x="704" y="212" class="small">XADD judge:tasks</text>
+  <text x="704" y="236" class="small">publish pending</text>
+
+  <rect x="875" y="150" width="160" height="110" class="box judge"/>
+  <text x="902" y="184" class="label">5. Worker</text>
+  <text x="903" y="212" class="small">XREADGROUP</text>
+  <text x="903" y="236" class="small">mark judging</text>
+
+  <rect x="875" y="360" width="160" height="110" class="box judge"/>
+  <text x="907" y="394" class="label">6. JudgeTask</text>
+  <text x="900" y="422" class="small">加载题目用例</text>
+  <text x="900" y="446" class="small">逐个执行</text>
+
+  <rect x="675" y="360" width="160" height="110" class="box judge"/>
+  <text x="707" y="394" class="label">7. Docker</text>
+  <text x="704" y="422" class="small">禁网沙箱</text>
+  <text x="704" y="446" class="small">返回 stdout/exit</text>
+
+  <rect x="445" y="360" width="190" height="110" class="box queue"/>
+  <text x="482" y="394" class="label">8. PostgreSQL</text>
+  <text x="472" y="422" class="small">写 TestCaseResult</text>
+  <text x="472" y="446" class="small">更新最终 verdict</text>
+
+  <rect x="245" y="360" width="160" height="110" class="box status"/>
+  <text x="281" y="394" class="label">9. Status</text>
+  <text x="272" y="422" class="small">Redis Pub/Sub</text>
+  <text x="272" y="446" class="small">WebSocket relay</text>
+
+  <rect x="55" y="360" width="150" height="110" class="box status"/>
+  <text x="83" y="394" class="label">10. UI update</text>
+  <text x="80" y="422" class="small">JudgeTimeline</text>
+  <text x="80" y="446" class="small">Polling fallback</text>
+
+  <path class="arrow" d="M205 205 H245"/>
+  <path class="arrow" d="M405 205 H445"/>
+  <path class="arrow" d="M635 205 H675"/>
+  <path class="arrow" d="M835 205 H875"/>
+  <path class="arrow" d="M955 260 V360"/>
+  <path class="arrow" d="M875 415 H835"/>
+  <path class="arrow" d="M675 415 H635"/>
+  <path class="arrow" d="M445 415 H405"/>
+  <path class="arrow" d="M245 415 H205"/>
+  <path class="dash" d="M545 260 C540 300, 535 330, 530 360"/>
+  <text x="545" y="316" class="small">dev inline fallback</text>
+
+  <rect x="75" y="585" width="1050" height="90" class="box"/>
+  <text x="105" y="622" class="label">安全重点</text>
+  <text x="105" y="650" class="small">Full Submit: 公开用例失败会提前停止；隐藏用例只返回聚合结果，不返回隐藏 input / expected / actual。</text>
+</svg>

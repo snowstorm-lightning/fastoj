@@ -39,15 +39,22 @@ import {
 } from "./lib/problemModes";
 import {
   canonicalTagQuery,
+  getUI,
+  htmlLangForLocale,
+  LOCALE_META,
   localizeDifficulty,
   localizeTag,
   localizeTags,
+  localeLabel,
+  localeText,
+  localeValue,
   localizedProblem,
   matchesLocalizedProblem,
+  nextLocale,
   normalizeLocale,
   readStoredLocale,
+  SUPPORTED_LOCALES,
   type Locale,
-  UI,
   verdictInfo,
   writeStoredLocale,
 } from "./lib/i18n";
@@ -191,7 +198,7 @@ function saveDisplayNameForUser(user: Pick<CurrentUser, "id"> | null | undefined
   }
 }
 
-function localizedAuthError(message: string, text: (typeof UI)[Locale]) {
+function localizedAuthError(message: string, text: ReturnType<typeof getUI>) {
   const normalized = message.trim();
   if (!normalized) return text.authFailure;
   if (normalized === "Login failed" || normalized === "Incorrect username or password") {
@@ -256,35 +263,40 @@ function AuthBar({
   onLocale: () => void;
   onTheme: (theme: AppTheme) => void;
 }) {
-  const text = UI[locale];
+  const text = getUI(locale);
+  const nextUiLocale = nextLocale(locale);
   return (
     <header className="topbar">
-      <button className="brand-lockup brand-button" title={locale === "zh" ? "返回题库首页" : "Back to problem library"} onClick={() => onView("library")}>
+      <button className="brand-lockup brand-button" title={localeText(locale, { zh: "返回题库首页", en: "Back to problem library" })} onClick={() => onView("library")}>
         <strong>FastOJ</strong>
-        <span>{locale === "zh" ? "AI 练习判题" : "AI interview judge"}</span>
+        <span>{localeText(locale, { zh: "AI 练习判题", en: "AI interview judge" })}</span>
       </button>
-      <div className="theme-switch segmented" role="group" aria-label={locale === "zh" ? "界面主题" : "Theme"}>
+      <div className="theme-switch segmented" role="group" aria-label={localeText(locale, { zh: "界面主题", en: "Theme" })}>
         <button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => onTheme("light")}>
-          {locale === "zh" ? "浅色" : "Light"}
+          {localeText(locale, { zh: "浅色", en: "Light" })}
         </button>
         <button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => onTheme("dark")}>
-          {locale === "zh" ? "深色" : "Dark"}
+          {localeText(locale, { zh: "深色", en: "Dark" })}
         </button>
       </div>
-      <nav className="topnav" aria-label={locale === "zh" ? "主导航" : "Main navigation"}>
+      <nav className="topnav" aria-label={localeText(locale, { zh: "主导航", en: "Main navigation" })}>
         <button className={view === "library" ? "active" : ""} onClick={() => onView("library")}>{text.navLibrary}</button>
         <button className={view === "workbench" ? "active" : ""} onClick={() => onView("workbench")}>{text.navWorkbench}</button>
         <button className={view === "graph" ? "active" : ""} onClick={() => onView("graph")}>{text.navGraph}</button>
       </nav>
       <div className="authbar">
-        <button className="icon-button locale-button tip" data-tip={locale === "zh" ? "Switch to English" : "切换到中文"} onClick={onLocale}>
-          {locale === "zh" ? "EN" : "中"}
+        <button
+          className="icon-button locale-button tip"
+          data-tip={localeText(locale, { zh: `切换到${localeLabel(nextUiLocale)}`, en: `Switch to ${localeLabel(nextUiLocale)}` })}
+          onClick={onLocale}
+        >
+          {LOCALE_META[nextUiLocale].shortLabel}
         </button>
         {authenticated ? (
           <>
             <span className="auth-state">{text.loggedIn}</span>
             {currentUser?.role === "admin" ? (
-              <button className={view === "admin" ? "icon-button active tip" : "icon-button tip"} data-tip={locale === "zh" ? "管理后台" : "Admin"} onClick={() => onView("admin")}>
+              <button className={view === "admin" ? "icon-button active tip" : "icon-button tip"} data-tip={localeText(locale, { zh: "管理后台", en: "Admin" })} onClick={() => onView("admin")}>
                 <IconGlyph>A</IconGlyph>
               </button>
             ) : null}
@@ -315,7 +327,7 @@ function AuthPage({
   onMode: (mode: AuthMode) => void;
   onDone: () => void;
 }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -365,17 +377,17 @@ function AuthPage({
     <main className="auth-page">
       <section className="auth-card">
         <div className="auth-copy">
-          <p className="eyebrow">{locale === "zh" ? "FastOJ 账号" : "FastOJ Account"}</p>
+          <p className="eyebrow">{localeText(locale, { zh: "FastOJ 账号", en: "FastOJ Account" })}</p>
           <h1>{text.authPanelTitle}</h1>
           <p>{text.accountCopy}</p>
           <div className="auth-proof">
-            <span>{locale === "zh" ? "题库练习" : "Problem practice"}</span>
-            <span>{locale === "zh" ? "智能反馈" : "Smart feedback"}</span>
-            <span>{locale === "zh" ? "公平评测" : "Fair judging"}</span>
+            <span>{localeText(locale, { zh: "题库练习", en: "Problem practice" })}</span>
+            <span>{localeText(locale, { zh: "智能反馈", en: "Smart feedback" })}</span>
+            <span>{localeText(locale, { zh: "公平评测", en: "Fair judging" })}</span>
           </div>
         </div>
         <form className="auth-form" onSubmit={submit} autoComplete="off">
-          <div className="auth-tabs" role="tablist" aria-label={locale === "zh" ? "认证方式" : "Authentication mode"}>
+          <div className="auth-tabs" role="tablist" aria-label={localeText(locale, { zh: "认证方式", en: "Authentication mode" })}>
             <button type="button" className={mode === "login" ? "active" : ""} onClick={() => onMode("login")}>{text.login}</button>
             <button type="button" className={mode === "register" ? "active" : ""} onClick={() => onMode("register")}>{text.register}</button>
           </div>
@@ -429,7 +441,7 @@ function SettingsPage({
   onClose: () => void;
   onProfileSaved: (user: CurrentUser) => void;
 }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   const [displayName, setDisplayName] = useState(() => displayNameForUser(currentUser));
   const [username, setUsername] = useState(currentUser?.username ?? "");
   const [email, setEmail] = useState(currentUser?.email ?? "");
@@ -464,59 +476,58 @@ function SettingsPage({
       onProfileSaved(updated);
       setCurrentPassword("");
       setNewPassword("");
-      setSaved(locale === "zh" ? "已保存。" : "Saved.");
+      setSaved(localeText(locale, { zh: "已保存。", en: "Saved." }));
     } catch (error) {
-      setSaved(error instanceof Error ? error.message : locale === "zh" ? "保存失败。" : "Save failed.");
+      setSaved(error instanceof Error ? error.message : localeText(locale, { zh: "保存失败。", en: "Save failed." }));
     }
   }
 
   return (
     <main className="settings-page">
       <section className="settings-card account-card">
-        <button className="icon-button close-button tip" data-tip={locale === "zh" ? "关闭" : "Close"} onClick={onClose}>
+        <button className="icon-button close-button tip" data-tip={localeText(locale, { zh: "关闭", en: "Close" })} onClick={onClose}>
           <IconGlyph>x</IconGlyph>
         </button>
-        <p className="eyebrow">{locale === "zh" ? "账号" : "Account"}</p>
+        <p className="eyebrow">{localeText(locale, { zh: "账号", en: "Account" })}</p>
         <h1>{text.settingsTitle}</h1>
         <p className="muted">{text.settingsCopy}</p>
         <div className="account-profile">
           <div className="avatar-preview">{avatarUrl ? <img src={avatarUrl} alt="" /> : (displayName.trim() || username || "F").slice(0, 1).toUpperCase()}</div>
           <div>
             <strong>{displayName.trim() || username || "FastOJ User"}</strong>
-            <span>{currentUser?.role === "admin" ? (locale === "zh" ? "管理员" : "Admin") : (locale === "zh" ? "用户" : "User")}</span>
+            <span>{currentUser?.role === "admin" ? localeText(locale, { zh: "管理员", en: "Admin" }) : localeText(locale, { zh: "用户", en: "User" })}</span>
           </div>
         </div>
         <div className="settings-grid">
           <label>{text.displayName}<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
           <label>{text.username}<input value={username} onChange={(event) => setUsername(event.target.value)} /></label>
           <label>{text.email}<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" /></label>
-          <label>{locale === "zh" ? "头像 URL" : "Avatar URL"}<input value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value)} /></label>
-          <label>{locale === "zh" ? "当前密码" : "Current password"}<input value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} type="password" autoComplete="current-password" /></label>
-          <label>{locale === "zh" ? "新密码" : "New password"}<input value={newPassword} onChange={(event) => setNewPassword(event.target.value)} type="password" autoComplete="new-password" /></label>
+          <label>{localeText(locale, { zh: "头像 URL", en: "Avatar URL" })}<input value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value)} /></label>
+          <label>{localeText(locale, { zh: "当前密码", en: "Current password" })}<input value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} type="password" autoComplete="current-password" /></label>
+          <label>{localeText(locale, { zh: "新密码", en: "New password" })}<input value={newPassword} onChange={(event) => setNewPassword(event.target.value)} type="password" autoComplete="new-password" /></label>
         </div>
         <label className="toggle-row">
           <input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} />
           {text.compactMode}
         </label>
         <div className="theme-settings">
-          <span>{locale === "zh" ? "界面语言" : "Interface language"}</span>
-          <div className="segmented theme-segmented" role="group" aria-label={locale === "zh" ? "界面语言" : "Interface language"}>
-            <button type="button" className={locale === "zh" ? "active" : ""} aria-pressed={locale === "zh"} onClick={() => onLocaleChange("zh")}>
-              中文
-            </button>
-            <button type="button" className={locale === "en" ? "active" : ""} aria-pressed={locale === "en"} onClick={() => onLocaleChange("en")}>
-              English
-            </button>
+          <span>{localeText(locale, { zh: "界面语言", en: "Interface language" })}</span>
+          <div className="segmented theme-segmented" role="group" aria-label={localeText(locale, { zh: "界面语言", en: "Interface language" })}>
+            {SUPPORTED_LOCALES.map((item) => (
+              <button type="button" key={item} className={locale === item ? "active" : ""} aria-pressed={locale === item} onClick={() => onLocaleChange(item)}>
+                {localeLabel(item)}
+              </button>
+            ))}
           </div>
         </div>
         <div className="theme-settings">
-          <span>{locale === "zh" ? "界面主题" : "Theme"}</span>
-          <div className="segmented theme-segmented" role="group" aria-label={locale === "zh" ? "界面主题" : "Theme"}>
+          <span>{localeText(locale, { zh: "界面主题", en: "Theme" })}</span>
+          <div className="segmented theme-segmented" role="group" aria-label={localeText(locale, { zh: "界面主题", en: "Theme" })}>
             <button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => onTheme("light")}>
-              {locale === "zh" ? "浅色" : "Light"}
+              {localeText(locale, { zh: "浅色", en: "Light" })}
             </button>
             <button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => onTheme("dark")}>
-              {locale === "zh" ? "深色" : "Dark"}
+              {localeText(locale, { zh: "深色", en: "Dark" })}
             </button>
           </div>
         </div>
@@ -536,7 +547,7 @@ function DifficultyDropdown({
   locale: Locale;
   onChange: (value: string) => void;
 }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   const [open, setOpen] = useState(false);
   const options = [
     { value: "", label: text.allDifficulty },
@@ -552,7 +563,7 @@ function DifficultyDropdown({
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
     >
-      <button type="button" className="custom-select-button" title={locale === "zh" ? "选择难度" : "Choose difficulty"} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="custom-select-button" title={localeText(locale, { zh: "选择难度", en: "Choose difficulty" })} onClick={() => setOpen((current) => !current)}>
         <span>{selected.label}</span>
         <span aria-hidden="true">v</span>
       </button>
@@ -578,15 +589,15 @@ function DifficultyDropdown({
 }
 
 function aiProfileLabel(profile: AIProfile, locale: Locale) {
-  return locale === "zh" ? profile.label_zh : profile.label_en;
+  return localeText(locale, { zh: profile.label_zh, en: profile.label_en });
 }
 
 function aiProfileDetail(profile: AIProfile, locale: Locale) {
-  return locale === "zh" ? profile.detail_zh : profile.detail_en;
+  return localeText(locale, { zh: profile.detail_zh, en: profile.detail_en });
 }
 
 function aiUnavailableText(locale: Locale, reason?: string | null) {
-  const base = locale === "zh" ? "AI 未配置或不可用" : "AI is not configured or unavailable";
+  const base = localeText(locale, { zh: "AI 未配置或不可用", en: "AI is not configured or unavailable" });
   return reason ? `${base}: ${reason}` : `${base}.`;
 }
 
@@ -611,7 +622,7 @@ function AIModelDropdown({
   const [open, setOpen] = useState(false);
   const options = profiles.filter((profile) => profile.available);
   const selected = options.find((item) => item.value === value) ?? AI_PROFILE_FALLBACKS[value] ?? AI_PROFILE_FALLBACKS.default;
-  const label = disabledReason ? (locale === "zh" ? "AI 不可用" : "AI unavailable") : aiProfileLabel(selected, locale);
+  const label = disabledReason ? localeText(locale, { zh: "AI 不可用", en: "AI unavailable" }) : aiProfileLabel(selected, locale);
   const detail = disabledReason ?? aiProfileDetail(selected, locale);
   return (
     <div
@@ -651,8 +662,8 @@ function AIModelDropdown({
         })}
         {!options.length ? (
           <button type="button" disabled>
-            <span>{locale === "zh" ? "无可用模型" : "No available model"}</span>
-            <small>{disabledReason ?? (locale === "zh" ? "请检查 AI 配置" : "Check AI configuration")}</small>
+            <span>{localeText(locale, { zh: "无可用模型", en: "No available model" })}</span>
+            <small>{disabledReason ?? localeText(locale, { zh: "请检查 AI 配置", en: "Check AI configuration" })}</small>
           </button>
         ) : null}
       </div>
@@ -673,7 +684,7 @@ function LibraryPage({
   onSelect: (id: string) => void;
   onGraph: () => void;
 }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   const [keyword, setKeyword] = useState("");
   const [difficulty, setDifficulty] = useState("");
   const [tags, setTags] = useState(selectedTag);
@@ -707,7 +718,7 @@ function LibraryPage({
   }, [sidebarWidth]);
 
   const trimmedKeyword = keyword.trim();
-  const needsLocalizedSearch = locale === "zh" && Array.from(trimmedKeyword).some((char) => char.charCodeAt(0) > 127);
+  const needsLocalizedSearch = !LOCALE_META[locale].sourceText && Array.from(trimmedKeyword).some((char) => char.charCodeAt(0) > 127);
   const filters: ProblemFilters = { keyword: needsLocalizedSearch ? "" : keyword, difficulty, tags: canonicalTagQuery(tags, locale), page };
   const problemsQuery = useQuery({
     queryKey: ["problems", filters, needsLocalizedSearch],
@@ -772,7 +783,9 @@ function LibraryPage({
         <div className="library-sidebar-header">
           <button
             className="icon-button library-sidebar-toggle"
-            aria-label={sidebarOpen ? (locale === "zh" ? "收起筛选" : "Collapse filters") : (locale === "zh" ? "展开筛选" : "Expand filters")}
+            aria-label={sidebarOpen
+              ? localeText(locale, { zh: "收起筛选", en: "Collapse filters" })
+              : localeText(locale, { zh: "展开筛选", en: "Expand filters" })}
             aria-expanded={sidebarOpen}
             onClick={() => setSidebarOpen((value) => !value)}
           >
@@ -798,21 +811,21 @@ function LibraryPage({
         <div
           className="library-sidebar-resize"
           role="separator"
-          aria-label={locale === "zh" ? "调整筛选栏宽度" : "Resize filters"}
-          title={locale === "zh" ? "拖动调整筛选栏宽度" : "Drag to resize filters"}
+          aria-label={localeText(locale, { zh: "调整筛选栏宽度", en: "Resize filters" })}
+          title={localeText(locale, { zh: "拖动调整筛选栏宽度", en: "Drag to resize filters" })}
           onPointerDown={(event) => sidebarOpen && startSidebarResize(event)}
         />
       </aside>
       <section className="library-main">
         <div className="library-header">
           <div>
-            <p className="eyebrow">{locale === "zh" ? "题库集合" : "Problem set"}</p>
+            <p className="eyebrow">{localeText(locale, { zh: "题库集合", en: "Problem set" })}</p>
             <h1>{text.library}</h1>
             <p className="muted">{text.libraryCopy}</p>
           </div>
           <div className="recommendation">
             <span>{text.recommendation}</span>
-            <strong>{localizedProblem(recommendation, locale)?.title ?? (locale === "zh" ? "暂无题目" : "No problem")}</strong>
+            <strong>{localizedProblem(recommendation, locale)?.title ?? localeText(locale, { zh: "暂无题目", en: "No problem" })}</strong>
             <button disabled={!recommendation} onClick={() => recommendation && onSelect(recommendation.id)}>{text.start}</button>
             <button onClick={onGraph}>{text.graph}</button>
           </div>
@@ -828,8 +841,8 @@ function LibraryPage({
             </button>
           </div>
         </div>
-        <div className={layout === "list" ? "problem-list problem-list-rows" : "problem-list"} aria-label={locale === "zh" ? "题目列表" : "Problem list"}>
-          {problemsQuery.isLoading ? <p className="muted">{locale === "zh" ? "加载题库中..." : "Loading problems..."}</p> : null}
+        <div className={layout === "list" ? "problem-list problem-list-rows" : "problem-list"} aria-label={localeText(locale, { zh: "题目列表", en: "Problem list" })}>
+          {problemsQuery.isLoading ? <p className="muted">{localeText(locale, { zh: "加载题库中...", en: "Loading problems..." })}</p> : null}
           {problems.map((problem) => (
             layout === "list"
               ? <ProblemRow key={problem.id} problem={problem} locale={locale} active={problem.id === selectedId} onSelect={() => onSelect(problem.id)} />
@@ -851,7 +864,7 @@ function Metric({ label, value }: { label: string; value: number | string }) {
 }
 
 function ProblemModeBadges({ problem, locale }: { problem: ProblemListItem; locale: Locale }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   const mode = getProblemMode(problem);
   return (
     <>
@@ -864,12 +877,12 @@ function ProblemModeBadges({ problem, locale }: { problem: ProblemListItem; loca
 
 function ProblemCard({ problem, locale, active, onSelect }: { problem: ProblemListItem; locale: Locale; active: boolean; onSelect: () => void }) {
   const displayProblem = localizedProblem(problem, locale);
-  const text = UI[locale];
+  const text = getUI(locale);
   const titleLayout = measureTrainingText(`${displayProblem.title} ${displayProblem.tags.join(" ")}`, 260, "13px Inter, system-ui, sans-serif", 17);
   return (
     <button
       className={active ? "problem-card active" : "problem-card"}
-      title={locale === "zh" ? `打开 ${displayProblem.title}` : `Open ${displayProblem.title}`}
+      title={localeText(locale, { zh: `打开 ${displayProblem.title}`, en: `Open ${displayProblem.title}` })}
       onClick={onSelect}
       style={{ minHeight: Math.max(92, titleLayout.height + 54) }}
     >
@@ -886,7 +899,7 @@ function ProblemCard({ problem, locale, active, onSelect }: { problem: ProblemLi
 
 function ProblemRow({ problem, locale, active, onSelect }: { problem: ProblemListItem; locale: Locale; active: boolean; onSelect: () => void }) {
   const displayProblem = localizedProblem(problem, locale);
-  const text = UI[locale];
+  const text = getUI(locale);
   return (
     <button
       className={active ? "problem-row active" : "problem-row"}
@@ -939,7 +952,7 @@ function validationLabel(name: string, locale: Locale): string {
     non_empty_outputs: { zh: "期望输出非空", en: "Non-empty expected outputs" },
     official_solution: { zh: "官方解法沙箱验证", en: "Official solution sandbox run" },
   };
-  return labels[name]?.[locale] ?? name;
+  return labels[name] ? localeText(locale, labels[name]) : name;
 }
 
 function draftStatusLabel(status: string, locale: Locale): string {
@@ -950,7 +963,7 @@ function draftStatusLabel(status: string, locale: Locale): string {
     rejected: { zh: "已拒绝", en: "Rejected" },
     draft: { zh: "草稿", en: "Draft" },
   };
-  return labels[status]?.[locale] ?? status;
+  return labels[status] ? localeText(locale, labels[status]) : status;
 }
 
 function draftStatusClass(status: string): string {
@@ -967,7 +980,7 @@ function authoringModeLabel(mode: string, locale: Locale): string {
     function: { zh: "函数模式", en: "function" },
     acm: { zh: "ACM 模式", en: "acm" },
   };
-  return labels[mode]?.[locale] ?? mode;
+  return labels[mode] ? localeText(locale, labels[mode]) : mode;
 }
 
 function modeRequiresFunction(mode: string): boolean {
@@ -1109,32 +1122,32 @@ function isDraftEditDirty(draft: ProblemDraft | null, edit: DraftEditState | nul
 
 function draftEditValidationError(edit: DraftEditState, locale: Locale): string | null {
   const targetLanguages = normalizeLanguageList(edit.target_languages);
-  if (!edit.title.trim()) return locale === "zh" ? "标题不能为空。" : "Title is required.";
-  if (!edit.description.trim()) return locale === "zh" ? "描述不能为空。" : "Description is required.";
+  if (!edit.title.trim()) return localeText(locale, { zh: "标题不能为空。", en: "Title is required." });
+  if (!edit.description.trim()) return localeText(locale, { zh: "描述不能为空。", en: "Description is required." });
   if (modeRequiresFunction(edit.mode) && !edit.function_signature.trim()) {
-    return locale === "zh" ? "函数模式和双模式都需要函数签名。" : "Function and dual mode require a function signature.";
+    return localeText(locale, { zh: "函数模式和双模式都需要函数签名。", en: "Function and dual mode require a function signature." });
   }
   if (modeRequiresAcmContract(edit.mode) && !edit.input_format.trim()) {
-    return locale === "zh" ? "ACM 模式和双模式都需要输入格式。" : "ACM and dual mode require an input format.";
+    return localeText(locale, { zh: "ACM 模式和双模式都需要输入格式。", en: "ACM and dual mode require an input format." });
   }
   if (modeRequiresAcmContract(edit.mode) && !edit.output_format.trim()) {
-    return locale === "zh" ? "ACM 模式和双模式都需要输出格式。" : "ACM and dual mode require an output format.";
+    return localeText(locale, { zh: "ACM 模式和双模式都需要输出格式。", en: "ACM and dual mode require an output format." });
   }
-  if (!targetLanguages.length) return locale === "zh" ? "至少选择一种目标语言。" : "Select at least one target language.";
+  if (!targetLanguages.length) return localeText(locale, { zh: "至少选择一种目标语言。", en: "Select at least one target language." });
   const seen = new Set<string>();
   for (const solution of edit.official_solutions) {
     const language = solution.language.trim().toLowerCase();
-    if (!language) return locale === "zh" ? "官方解法语言不能为空。" : "Official solution language is required.";
-    if (seen.has(language)) return locale === "zh" ? "官方解法语言不能重复。" : "Official solution languages must be unique.";
+    if (!language) return localeText(locale, { zh: "官方解法语言不能为空。", en: "Official solution language is required." });
+    if (seen.has(language)) return localeText(locale, { zh: "官方解法语言不能重复。", en: "Official solution languages must be unique." });
     seen.add(language);
   }
   for (const language of targetLanguages) {
     const solution = edit.official_solutions.find((item) => item.language === language);
-    if (!solution?.code.trim()) return locale === "zh" ? `${languageLabel(language)} 官方解法代码不能为空。` : `${languageLabel(language)} solution code is required.`;
-    if (!solution?.explanation.trim()) return locale === "zh" ? `${languageLabel(language)} 官方解法说明不能为空。` : `${languageLabel(language)} solution explanation is required.`;
+    if (!solution?.code.trim()) return localeText(locale, { zh: `${languageLabel(language)} 官方解法代码不能为空。`, en: `${languageLabel(language)} solution code is required.` });
+    if (!solution?.explanation.trim()) return localeText(locale, { zh: `${languageLabel(language)} 官方解法说明不能为空。`, en: `${languageLabel(language)} solution explanation is required.` });
   }
-  if (!edit.testcases.length) return locale === "zh" ? "至少需要一个用例。" : "At least one testcase is required.";
-  if (!edit.testcases.some((testcase) => !testcase.is_hidden)) return locale === "zh" ? "至少需要一个公开用例。" : "At least one public testcase is required.";
+  if (!edit.testcases.length) return localeText(locale, { zh: "至少需要一个用例。", en: "At least one testcase is required." });
+  if (!edit.testcases.some((testcase) => !testcase.is_hidden)) return localeText(locale, { zh: "至少需要一个公开用例。", en: "At least one public testcase is required." });
   return null;
 }
 
@@ -1146,25 +1159,28 @@ function validationStatusMessage(status: string, summary: unknown, locale: Local
   const caseSummary = recordValue(report.case_summary);
   const failedCases = Number(caseSummary.failed ?? 0);
   if (status === "validated" || report.passed === true) {
-    return locale === "zh" ? "草稿已通过结构校验和官方解法验证。" : "Draft passed schema and official-solution validation.";
+    return localeText(locale, { zh: "草稿已通过结构校验和官方解法验证。", en: "Draft passed schema and official-solution validation." });
   }
   if (failedChecks.length) {
-    const labels = failedChecks.slice(0, 3).map((name) => validationLabel(name, locale)).join(locale === "zh" ? "、" : ", ");
-    const suffix = failedChecks.length > 3 ? (locale === "zh" ? " 等" : ", ...") : "";
-    return locale === "zh" ? `校验未通过：${labels}${suffix}` : `Validation failed: ${labels}${suffix}`;
+    const labels = failedChecks.slice(0, 3).map((name) => validationLabel(name, locale)).join(localeText(locale, { zh: "、", en: ", " }));
+    const suffix = failedChecks.length > 3 ? localeText(locale, { zh: " 等", en: ", ..." }) : "";
+    return localeText(locale, { zh: `校验未通过：${labels}${suffix}`, en: `Validation failed: ${labels}${suffix}` });
   }
   if (failedCases > 0) {
-    return locale === "zh" ? `官方解法有 ${failedCases} 个用例未通过。` : `Official solution failed ${failedCases} testcase(s).`;
+    return localeText(locale, { zh: `官方解法有 ${failedCases} 个用例未通过。`, en: `Official solution failed ${failedCases} testcase(s).` });
   }
-  return locale === "zh" ? "草稿校验未通过，请查看下方安全摘要。" : "Draft validation failed. Check the safe summary below.";
+  return localeText(locale, { zh: "草稿校验未通过，请查看下方安全摘要。", en: "Draft validation failed. Check the safe summary below." });
 }
 
 function draftSaveErrorMessage(error: unknown, locale: Locale): string {
-  const message = error instanceof Error ? error.message : locale === "zh" ? "草稿保存失败。" : "Draft save failed.";
+  const message = error instanceof Error ? error.message : localeText(locale, { zh: "草稿保存失败。", en: "Draft save failed." });
   const slugMatch = message.match(/Slug already exists:?\s*([A-Za-z0-9-]+)?/i);
-  if (slugMatch && locale === "zh") {
+  if (slugMatch) {
     const slug = slugMatch[1] ? `：${slugMatch[1]}` : "";
-    return `Slug 已被占用${slug}。请换一个唯一的 slug。`;
+    return localeText(locale, {
+      zh: `Slug 已被占用${slug}。请换一个唯一的 slug。`,
+      en: message,
+    });
   }
   return message;
 }
@@ -1198,26 +1214,26 @@ function problemEditFromProblem(problem: any, solutions: AdminSolution[] = []): 
 }
 
 function problemEditValidationError(edit: ProblemEditState, locale: Locale): string | null {
-  if (!edit.title.trim()) return locale === "zh" ? "标题不能为空。" : "Title is required.";
-  if (!edit.slug.trim()) return locale === "zh" ? "Slug 不能为空。" : "Slug is required.";
-  if (!edit.description.trim()) return locale === "zh" ? "描述不能为空。" : "Description is required.";
+  if (!edit.title.trim()) return localeText(locale, { zh: "标题不能为空。", en: "Title is required." });
+  if (!edit.slug.trim()) return localeText(locale, { zh: "Slug 不能为空。", en: "Slug is required." });
+  if (!edit.description.trim()) return localeText(locale, { zh: "描述不能为空。", en: "Description is required." });
   if (modeRequiresFunction(edit.mode) && !edit.function_signature.trim()) {
-    return locale === "zh" ? "函数模式和双模式都需要函数签名。" : "Function and dual mode require a function signature.";
+    return localeText(locale, { zh: "函数模式和双模式都需要函数签名。", en: "Function and dual mode require a function signature." });
   }
   if (modeRequiresAcmContract(edit.mode) && !edit.input_format.trim()) {
-    return locale === "zh" ? "ACM 模式和双模式都需要输入格式。" : "ACM and dual mode require an input format.";
+    return localeText(locale, { zh: "ACM 模式和双模式都需要输入格式。", en: "ACM and dual mode require an input format." });
   }
   if (modeRequiresAcmContract(edit.mode) && !edit.output_format.trim()) {
-    return locale === "zh" ? "ACM 模式和双模式都需要输出格式。" : "ACM and dual mode require an output format.";
+    return localeText(locale, { zh: "ACM 模式和双模式都需要输出格式。", en: "ACM and dual mode require an output format." });
   }
   const seen = new Set<string>();
   for (const solution of edit.solutions) {
     const language = solution.language.trim().toLowerCase();
-    if (!language) return locale === "zh" ? "官方解法语言不能为空。" : "Official solution language is required.";
-    if (seen.has(language)) return locale === "zh" ? "官方解法语言不能重复。" : "Official solution languages must be unique.";
+    if (!language) return localeText(locale, { zh: "官方解法语言不能为空。", en: "Official solution language is required." });
+    if (seen.has(language)) return localeText(locale, { zh: "官方解法语言不能重复。", en: "Official solution languages must be unique." });
     seen.add(language);
-    if (!solution.code.trim()) return locale === "zh" ? `${languageLabel(language)} 官方解法代码不能为空。` : `${languageLabel(language)} solution code is required.`;
-    if (!solution.explanation.trim()) return locale === "zh" ? `${languageLabel(language)} 官方解法说明不能为空。` : `${languageLabel(language)} solution explanation is required.`;
+    if (!solution.code.trim()) return localeText(locale, { zh: `${languageLabel(language)} 官方解法代码不能为空。`, en: `${languageLabel(language)} solution code is required.` });
+    if (!solution.explanation.trim()) return localeText(locale, { zh: `${languageLabel(language)} 官方解法说明不能为空。`, en: `${languageLabel(language)} solution explanation is required.` });
   }
   return null;
 }
@@ -1266,20 +1282,20 @@ function ValidationReport({ draft, locale }: { draft: ProblemDraft; locale: Loca
         <strong>{validationStatusMessage(draft.status, report, locale)}</strong>
       </div>
       <div className="validation-metrics">
-        <span><strong>{publicCount}</strong>{locale === "zh" ? "公开样例" : "public samples"}</span>
-        <span><strong>{hiddenCount}</strong>{locale === "zh" ? "隐藏用例" : "hidden cases"}</span>
-        <span><strong>{failedCases}</strong>{locale === "zh" ? "失败用例" : "failed cases"}</span>
+        <span><strong>{publicCount}</strong>{localeText(locale, { zh: "公开样例", en: "public samples" })}</span>
+        <span><strong>{hiddenCount}</strong>{localeText(locale, { zh: "隐藏用例", en: "hidden cases" })}</span>
+        <span><strong>{failedCases}</strong>{localeText(locale, { zh: "失败用例", en: "failed cases" })}</span>
       </div>
       {failedChecks.length ? (
         <div className="validation-failures">
-          <strong>{locale === "zh" ? "失败检查" : "Failed checks"}</strong>
+          <strong>{localeText(locale, { zh: "失败检查", en: "Failed checks" })}</strong>
           <ul>
             {failedChecks.map((name) => <li key={name}>{validationLabel(name, locale)}</li>)}
           </ul>
         </div>
       ) : null}
       {failedStatuses.length ? (
-        <p className="muted">{locale === "zh" ? "沙箱状态" : "Sandbox statuses"}: {failedStatuses.join(", ")}</p>
+        <p className="muted">{localeText(locale, { zh: "沙箱状态", en: "Sandbox statuses" })}: {failedStatuses.join(", ")}</p>
       ) : null}
       {checks.length ? (
         <div className="validation-checks">
@@ -1315,9 +1331,9 @@ function ProblemValidationReport({ report, locale }: { report: Record<string, an
         <strong>{validationStatusMessage(status, normalized, locale)}</strong>
       </div>
       <div className="validation-metrics">
-        <span><strong>{Number(normalized.public_sample_count ?? 0)}</strong>{locale === "zh" ? "公开样例" : "public samples"}</span>
-        <span><strong>{Number(normalized.hidden_testcase_count ?? 0)}</strong>{locale === "zh" ? "隐藏用例" : "hidden cases"}</span>
-        <span><strong>{failedCases}</strong>{locale === "zh" ? "失败用例" : "failed cases"}</span>
+        <span><strong>{Number(normalized.public_sample_count ?? 0)}</strong>{localeText(locale, { zh: "公开样例", en: "public samples" })}</span>
+        <span><strong>{Number(normalized.hidden_testcase_count ?? 0)}</strong>{localeText(locale, { zh: "隐藏用例", en: "hidden cases" })}</span>
+        <span><strong>{failedCases}</strong>{localeText(locale, { zh: "失败用例", en: "failed cases" })}</span>
       </div>
       {checks.length ? (
         <div className="validation-checks">
@@ -1334,7 +1350,7 @@ function ProblemValidationReport({ report, locale }: { report: Record<string, an
       ) : null}
       {failedChecks.length ? (
         <div className="validation-failures">
-          <strong>{locale === "zh" ? "失败检查" : "Failed checks"}</strong>
+          <strong>{localeText(locale, { zh: "失败检查", en: "Failed checks" })}</strong>
           <ul>
             {failedChecks.map((name) => <li key={name}>{validationLabel(name, locale)}</li>)}
           </ul>
@@ -1357,9 +1373,17 @@ function DraftTestcasePanel({ draft, locale }: { draft: ProblemDraft; locale: Lo
     resultsByIndex.set(index, [...(resultsByIndex.get(index) ?? []), result]);
   }
   const testcases = (draft.testcases ?? []).map(recordValue);
-  const labels = locale === "zh"
-    ? { title: "用例详情", all: "全部", public: "公开", hidden: "隐藏", failed: "失败", input: "输入", output: "预期输出", explanation: "解释", noCases: "没有用例数据。" }
-    : { title: "Testcase details", all: "All", public: "Public", hidden: "Hidden", failed: "Failed", input: "Input", output: "Expected output", explanation: "Explanation", noCases: "No testcase data." };
+  const labels = {
+    title: localeText(locale, { zh: "用例详情", en: "Testcase details" }),
+    all: localeText(locale, { zh: "全部", en: "All" }),
+    public: localeText(locale, { zh: "公开", en: "Public" }),
+    hidden: localeText(locale, { zh: "隐藏", en: "Hidden" }),
+    failed: localeText(locale, { zh: "失败", en: "Failed" }),
+    input: localeText(locale, { zh: "输入", en: "Input" }),
+    output: localeText(locale, { zh: "预期输出", en: "Expected output" }),
+    explanation: localeText(locale, { zh: "解释", en: "Explanation" }),
+    noCases: localeText(locale, { zh: "没有用例数据。", en: "No testcase data." }),
+  };
   const visibleCases = testcases
     .map((testcase, index) => ({ testcase, index: index + 1, results: resultsByIndex.get(index + 1) ?? [] }))
     .filter(({ testcase, results }) => {
@@ -1387,7 +1411,7 @@ function DraftTestcasePanel({ draft, locale }: { draft: ProblemDraft; locale: Lo
         return (
           <article className="testcase-card" key={`${index}-${String(testcase.input ?? "")}`}>
             <div className="testcase-card-head">
-              <strong>{locale === "zh" ? "用例" : "Case"} {index}</strong>
+              <strong>{localeText(locale, { zh: "用例", en: "Case" })} {index}</strong>
               <span className={hidden ? "case-chip hidden" : "case-chip public"}>{hidden ? labels.hidden : labels.public}</span>
               {hasResults ? results.map((result) => {
                 const passed = result.passed === true;
@@ -1436,7 +1460,7 @@ function Workspace({
   onRequireAuth: () => void;
   authenticated: boolean;
 }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   const { language, setLanguage, getDraft, setDraft, setRecentProblemId, getCachedExplain, setCachedExplain } = useAppStore();
   const [code, setCode] = useState("");
   const [judgeMode, setJudgeMode] = useState<JudgeMode>("acm");
@@ -1481,9 +1505,9 @@ function Workspace({
   const aiProfiles = aiProfilesQuery.data ?? [];
   const aiPreferredProfile = preferredAIProfile(aiProfiles);
   const aiDisabledReason = !authenticated
-    ? (locale === "zh" ? "请先登录后使用 AI。" : "Sign in to use AI.")
+    ? localeText(locale, { zh: "请先登录后使用 AI。", en: "Sign in to use AI." })
     : aiProfilesQuery.isLoading
-      ? (locale === "zh" ? "正在检查 AI 模型..." : "Checking AI profiles...")
+      ? localeText(locale, { zh: "正在检查 AI 模型...", en: "Checking AI profiles..." })
       : aiPreferredProfile
         ? null
         : aiUnavailableText(locale);
@@ -1513,10 +1537,7 @@ function Workspace({
     if (targetMode === "function" && isLikelyStaleAcmDraft(problem, targetLanguage, draft)) return starter;
     if (targetMode === "function" && targetLanguage !== "python" && draft.trim()) {
       if (/^\s*(import\s+\w+\s*\n\s*)*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/.test(draft)) return starter;
-      const stalePythonStarters = [
-        buildStarter(problem, "python", "function", "en").trim(),
-        buildStarter(problem, "python", "function", "zh").trim(),
-      ];
+      const stalePythonStarters = SUPPORTED_LOCALES.map((item) => buildStarter(problem, "python", "function", item).trim());
       if (stalePythonStarters.includes(draft.trim())) return starter;
     }
     return draft;
@@ -1813,7 +1834,7 @@ function Workspace({
       return;
     }
     if (!submission) {
-      setAiError(locale === "zh" ? "请先运行或提交一次代码，再开始对话。" : "Run or submit once before starting a chat.");
+      setAiError(localeText(locale, { zh: "请先运行或提交一次代码，再开始对话。", en: "Run or submit once before starting a chat." }));
       return;
     }
     const submissionId = submission.id;
@@ -1925,7 +1946,13 @@ function Workspace({
           <button className="edge-toggle" title={leftOpen ? text.collapseLeft : text.expandLeft} onClick={() => setLeftOpen((value) => !value)}>
             <PanelToggleIcon open={leftOpen} side="left" />
           </button>
-          <div className="resize-handle" role="separator" aria-label={locale === "zh" ? "调整题面面板宽度" : "Resize statement panel"} title={locale === "zh" ? "拖动调整题面宽度" : "Drag to resize statement"} onPointerDown={(event) => leftOpen && startResize("left", event)} />
+          <div
+            className="resize-handle"
+            role="separator"
+            aria-label={localeText(locale, { zh: "调整题面面板宽度", en: "Resize statement panel" })}
+            title={localeText(locale, { zh: "拖动调整题面宽度", en: "Drag to resize statement" })}
+            onPointerDown={(event) => leftOpen && startResize("left", event)}
+          />
         </div>
 
         <section className="coding-panel feature-frame code-frame" style={codingStyle}>
@@ -1948,8 +1975,8 @@ function Workspace({
             className="editor-result-resizer"
             role="separator"
             aria-orientation="horizontal"
-            aria-label={locale === "zh" ? "调整代码编辑器高度" : "Resize code editor height"}
-            title={locale === "zh" ? "拖动调整代码编辑器高度" : "Drag to resize editor height"}
+            aria-label={localeText(locale, { zh: "调整代码编辑器高度", en: "Resize code editor height" })}
+            title={localeText(locale, { zh: "拖动调整代码编辑器高度", en: "Drag to resize editor height" })}
             onPointerDown={startEditorResize}
           />
           <RunResultPanel
@@ -1969,7 +1996,13 @@ function Workspace({
         </section>
 
         <div className="panel-edge right-edge">
-          <div className="resize-handle" role="separator" aria-label={locale === "zh" ? "调整 AI 辅助面板宽度" : "Resize AI panel"} title={locale === "zh" ? "拖动调整 AI 辅助宽度" : "Drag to resize AI panel"} onPointerDown={(event) => rightOpen && startResize("right", event)} />
+          <div
+            className="resize-handle"
+            role="separator"
+            aria-label={localeText(locale, { zh: "调整 AI 辅助面板宽度", en: "Resize AI panel" })}
+            title={localeText(locale, { zh: "拖动调整 AI 辅助宽度", en: "Drag to resize AI panel" })}
+            onPointerDown={(event) => rightOpen && startResize("right", event)}
+          />
           <button className="edge-toggle" title={rightOpen ? text.collapseRight : text.expandRight} onClick={() => setRightOpen((value) => !value)}>
             <PanelToggleIcon open={rightOpen} side="right" />
           </button>
@@ -2026,10 +2059,10 @@ function DetailDock({
   currentUser: CurrentUser | null;
   onRequireAuth: () => void;
 }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   return (
     <section className="detail-dock statement-detail-dock judge-region">
-      <div className="tabs" role="tablist" aria-label={locale === "zh" ? "题目详情" : "Problem details"}>
+      <div className="tabs" role="tablist" aria-label={localeText(locale, { zh: "题目详情", en: "Problem details" })}>
         <TabButton tab="cases" active={detailTab} onClick={setDetailTab}>{text.publicCases}</TabButton>
         <TabButton tab="solution" active={detailTab} onClick={setDetailTab}>{text.solution}</TabButton>
         <TabButton tab="judge" active={detailTab} onClick={setDetailTab}>{text.judge}</TabButton>
@@ -2048,7 +2081,7 @@ function DetailDock({
 }
 
 function ProblemStatement({ problem, locale }: { problem?: ProblemDetail; locale: Locale }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   const displayProblem = localizedProblem(problem, locale);
   if (!displayProblem) return <p className="muted">{text.loadingProblem}</p>;
   return (
@@ -2060,7 +2093,7 @@ function ProblemStatement({ problem, locale }: { problem?: ProblemDetail; locale
 }
 
 function ProblemGuidance({ problem, locale }: { problem?: ProblemDetail; locale: Locale }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   const displayProblem = localizedProblem(problem, locale);
   return (
     <section className="problem-guidance">
@@ -2076,10 +2109,10 @@ function ProblemGuidance({ problem, locale }: { problem?: ProblemDetail; locale:
 function ProblemVisual({ problem, locale }: { problem?: ProblemDetail; locale: Locale }) {
   const visual = getVisualSpec(problem);
   return (
-    <section className="visual-panel" aria-label={locale === "zh" ? "图形化讲解" : "Visual explanation"}>
-      <h3>{visual.title[locale]}</h3>
+    <section className="visual-panel" aria-label={localeText(locale, { zh: "图形化讲解", en: "Visual explanation" })}>
+      <h3>{localeText(locale, visual.title)}</h3>
       <div className="visual-flow">
-        {visual.steps[locale].map((step, index) => (
+        {localeValue(locale, visual.steps).map((step, index) => (
           <div className="visual-step" key={step}>
             <span>{index + 1}</span>
             <p>{step}</p>
@@ -2103,7 +2136,7 @@ function functionSignaturePreview(starter: string, language: string, fallback: s
 }
 
 function FunctionFrame({ problem, mode, language, locale }: { problem?: ProblemDetail; mode: JudgeMode; language: string; locale: Locale }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   if (mode !== "function") return <div className="function-frame">{text.acmFrame}</div>;
   const spec = getFunctionSpec(problem);
   if (!spec) return <div className="function-frame warning">{text.noFunctionFrame}</div>;
@@ -2120,14 +2153,14 @@ function FunctionFrame({ problem, mode, language, locale }: { problem?: ProblemD
 }
 
 function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Locale }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   if (!problem) return <p className="muted">{text.loadingCases}</p>;
   return (
     <div className="sample-cases">
       <div className="case-grid">
         {problem.sample_testcases.map((testcase, index) => (
           <article className="sample-card" key={`${testcase.input}-${index}`}>
-            <h3>{locale === "zh" ? "示例" : "Example"} {index + 1}</h3>
+            <h3>{localeText(locale, { zh: "示例", en: "Example" })} {index + 1}</h3>
             <div className="sample-row">
               <span>{text.input}</span>
               <pre>{testcase.input}</pre>
@@ -2159,8 +2192,15 @@ function sampleExplanation(slug: string, index: number, locale: Locale): string 
     "softmax-cross-entropy": ["Apply stable softmax to logits, then take the negative log probability of the target class.", "Both logits are equal, so the target probability is 1/2 and the loss is ln 2."],
     "valid-parentheses": ["Every opening bracket is matched and popped in the correct order.", "The closing bracket type does not match the stack top, so the string is invalid."],
   };
-  const fallback = locale === "zh" ? "该输出是此输入下的标准答案；评测会按相同输入/输出格式比较。" : "The output is the canonical expected answer for this input; judging compares the same I/O format.";
-  return (locale === "zh" ? zh : en)[slug]?.[index] ?? fallback;
+  const fallback = localeText(locale, {
+    zh: "该输出是此输入下的标准答案；评测会按相同输入/输出格式比较。",
+    en: "The output is the canonical expected answer for this input; judging compares the same I/O format.",
+  });
+  const explanations = localeValue(locale, {
+    zh: zh[slug] ?? [],
+    en: en[slug] ?? [],
+  });
+  return explanations[index] ?? fallback;
 }
 
 function OfficialSolution({ problem, solution, locale }: { problem?: ProblemDetail; solution?: { explanation: string; code: string; language: string }; locale: Locale }) {
@@ -2169,12 +2209,13 @@ function OfficialSolution({ problem, solution, locale }: { problem?: ProblemDeta
     const tags = localizeTags(displayProblem?.tags.filter((tag) => tag !== "Hot 100"), locale).join(" / ");
     return (
       <article className="prose-panel solution-fallback">
-        <h3>{locale === "zh" ? "题解思路" : "Solution approach"}</h3>
-        <p>{displayProblem?.hint ?? UI[locale].noSolution}</p>
+        <h3>{localeText(locale, { zh: "题解思路", en: "Solution approach" })}</h3>
+        <p>{displayProblem?.hint ?? getUI(locale).noSolution}</p>
         <p className="muted">
-          {locale === "zh"
-            ? `建议先根据 ${tags || "题目标签"} 选择核心数据结构或状态定义，再用公开样例逐步核对边界。`
-            : `Start from ${tags || "the listed tags"}, choose the core data structure or state definition, then validate edge cases with the public samples.`}
+          {localeText(locale, {
+            zh: `建议先根据 ${tags || "题目标签"} 选择核心数据结构或状态定义，再用公开样例逐步核对边界。`,
+            en: `Start from ${tags || "the listed tags"}, choose the core data structure or state definition, then validate edge cases with the public samples.`,
+          })}
         </p>
       </article>
     );
@@ -2200,10 +2241,17 @@ function DiscussionPanel({
   currentUser: CurrentUser | null;
   onRequireAuth: () => void;
 }) {
-  const text = UI[locale];
+  const text = getUI(locale);
   const key = `fastoj.discussion.${problemId}`;
   const [body, setBody] = useState("");
-  const [posts, setPosts] = useState<DiscussionPost[]>(() => JSON.parse(localStorage.getItem(key) ?? "[]"));
+  const [posts, setPosts] = useState<DiscussionPost[]>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) ?? "[]");
+      return Array.isArray(parsed) ? parsed as DiscussionPost[] : [];
+    } catch {
+      return [];
+    }
+  });
 
   function post() {
     if (!authenticated) {
@@ -2224,8 +2272,14 @@ function DiscussionPanel({
   return (
     <section className="discussion-panel">
       <h3>{text.discussionTitle}</h3>
-      <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder={text.discussionPlaceholder} />
-      <button className="primary" onClick={post}>{text.postDiscussion}</button>
+      <p className="muted">{authenticated ? text.discussionLocalNotice : text.discussionLoginRequired}</p>
+      <textarea
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+        placeholder={text.discussionPlaceholder}
+        disabled={!authenticated}
+      />
+      <button className="primary" onClick={post} disabled={!authenticated || !body.trim()}>{text.postDiscussion}</button>
       {posts.length ? posts.map((item) => (
         <article className="discussion-post" key={item.id}>
           <strong>{item.author}</strong>
@@ -2237,172 +2291,182 @@ function DiscussionPanel({
   );
 }
 
+const ADMIN_TEXT_BY_LOCALE = {
+  zh: {
+    title: "管理后台",
+    copy: "管理题目、官方题解、测试用例和用户权限。隐藏用例仅在管理员界面显示。",
+    users: "用户",
+    problems: "题目与内容",
+    noAccess: "当前账号没有管理权限。",
+    back: "返回题库",
+    active: "启用",
+    disabled: "停用",
+    admin: "管理员",
+    user: "用户",
+    cases: "用例",
+    hidden: "隐藏",
+    solutions: "题解",
+    public: "公开",
+    private: "隐藏",
+    problemAgent: "出题 Agent",
+    agentNotice: "AI 生成内容只保存为草稿，管理员审批前不会发布。",
+    generateDraft: "生成草稿",
+    approveDraft: "批准发布",
+    rejectDraft: "拒绝草稿",
+    draftPreview: "草稿预览",
+    draftEdit: "草稿编辑",
+    revalidateDraft: "保存并重新校验",
+    resetDraftEdit: "取消更改",
+    confirmApproveDraft: "确定发布当前已保存并通过校验的草稿吗？未保存的更改不会被发布。",
+    confirmRejectDraft: "确定拒绝这个草稿吗？",
+    addPublicCase: "新增公开用例",
+    addHiddenCase: "新增隐藏用例",
+    validation: "验证报告",
+    steps: "执行轨迹",
+    searchUsers: "搜索用户名或邮箱",
+    searchProblems: "搜索题名或 slug",
+    allRoles: "全部角色",
+    allStatus: "全部状态",
+    allDifficulty: "全部难度",
+    allVisibility: "全部可见性",
+    manage: "管理",
+    edit: "编辑",
+    save: "保存",
+    cancel: "取消",
+    previous: "上一页",
+    next: "下一页",
+    noResults: "没有匹配结果。",
+    pageSummary: "第 {page} / {totalPages} 页，共 {total} 条",
+    titleLabel: "标题",
+    slugLabel: "Slug",
+    descriptionLabel: "描述",
+    hintLabel: "提示",
+    tagsLabel: "标签（逗号分隔）",
+    modeLabel: "模式",
+    targetLanguagesLabel: "目标语言",
+    timeLimitLabel: "时间限制",
+    memoryLimitLabel: "内存限制",
+    functionSignatureLabel: "函数签名",
+    inputFormatLabel: "输入格式",
+    outputFormatLabel: "输出格式",
+    officialSolutionsLabel: "多语言官方解法",
+    officialCodeLabel: "官方解法代码",
+    functionOfficialCodeLabel: "函数式官方解法代码",
+    acmOfficialCodeLabel: "ACM 官方程序代码",
+    officialExplanationLabel: "官方解法说明",
+    dualModeSolutionNote: "双模式使用一份函数式规范解法；ACM 练习会用相同的函数 JSON 参数输入和期望输出合同。",
+    aiFillSolution: "AI 填充",
+    aiFillingSolution: "正在填充...",
+    aiFillSolutionDone: "AI 已填充该语言解法，请检查后保存并重新校验。",
+    timeComplexityLabel: "时间复杂度",
+    spaceComplexityLabel: "空间复杂度",
+    testcaseDetails: "用例管理",
+    newTestcase: "新增用例",
+    inputLabel: "输入",
+    outputLabel: "输出",
+    scoreLabel: "分数",
+    orderLabel: "顺序",
+    sample: "样例",
+    add: "新增",
+    delete: "删除",
+    deleteProblem: "删除题目",
+    confirmDeleteProblem: "确定删除“{title}”吗？相关提交记录、题解、测试用例和用例结果都会被删除。",
+    loading: "加载中...",
+    noTestcases: "还没有测试用例。",
+  },
+  en: {
+    title: "Admin",
+    copy: "Manage problems, official solutions, test cases, and user permissions. Hidden cases are visible only to admins.",
+    users: "Users",
+    problems: "Problems and content",
+    noAccess: "This account does not have admin access.",
+    back: "Back to problems",
+    active: "Active",
+    disabled: "Disabled",
+    admin: "Admin",
+    user: "User",
+    cases: "cases",
+    hidden: "hidden",
+    solutions: "solutions",
+    public: "Public",
+    private: "Private",
+    problemAgent: "Problem Agent",
+    agentNotice: "AI-generated content is saved as a draft and is never published before admin approval.",
+    generateDraft: "Generate draft",
+    approveDraft: "Approve",
+    rejectDraft: "Reject",
+    draftPreview: "Draft preview",
+    draftEdit: "Draft editor",
+    revalidateDraft: "Save and revalidate",
+    resetDraftEdit: "Discard changes",
+    confirmApproveDraft: "Publish the current saved and validated draft? Unsaved edits will not be published.",
+    confirmRejectDraft: "Reject this draft?",
+    addPublicCase: "Add public case",
+    addHiddenCase: "Add hidden case",
+    validation: "Validation report",
+    steps: "Run steps",
+    searchUsers: "Search username or email",
+    searchProblems: "Search title or slug",
+    allRoles: "All roles",
+    allStatus: "All status",
+    allDifficulty: "All difficulty",
+    allVisibility: "All visibility",
+    manage: "Manage",
+    edit: "Edit",
+    save: "Save",
+    cancel: "Cancel",
+    previous: "Previous",
+    next: "Next",
+    noResults: "No matching results.",
+    pageSummary: "Page {page} / {totalPages}, {total} total",
+    titleLabel: "Title",
+    slugLabel: "Slug",
+    descriptionLabel: "Description",
+    hintLabel: "Hint",
+    tagsLabel: "Tags, comma separated",
+    modeLabel: "Mode",
+    targetLanguagesLabel: "Target languages",
+    timeLimitLabel: "Time limit",
+    memoryLimitLabel: "Memory limit",
+    functionSignatureLabel: "Function signature",
+    inputFormatLabel: "Input format",
+    outputFormatLabel: "Output format",
+    officialSolutionsLabel: "Official solutions by language",
+    officialCodeLabel: "Official solution code",
+    functionOfficialCodeLabel: "Canonical function solution code",
+    acmOfficialCodeLabel: "ACM official program code",
+    officialExplanationLabel: "Official solution explanation",
+    dualModeSolutionNote: "Dual mode uses one canonical function solution. ACM practice shares the same function JSON argument input and expected-output contract.",
+    aiFillSolution: "AI fill",
+    aiFillingSolution: "Filling...",
+    aiFillSolutionDone: "AI filled this language solution. Review it, then save and revalidate.",
+    timeComplexityLabel: "Time complexity",
+    spaceComplexityLabel: "Space complexity",
+    testcaseDetails: "Testcase manager",
+    newTestcase: "New testcase",
+    inputLabel: "Input",
+    outputLabel: "Output",
+    scoreLabel: "Score",
+    orderLabel: "Order",
+    sample: "Sample",
+    add: "Add",
+    delete: "Delete",
+    deleteProblem: "Delete problem",
+    confirmDeleteProblem: "Delete \"{title}\"? Related submissions, solutions, testcases, and testcase results will also be deleted.",
+    loading: "Loading...",
+    noTestcases: "No testcases yet.",
+  },
+} as const;
+
+type AdminText = Record<keyof (typeof ADMIN_TEXT_BY_LOCALE)["zh"], string>;
+const ADMIN_TEXT_LOOKUP: Partial<Record<Locale, AdminText>> & Record<"zh", AdminText> = ADMIN_TEXT_BY_LOCALE;
+
+function getAdminText(locale: Locale): AdminText {
+  return ADMIN_TEXT_LOOKUP[locale] ?? ADMIN_TEXT_LOOKUP.zh;
+}
+
 function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUser: CurrentUser | null; onBack: () => void }) {
-  const text = locale === "zh"
-    ? {
-      title: "管理后台",
-      copy: "管理题目、官方题解、测试用例和用户权限。隐藏用例仅在管理员界面显示。",
-      users: "用户",
-      problems: "题目与内容",
-      noAccess: "当前账号没有管理权限。",
-      back: "返回题库",
-      active: "启用",
-      disabled: "停用",
-      admin: "管理员",
-      user: "用户",
-      cases: "用例",
-      hidden: "隐藏",
-      solutions: "题解",
-      public: "公开",
-      private: "隐藏",
-      problemAgent: "出题 Agent",
-      agentNotice: "AI 生成内容只保存为草稿，管理员审批前不会发布。",
-      generateDraft: "生成草稿",
-      approveDraft: "批准发布",
-      rejectDraft: "拒绝草稿",
-      draftPreview: "草稿预览",
-      draftEdit: "草稿编辑",
-      revalidateDraft: "保存并重新校验",
-      resetDraftEdit: "取消更改",
-      confirmApproveDraft: "确定发布当前已保存并通过校验的草稿吗？未保存的更改不会被发布。",
-      confirmRejectDraft: "确定拒绝这个草稿吗？",
-      addPublicCase: "新增公开用例",
-      addHiddenCase: "新增隐藏用例",
-      validation: "验证报告",
-      steps: "执行轨迹",
-      searchUsers: "搜索用户名或邮箱",
-      searchProblems: "搜索题名或 slug",
-      allRoles: "全部角色",
-      allStatus: "全部状态",
-      allDifficulty: "全部难度",
-      allVisibility: "全部可见性",
-      manage: "管理",
-      edit: "编辑",
-      save: "保存",
-      cancel: "取消",
-      previous: "上一页",
-      next: "下一页",
-      noResults: "没有匹配结果。",
-      pageSummary: "第 {page} / {totalPages} 页，共 {total} 条",
-      titleLabel: "标题",
-      slugLabel: "Slug",
-      descriptionLabel: "描述",
-      hintLabel: "提示",
-      tagsLabel: "标签（逗号分隔）",
-      modeLabel: "模式",
-      targetLanguagesLabel: "目标语言",
-      timeLimitLabel: "时间限制",
-      memoryLimitLabel: "内存限制",
-      functionSignatureLabel: "函数签名",
-      inputFormatLabel: "输入格式",
-      outputFormatLabel: "输出格式",
-      officialSolutionsLabel: "多语言官方解法",
-      officialCodeLabel: "官方解法代码",
-      functionOfficialCodeLabel: "函数式官方解法代码",
-      acmOfficialCodeLabel: "ACM 官方程序代码",
-      officialExplanationLabel: "官方解法说明",
-      dualModeSolutionNote: "双模式使用一份函数式规范解法；ACM 练习会用相同的函数 JSON 参数输入和期望输出合同。",
-      aiFillSolution: "AI 填充",
-      aiFillingSolution: "正在填充...",
-      aiFillSolutionDone: "AI 已填充该语言解法，请检查后保存并重新校验。",
-      timeComplexityLabel: "时间复杂度",
-      spaceComplexityLabel: "空间复杂度",
-      testcaseDetails: "用例管理",
-      newTestcase: "新增用例",
-      inputLabel: "输入",
-      outputLabel: "输出",
-      scoreLabel: "分数",
-      orderLabel: "顺序",
-      sample: "样例",
-      add: "新增",
-      delete: "删除",
-      deleteProblem: "删除题目",
-      confirmDeleteProblem: "确定删除“{title}”吗？相关提交记录、题解、测试用例和用例结果都会被删除。",
-      loading: "加载中...",
-      noTestcases: "还没有测试用例。",
-    }
-    : {
-      title: "Admin",
-      copy: "Manage problems, official solutions, test cases, and user permissions. Hidden cases are visible only to admins.",
-      users: "Users",
-      problems: "Problems and content",
-      noAccess: "This account does not have admin access.",
-      back: "Back to problems",
-      active: "Active",
-      disabled: "Disabled",
-      admin: "Admin",
-      user: "User",
-      cases: "cases",
-      hidden: "hidden",
-      solutions: "solutions",
-      public: "Public",
-      private: "Private",
-      problemAgent: "Problem Agent",
-      agentNotice: "AI-generated content is saved as a draft and is never published before admin approval.",
-      generateDraft: "Generate draft",
-      approveDraft: "Approve",
-      rejectDraft: "Reject",
-      draftPreview: "Draft preview",
-      draftEdit: "Draft editor",
-      revalidateDraft: "Save and revalidate",
-      resetDraftEdit: "Discard changes",
-      confirmApproveDraft: "Publish the current saved and validated draft? Unsaved edits will not be published.",
-      confirmRejectDraft: "Reject this draft?",
-      addPublicCase: "Add public case",
-      addHiddenCase: "Add hidden case",
-      validation: "Validation report",
-      steps: "Run steps",
-      searchUsers: "Search username or email",
-      searchProblems: "Search title or slug",
-      allRoles: "All roles",
-      allStatus: "All status",
-      allDifficulty: "All difficulty",
-      allVisibility: "All visibility",
-      manage: "Manage",
-      edit: "Edit",
-      save: "Save",
-      cancel: "Cancel",
-      previous: "Previous",
-      next: "Next",
-      noResults: "No matching results.",
-      pageSummary: "Page {page} / {totalPages}, {total} total",
-      titleLabel: "Title",
-      slugLabel: "Slug",
-      descriptionLabel: "Description",
-      hintLabel: "Hint",
-      tagsLabel: "Tags, comma separated",
-      modeLabel: "Mode",
-      targetLanguagesLabel: "Target languages",
-      timeLimitLabel: "Time limit",
-      memoryLimitLabel: "Memory limit",
-      functionSignatureLabel: "Function signature",
-      inputFormatLabel: "Input format",
-      outputFormatLabel: "Output format",
-      officialSolutionsLabel: "Official solutions by language",
-      officialCodeLabel: "Official solution code",
-      functionOfficialCodeLabel: "Canonical function solution code",
-      acmOfficialCodeLabel: "ACM official program code",
-      officialExplanationLabel: "Official solution explanation",
-      dualModeSolutionNote: "Dual mode uses one canonical function solution. ACM practice shares the same function JSON argument input and expected-output contract.",
-      aiFillSolution: "AI fill",
-      aiFillingSolution: "Filling...",
-      aiFillSolutionDone: "AI filled this language solution. Review it, then save and revalidate.",
-      timeComplexityLabel: "Time complexity",
-      spaceComplexityLabel: "Space complexity",
-      testcaseDetails: "Testcase manager",
-      newTestcase: "New testcase",
-      inputLabel: "Input",
-      outputLabel: "Output",
-      scoreLabel: "Score",
-      orderLabel: "Order",
-      sample: "Sample",
-      add: "Add",
-      delete: "Delete",
-      deleteProblem: "Delete problem",
-      confirmDeleteProblem: "Delete \"{title}\"? Related submissions, solutions, testcases, and testcase results will also be deleted.",
-      loading: "Loading...",
-      noTestcases: "No testcases yet.",
-    };
+  const text = getAdminText(locale);
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState("");
   const [userStatusFilter, setUserStatusFilter] = useState("");
@@ -2496,7 +2560,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const selectedAgentProfile = adminAiProfiles.find((profile) => profile.value === agentModel);
   const agentModelAvailable = Boolean(selectedAgentProfile?.available);
   const agentModelUnavailableReason = adminAiProfilesQuery.isLoading
-    ? (locale === "zh" ? "正在检查 AI 模型..." : "Checking AI profiles...")
+    ? localeText(locale, { zh: "正在检查 AI 模型...", en: "Checking AI profiles..." })
     : selectedAgentProfile && !selectedAgentProfile.available
       ? aiUnavailableText(locale, selectedAgentProfile.reason)
       : !agentPreferredProfile
@@ -2578,14 +2642,14 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
 
   async function createAgentDraft() {
     if (!agentTopic.trim()) {
-      setAgentMessage(locale === "zh" ? "请先填写主题。" : "Enter a topic first.");
+      setAgentMessage(localeText(locale, { zh: "请先填写主题。", en: "Enter a topic first." }));
       return;
     }
     if (!agentCanGenerate) {
       setAgentMessage(agentModelUnavailableReason ?? aiUnavailableText(locale));
       return;
     }
-    setAgentMessage(locale === "zh" ? "正在生成并验证草稿..." : "Generating and validating draft...");
+    setAgentMessage(localeText(locale, { zh: "正在生成并验证草稿...", en: "Generating and validating draft..." }));
     try {
       const result = await api.adminCreateProblemDraft({
         topic: agentTopic,
@@ -2608,7 +2672,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       setAgentMessage(validationStatusMessage(result.status, result.validation_summary, locale));
       await draftsQuery.refetch();
     } catch (error) {
-      setAgentMessage(error instanceof Error ? error.message : locale === "zh" ? "生成失败。" : "Generation failed.");
+      setAgentMessage(error instanceof Error ? error.message : localeText(locale, { zh: "生成失败。", en: "Generation failed." }));
     }
   }
 
@@ -2624,7 +2688,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   async function approveSelectedDraft() {
     if (!selectedDraft) return;
     if (isDraftEditDirty(selectedDraft, draftEdit)) {
-      setDraftSaveMessage(locale === "zh" ? "请先保存并重新校验当前更改，再批准发布。" : "Save and revalidate the current edits before approving.");
+      setDraftSaveMessage(localeText(locale, { zh: "请先保存并重新校验当前更改，再批准发布。", en: "Save and revalidate the current edits before approving." }));
       return;
     }
     if (!window.confirm(text.confirmApproveDraft)) return;
@@ -2638,7 +2702,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       await overviewQuery.refetch();
       await draftsQuery.refetch();
     } catch (error) {
-      setDraftSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "发布失败。" : "Approval failed.");
+      setDraftSaveMessage(error instanceof Error ? error.message : localeText(locale, { zh: "发布失败。", en: "Approval failed." }));
     }
   }
 
@@ -2654,7 +2718,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       setDraftSaveMessage("");
       await draftsQuery.refetch();
     } catch (error) {
-      setDraftSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "拒绝失败。" : "Rejection failed.");
+      setDraftSaveMessage(error instanceof Error ? error.message : localeText(locale, { zh: "拒绝失败。", en: "Rejection failed." }));
     }
   }
 
@@ -2809,7 +2873,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       return;
     }
     setDraftSolutionGenerating(language);
-    setDraftSaveMessage(locale === "zh" ? `正在生成 ${languageLabel(language)} 官方解法...` : `Generating ${languageLabel(language)} official solution...`);
+    setDraftSaveMessage(localeText(locale, { zh: `正在生成 ${languageLabel(language)} 官方解法...`, en: `Generating ${languageLabel(language)} official solution...` }));
     try {
       const generated = await api.adminGenerateProblemDraftSolution(selectedDraft.id, {
         language,
@@ -2835,7 +2899,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       setAgentRuns(refreshed.runs ?? []);
       setDraftSaveMessage(text.aiFillSolutionDone);
     } catch (error) {
-      setDraftSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "AI 填充失败。" : "AI fill failed.");
+      setDraftSaveMessage(error instanceof Error ? error.message : localeText(locale, { zh: "AI 填充失败。", en: "AI fill failed." }));
     } finally {
       setDraftSolutionGenerating(null);
     }
@@ -2935,7 +2999,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       return;
     }
     setProblemSolutionGenerating(language);
-    setProblemSaveMessage(locale === "zh" ? `正在生成 ${languageLabel(language)} 官方解法...` : `Generating ${languageLabel(language)} official solution...`);
+    setProblemSaveMessage(localeText(locale, { zh: `正在生成 ${languageLabel(language)} 官方解法...`, en: `Generating ${languageLabel(language)} official solution...` }));
     try {
       const generated = await api.adminGenerateProblemSolution(selectedProblemId, {
         language,
@@ -2954,7 +3018,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       }));
       setProblemSaveMessage(text.aiFillSolutionDone);
     } catch (error) {
-      setProblemSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "AI 填充失败。" : "AI fill failed.");
+      setProblemSaveMessage(error instanceof Error ? error.message : localeText(locale, { zh: "AI 填充失败。", en: "AI fill failed." }));
     } finally {
       setProblemSolutionGenerating(null);
     }
@@ -2990,11 +3054,11 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       if (report) setProblemValidationReport(report);
       setProblemSaveMessage(revalidate
         ? validationStatusMessage(report?.passed ? "validated" : "validation_failed", report, locale)
-        : locale === "zh" ? "题目已保存，建议重新校验。" : "Problem saved. Revalidation is recommended.");
+        : localeText(locale, { zh: "题目已保存，建议重新校验。", en: "Problem saved. Revalidation is recommended." }));
       await problemSolutionsQuery.refetch();
       await overviewQuery.refetch();
     } catch (error) {
-      setProblemSaveMessage(error instanceof Error ? error.message : locale === "zh" ? "题目保存失败。" : "Problem save failed.");
+      setProblemSaveMessage(error instanceof Error ? error.message : localeText(locale, { zh: "题目保存失败。", en: "Problem save failed." }));
     } finally {
       setProblemSaving(false);
     }
@@ -3011,7 +3075,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       order: newTestcase.order.trim() ? Number(newTestcase.order) : null,
     });
     setNewTestcase({ input: "", output: "", is_hidden: false, is_sample: false, score: "10", order: "" });
-    setProblemSaveMessage(locale === "zh" ? "用例已新增，建议重新校验。" : "Testcase added. Revalidation is recommended.");
+    setProblemSaveMessage(localeText(locale, { zh: "用例已新增，建议重新校验。", en: "Testcase added. Revalidation is recommended." }));
     await refreshProblemTestcases();
   }
 
@@ -3026,13 +3090,13 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       score: Number(testcase.score) || 0,
       order: Number(testcase.order) || 0,
     });
-    setProblemSaveMessage(locale === "zh" ? "用例已保存，建议重新校验。" : "Testcase saved. Revalidation is recommended.");
+    setProblemSaveMessage(localeText(locale, { zh: "用例已保存，建议重新校验。", en: "Testcase saved. Revalidation is recommended." }));
     await refreshProblemTestcases();
   }
 
   async function deleteProblemTestcase(testcaseId: string) {
     await api.adminDeleteTestcase(testcaseId);
-    setProblemSaveMessage(locale === "zh" ? "用例已删除，建议重新校验。" : "Testcase deleted. Revalidation is recommended.");
+    setProblemSaveMessage(localeText(locale, { zh: "用例已删除，建议重新校验。", en: "Testcase deleted. Revalidation is recommended." }));
     await refreshProblemTestcases();
   }
 
@@ -3049,16 +3113,16 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
             <p className="muted">{text.agentNotice}</p>
           </div>
           <div className="agent-form">
-            <label>{locale === "zh" ? "主题" : "Topic"}<input value={agentTopic} onChange={(event) => setAgentTopic(event.target.value)} /></label>
-            <label>{locale === "zh" ? "难度" : "Difficulty"}
+            <label>{localeText(locale, { zh: "主题", en: "Topic" })}<input value={agentTopic} onChange={(event) => setAgentTopic(event.target.value)} /></label>
+            <label>{localeText(locale, { zh: "难度", en: "Difficulty" })}
               <select value={agentDifficulty} onChange={(event) => setAgentDifficulty(event.target.value as "easy" | "medium" | "hard")}>
                 <option value="easy">easy</option>
                 <option value="medium">medium</option>
                 <option value="hard">hard</option>
               </select>
             </label>
-            <label>{locale === "zh" ? "标签" : "Tags"}<input value={agentTags} onChange={(event) => setAgentTags(event.target.value)} /></label>
-            <label>{locale === "zh" ? "模式" : "Mode"}
+            <label>{localeText(locale, { zh: "标签", en: "Tags" })}<input value={agentTags} onChange={(event) => setAgentTags(event.target.value)} /></label>
+            <label>{localeText(locale, { zh: "模式", en: "Mode" })}
               <select value={agentMode} onChange={(event) => setAgentMode(event.target.value as ProblemAuthoringMode)}>
                 <option value="both">{authoringModeLabel("both", locale)}</option>
                 <option value="function">{authoringModeLabel("function", locale)}</option>
@@ -3079,19 +3143,19 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 ))}
               </div>
             </div>
-            <label>{locale === "zh" ? "模型" : "Model"}
+            <label>{localeText(locale, { zh: "模型", en: "Model" })}
               <select value={agentModel} onChange={(event) => setAgentModel(event.target.value as AIModelProfile)}>
                 {(adminAiProfiles.length ? adminAiProfiles : [AI_PROFILE_FALLBACKS.default]).map((profile) => (
                   <option key={profile.value} value={profile.value} disabled={!profile.available}>
-                    {aiProfileLabel(profile, locale)}{profile.available ? "" : ` (${locale === "zh" ? "不可用" : "unavailable"})`}
+                    {aiProfileLabel(profile, locale)}{profile.available ? "" : ` (${localeText(locale, { zh: "不可用", en: "unavailable" })})`}
                   </option>
                 ))}
               </select>
             </label>
-            <label>{locale === "zh" ? "额外约束" : "Constraints"}<input value={agentConstraints} onChange={(event) => setAgentConstraints(event.target.value)} /></label>
+            <label>{localeText(locale, { zh: "额外约束", en: "Constraints" })}<input value={agentConstraints} onChange={(event) => setAgentConstraints(event.target.value)} /></label>
             <button className="primary" onClick={createAgentDraft} disabled={!agentCanGenerate}>{text.generateDraft}</button>
           </div>
-          {!agentTopic.trim() ? <p className="muted model-unavailable-note">{locale === "zh" ? "填写主题后才能生成草稿。" : "Enter a topic to generate a draft."}</p> : null}
+          {!agentTopic.trim() ? <p className="muted model-unavailable-note">{localeText(locale, { zh: "填写主题后才能生成草稿。", en: "Enter a topic to generate a draft." })}</p> : null}
           {agentModelUnavailableReason ? <p className="muted model-unavailable-note">{agentModelUnavailableReason}</p> : null}
           {agentMessage ? <p className="muted">{agentMessage}</p> : null}
           <div className="agent-workspace">
@@ -3130,7 +3194,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                   <strong>{step.step_index}. {step.step_type}</strong>
                   <span>{step.status}{step.error_message ? `: ${step.error_message}` : ""}</span>
                 </article>
-              )) : <p className="muted">{locale === "zh" ? "选择或生成草稿后显示执行轨迹。" : "Generate a draft to see the run timeline."}</p>}
+              )) : <p className="muted">{localeText(locale, { zh: "选择或生成草稿后显示执行轨迹。", en: "Generate a draft to see the run timeline." })}</p>}
             </div>
             <div className="agent-preview">
               <h3>{text.draftPreview}</h3>
@@ -3175,7 +3239,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                             ))}
                           </div>
                         </div>
-                        <label>{locale === "zh" ? "难度" : "Difficulty"}
+                        <label>{localeText(locale, { zh: "难度", en: "Difficulty" })}
                           <select value={draftEdit.difficulty} disabled={draftEditLocked} onChange={(event) => updateDraftEdit({ difficulty: event.target.value as "easy" | "medium" | "hard" })}>
                             <option value="easy">easy</option>
                             <option value="medium">medium</option>
@@ -3209,10 +3273,10 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                           <article className="testcase-card admin-testcase-card official-solution-card" key={`${solution.language}-${index}`}>
                             <div className="testcase-card-head">
                               <strong>{languageLabel(solution.language)}</strong>
-                              {index === 0 ? <span className="case-chip sample">{locale === "zh" ? "主解法" : "Primary"}</span> : null}
+                              {index === 0 ? <span className="case-chip sample">{localeText(locale, { zh: "主解法", en: "Primary" })}</span> : null}
                             </div>
                             <div className="admin-edit-grid official-solution-grid">
-                              <label>{locale === "zh" ? "语言" : "Language"}
+                              <label>{localeText(locale, { zh: "语言", en: "Language" })}
                                 <select value={solution.language} disabled={draftEditLocked} onChange={(event) => updateDraftSolution(index, { language: event.target.value })}>
                                   {LANGUAGES.map((item) => (
                                     <option
@@ -3252,7 +3316,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                         {draftEdit.testcases.map((testcase, index) => (
                           <article className="testcase-card admin-testcase-card" key={`${index}-${testcase.order}`}>
                             <div className="testcase-card-head">
-                              <strong>{locale === "zh" ? "用例" : "Case"} {index + 1}</strong>
+                              <strong>{localeText(locale, { zh: "用例", en: "Case" })} {index + 1}</strong>
                               <span className={testcase.is_hidden ? "case-chip hidden" : "case-chip public"}>{testcase.is_hidden ? text.hidden : text.public}</span>
                               {testcase.is_sample ? <span className="case-chip sample">{text.sample}</span> : null}
                             </div>
@@ -3260,7 +3324,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                               <label>{text.inputLabel}<textarea value={testcase.input} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { input: event.target.value })} /></label>
                               <label>{text.outputLabel}<textarea value={testcase.output} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { output: event.target.value })} /></label>
                               <label>{text.orderLabel}<input type="number" min="1" value={testcase.order} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { order: Number(event.target.value) || index + 1 })} /></label>
-                              <label>{locale === "zh" ? "解释" : "Explanation"}<input value={testcase.explanation} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { explanation: event.target.value })} /></label>
+                              <label>{localeText(locale, { zh: "解释", en: "Explanation" })}<input value={testcase.explanation} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { explanation: event.target.value })} /></label>
                               <label className="checkbox-label"><input type="checkbox" checked={testcase.is_hidden} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { is_hidden: event.target.checked, is_sample: event.target.checked ? false : testcase.is_sample })} />{text.hidden}</label>
                               <label className="checkbox-label"><input type="checkbox" checked={testcase.is_sample} disabled={draftEditLocked} onChange={(event) => updateDraftCase(index, { is_sample: event.target.checked, is_hidden: event.target.checked ? false : testcase.is_hidden })} />{text.sample}</label>
                             </div>
@@ -3282,7 +3346,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                     <button disabled={draftEditLocked || selectedDraft.status === "rejected"} onClick={rejectSelectedDraft}>{text.rejectDraft}</button>
                   </div>
                 </>
-              ) : <p className="muted">{locale === "zh" ? "还没有选中的草稿。" : "No draft selected."}</p>}
+              ) : <p className="muted">{localeText(locale, { zh: "还没有选中的草稿。", en: "No draft selected." })}</p>}
             </div>
           </div>
         </section>
@@ -3349,7 +3413,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 <h3>{selectedUser.username}</h3>
                 <span className="muted">{selectedUser.id}</span>
                 <div className="admin-edit-grid">
-                  <label>{locale === "zh" ? "角色" : "Role"}
+                  <label>{localeText(locale, { zh: "角色", en: "Role" })}
                     <select value={selectedUser.role} onChange={(event) => updateUser(selectedUser.id, { role: event.target.value })}>
                       <option value="user">{text.user}</option>
                       <option value="admin">{text.admin}</option>
@@ -3445,7 +3509,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 <div className="admin-edit-grid problem-core-grid">
                   <label>{text.titleLabel}<input value={problemEdit.title} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, title: event.target.value }))} /></label>
                   <label>{text.slugLabel}<input value={problemEdit.slug} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, slug: event.target.value }))} /></label>
-                  <label>{locale === "zh" ? "难度" : "Difficulty"}
+                  <label>{localeText(locale, { zh: "难度", en: "Difficulty" })}
                     <select value={problemEdit.difficulty} disabled={problemEditLocked} onChange={(event) => setProblemEdit((value) => ({ ...value, difficulty: event.target.value as "easy" | "medium" | "hard" }))}>
                       <option value="easy">easy</option>
                       <option value="medium">medium</option>
@@ -3484,7 +3548,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                         <strong>{languageLabel(solution.language)}</strong>
                       </div>
                       <div className="admin-edit-grid official-solution-grid">
-                        <label>{locale === "zh" ? "语言" : "Language"}
+                        <label>{localeText(locale, { zh: "语言", en: "Language" })}
                           <select value={solution.language} disabled={problemEditLocked} onChange={(event) => updateProblemSolution(index, { language: event.target.value })}>
                             {LANGUAGES.map((item) => (
                               <option
@@ -3513,7 +3577,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                         <button disabled={problemEditLocked} onClick={() => removeProblemSolution(index)}>{text.delete}</button>
                       </div>
                     </article>
-                  )) : <p className="muted">{locale === "zh" ? "还没有官方解法。请至少新增一个语言解法后再重新校验。" : "No official solutions yet. Add at least one language before revalidation."}</p>}
+                  )) : <p className="muted">{localeText(locale, { zh: "还没有官方解法。请至少新增一个语言解法后再重新校验。", en: "No official solutions yet. Add at least one language before revalidation." })}</p>}
                 </div>
                 <div className="agent-actions">
                   <button className="primary" disabled={problemEditLocked} onClick={() => saveProblemEdit(false)}>{problemSaving ? text.loading : text.save}</button>
@@ -3549,7 +3613,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                       return (
                         <article className="testcase-card admin-testcase-card" key={testcase.id}>
                           <div className="testcase-card-head">
-                            <strong>{locale === "zh" ? "用例" : "Case"} {edit.order}</strong>
+                            <strong>{localeText(locale, { zh: "用例", en: "Case" })} {edit.order}</strong>
                             <span className={edit.is_hidden ? "case-chip hidden" : "case-chip public"}>{edit.is_hidden ? text.hidden : text.public}</span>
                             {edit.is_sample ? <span className="case-chip sample">{text.sample}</span> : null}
                           </div>
@@ -3593,7 +3657,7 @@ function App() {
   const problems = useMemo(() => problemsQuery.data ?? [], [problemsQuery.data]);
 
   useEffect(() => {
-    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+    document.documentElement.lang = htmlLangForLocale(locale);
     writeStoredLocale(locale);
   }, [locale]);
 
@@ -3647,7 +3711,7 @@ function App() {
   }
 
   function toggleLocale() {
-    setLocalePreference(locale === "zh" ? "en" : "zh");
+    setLocalePreference(nextLocale(locale));
   }
 
   function setLocalePreference(next: Locale) {

@@ -1,6 +1,8 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+from backend.core.locales import DEFAULT_LOCALE, validate_locale
 
 Verdict = Literal[
     "accepted",
@@ -13,7 +15,7 @@ Verdict = Literal[
     "unknown",
 ]
 AIModelProfile = Literal["default", "deepseek", "qwen-local"]
-AILocale = Literal["zh", "en"]
+AILocale = Annotated[str, BeforeValidator(validate_locale)]
 
 
 class SuspiciousCodeRegion(BaseModel):
@@ -58,14 +60,14 @@ class AIHintRequest(BaseModel):
     language: str | None = None
     current_code: str | None = None
     model_profile: AIModelProfile = "default"
-    locale: AILocale = "zh"
+    locale: AILocale = DEFAULT_LOCALE
 
 
 class AIActionRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     model_profile: AIModelProfile = "default"
-    locale: AILocale = "zh"
+    locale: AILocale = DEFAULT_LOCALE
 
 
 class AIChatRequest(BaseModel):
@@ -73,7 +75,7 @@ class AIChatRequest(BaseModel):
 
     message: str = Field(min_length=1, max_length=2000)
     model_profile: AIModelProfile = "default"
-    locale: AILocale = "zh"
+    locale: AILocale = DEFAULT_LOCALE
 
 
 class AIChatResponse(BaseModel):

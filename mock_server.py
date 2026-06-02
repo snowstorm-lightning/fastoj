@@ -2,7 +2,7 @@
 """Small local demo server for the static FastOJ frontend."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -63,6 +63,10 @@ MOCK_SOLUTIONS = {
 MOCK_SUBMISSIONS = []
 
 
+def utc_now_iso() -> str:
+    return datetime.now(UTC).replace(tzinfo=None).isoformat()
+
+
 class FastOJHandler(SimpleHTTPRequestHandler):
     """HTTP handler with a tiny mock API and static file serving."""
 
@@ -121,7 +125,7 @@ class FastOJHandler(SimpleHTTPRequestHandler):
                     "id": "mock-user-id",
                     "username": payload.get("username"),
                     "email": payload.get("email"),
-                    "created_at": datetime.utcnow().isoformat(),
+                    "created_at": utc_now_iso(),
                 },
                 status=201,
             )
@@ -219,8 +223,8 @@ def build_submission(payload, public_only):
         "execute_time": 12,
         "memory_used": 16,
         "score": 100 if result == "ac" else 0,
-        "created_at": datetime.utcnow().isoformat(),
-        "finished_at": datetime.utcnow().isoformat(),
+        "created_at": utc_now_iso(),
+        "finished_at": utc_now_iso(),
         "testcase_results": [
             {
                 "id": f"{submission_id}-case-1",

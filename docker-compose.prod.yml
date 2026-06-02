@@ -42,6 +42,7 @@ services:
       DEBUG: ${FASTOJ_DEBUG:-false}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:8010"]}'
       JUDGE_ASYNC: "true"
+      JUDGE_INLINE_FALLBACK: ${JUDGE_INLINE_FALLBACK:-false}
       JUDGE_CONTAINER_IMAGE: ${FASTOJ_IMAGE_REGISTRY:-ghcr.io}/${FASTOJ_IMAGE_OWNER:?set FASTOJ_IMAGE_OWNER}/fastoj-judge:${FASTOJ_IMAGE_TAG:-latest}
       JUDGE_USE_DOCKER: "true"
       FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION: "false"

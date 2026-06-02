@@ -1,22 +1,80 @@
 import type { ProblemDetail, ProblemListItem } from "./schemas";
 import { PROBLEM_ZH_EXTRA } from "./problemZh";
 
-export type Locale = "zh" | "en";
+export const LOCALE_META = {
+  zh: {
+    htmlLang: "zh-CN",
+    browserPrefixes: ["zh"],
+    label: "中文",
+    shortLabel: "中",
+    switchLabel: "EN",
+    sourceText: false,
+    aiResponseLanguage: "Simplified Chinese",
+  },
+  en: {
+    htmlLang: "en",
+    browserPrefixes: ["en"],
+    label: "English",
+    shortLabel: "EN",
+    switchLabel: "中",
+    sourceText: true,
+    aiResponseLanguage: "English",
+  },
+} as const;
 
-export const DEFAULT_LOCALE: Locale = "zh";
+export type Locale = keyof typeof LOCALE_META;
+
+export const SUPPORTED_LOCALES = Object.keys(LOCALE_META) as Locale[];
+export const DEFAULT_LOCALE = "zh" satisfies Locale;
 export const LOCALE_STORAGE_KEY = "fastoj.locale";
 
-export function normalizeLocale(value: unknown): Locale | null {
-  return value === "zh" || value === "en" ? value : null;
+export function isLocale(value: unknown): value is Locale {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(LOCALE_META, value);
 }
+
+export function normalizeLocale(value: unknown): Locale | null {
+  return isLocale(value) ? value : null;
+}
+
+export function htmlLangForLocale(locale: Locale): string {
+  return LOCALE_META[locale].htmlLang;
+}
+
+export function nextLocale(locale: Locale): Locale {
+  const index = SUPPORTED_LOCALES.indexOf(locale);
+  return SUPPORTED_LOCALES[(index + 1) % SUPPORTED_LOCALES.length] ?? DEFAULT_LOCALE;
+}
+
+export function localeLabel(locale: Locale): string {
+  return LOCALE_META[locale].label;
+}
+
+export function localeText(
+  locale: Locale,
+  values: Partial<Record<Locale, string>> & Pick<Record<Locale, string>, typeof DEFAULT_LOCALE>,
+): string {
+  return localeValue(locale, values);
+}
+
+export function localeValue<T>(
+  locale: Locale,
+  values: Partial<Record<Locale, T>> & Pick<Record<Locale, T>, typeof DEFAULT_LOCALE>,
+): T {
+  return values[locale] ?? values[DEFAULT_LOCALE];
+}
+
+type LocalizedText = Partial<Record<Locale, string>> & Pick<Record<Locale, string>, typeof DEFAULT_LOCALE>;
+type LocalizedTuple = Partial<Record<Locale, [string, string]>> & Pick<Record<Locale, [string, string]>, typeof DEFAULT_LOCALE>;
 
 function browserLocale(): Locale {
   if (typeof navigator === "undefined") return DEFAULT_LOCALE;
   const languages = [...(navigator.languages ?? []), navigator.language].filter((language): language is string => Boolean(language));
   for (const language of languages) {
     const normalized = language.toLowerCase();
-    if (normalized.startsWith("zh")) return "zh";
-    if (normalized.startsWith("en")) return "en";
+    const match = SUPPORTED_LOCALES.find((locale) => (
+      LOCALE_META[locale].browserPrefixes.some((prefix) => normalized.startsWith(prefix))
+    ));
+    if (match) return match;
   }
   return DEFAULT_LOCALE;
 }
@@ -134,10 +192,12 @@ export const UI = {
     displayName: "显示名称",
     compactMode: "紧凑模式",
     saveSettings: "保存设置",
-    discussionTitle: "讨论区",
-    discussionPlaceholder: "写下思路、卡点或复杂度讨论。不要粘贴隐藏用例。",
-    postDiscussion: "发布讨论",
-    noDiscussion: "暂无讨论，先发起一个话题。",
+    discussionTitle: "本地讨论",
+    discussionPlaceholder: "记录本地思路、卡点或复杂度讨论。不要粘贴隐藏用例。",
+    postDiscussion: "保存本地记录",
+    noDiscussion: "暂无本地记录。",
+    discussionLocalNotice: "当前记录只保存在本机浏览器，不会同步给其他用户。",
+    discussionLoginRequired: "请先登录后记录本地讨论。",
   },
   en: {
     navLibrary: "Problems",
@@ -233,14 +293,23 @@ export const UI = {
     displayName: "Display name",
     compactMode: "Compact mode",
     saveSettings: "Save settings",
-    discussionTitle: "Discussion",
-    discussionPlaceholder: "Share an idea, blocker, or complexity note. Do not paste hidden cases.",
-    postDiscussion: "Post",
-    noDiscussion: "No discussion yet. Start the first thread.",
+    discussionTitle: "Local Discussion",
+    discussionPlaceholder: "Save a local idea, blocker, or complexity note. Do not paste hidden cases.",
+    postDiscussion: "Save locally",
+    noDiscussion: "No local notes yet.",
+    discussionLocalNotice: "These notes stay in this browser and are not shared with other users.",
+    discussionLoginRequired: "Sign in before saving local discussion notes.",
   },
 } as const;
 
-const VERDICTS = {
+type UIMessages = Record<keyof (typeof UI)[typeof DEFAULT_LOCALE], string>;
+const UI_BY_LOCALE: Partial<Record<Locale, UIMessages>> & Record<typeof DEFAULT_LOCALE, UIMessages> = UI;
+
+export function getUI(locale: Locale): UIMessages {
+  return UI_BY_LOCALE[locale] ?? UI_BY_LOCALE[DEFAULT_LOCALE];
+}
+
+const VERDICTS: Record<string, LocalizedTuple> = {
   idle: {
     zh: ["未运行", "还没有提交或运行代码。"],
     en: ["Idle", "No run or submission has been started."],
@@ -285,16 +354,19 @@ const VERDICTS = {
     zh: ["系统错误", "System Error：评测系统或沙箱执行路径出现问题。"],
     en: ["SE", "System Error: the judge or sandbox failed."],
   },
-} as const;
+};
 
 export function verdictInfo(code: string | null | undefined, locale: Locale) {
-  const key = (code ?? "idle").toLowerCase() as keyof typeof VERDICTS;
-  const fallback: [string, string] = [code ?? "idle", locale === "zh" ? "未知评测结果。" : "Unknown verdict."];
-  const [label, description] = VERDICTS[key]?.[locale] ?? fallback;
+  const key = (code ?? "idle").toLowerCase();
+  const fallback: [string, string] = [
+    code ?? "idle",
+    localeText(locale, { zh: "未知评测结果。", en: "Unknown verdict." }),
+  ];
+  const [label, description] = VERDICTS[key] ? localeValue(locale, VERDICTS[key]) : fallback;
   return { label, description, code: key };
 }
 
-const DIFFICULTY_LABELS: Record<string, Record<Locale, string>> = {
+const DIFFICULTY_LABELS: Record<string, LocalizedText> = {
   easy: { zh: "简单", en: "Easy" },
   medium: { zh: "中等", en: "Medium" },
   hard: { zh: "困难", en: "Hard" },
@@ -359,11 +431,12 @@ const TAG_CANONICAL_BY_LOWER = new Map(Object.keys(TAG_LABELS).map((tag) => [tag
 
 export function localizeDifficulty(difficulty: string | null | undefined, locale: Locale): string {
   if (!difficulty) return "";
-  return DIFFICULTY_LABELS[difficulty.toLowerCase()]?.[locale] ?? difficulty;
+  const label = DIFFICULTY_LABELS[difficulty.toLowerCase()];
+  return label ? localeText(locale, label) : difficulty;
 }
 
 export function localizeTag(tag: string, locale: Locale): string {
-  if (locale === "en") return tag;
+  if (LOCALE_META[locale].sourceText) return tag;
   return TAG_LABELS[tag] ?? tag;
 }
 
@@ -373,7 +446,7 @@ export function localizeTags(tags: string[] | null | undefined, locale: Locale):
 
 export function canonicalTagQuery(value: string, locale: Locale): string {
   const parts = value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean);
-  if (locale === "en") {
+  if (LOCALE_META[locale].sourceText) {
     return parts.map((tag) => TAG_CANONICAL_BY_LOWER.get(tag.toLowerCase()) ?? tag).join(", ");
   }
   return value
@@ -472,7 +545,7 @@ export function localizedProblem<T extends ProblemDetail | ProblemListItem | und
   problem: T,
   locale: Locale,
 ) {
-  if (!problem || locale === "en") return problem;
+  if (!problem || LOCALE_META[locale].sourceText) return problem;
   const zh = PROBLEM_ZH[problem.slug];
   if (!zh) return problem;
   const result = { ...problem, title: zh.title } as NonNullable<T>;

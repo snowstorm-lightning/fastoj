@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     DEFAULT_TIME_LIMIT: int = 1000  # ms
     DEFAULT_MEMORY_LIMIT: int = 256  # MB
     JUDGE_ASYNC: bool = False  # Local dev defaults to inline judging; Docker enables queue mode.
+    JUDGE_INLINE_FALLBACK: bool | None = None  # None follows DEBUG; false makes worker queue mandatory.
 
     # Queue
     JUDGE_QUEUE_NAME: str = "judge_tasks"

@@ -1,7 +1,10 @@
 import logging
 import signal
 import sys
+import threading
+import time
 
+from backend.core.config import settings
 from backend.services.queue_service import queue_service
 from backend.worker.tasks.consumer import JudgeTaskConsumer
 
@@ -18,6 +21,7 @@ class JudgeWorker:
     def __init__(self):
         self.running = False
         self.consumer = None
+        self.heartbeat_thread: threading.Thread | None = None
 
     def start(self):
         """Start the judge worker."""
@@ -29,6 +33,7 @@ class JudgeWorker:
 
         # Create task consumer
         self.consumer = JudgeTaskConsumer()
+        self._start_heartbeat()
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -40,7 +45,12 @@ class JudgeWorker:
         while self.running:
             try:
                 queue_service.mark_worker_alive()
-                queue_service.reclaim_pending()
+                claimed_tasks = queue_service.claim_pending()
+                if claimed_tasks:
+                    logger.info("Claimed %s pending judge task(s)", len(claimed_tasks))
+                for message_id, task in claimed_tasks:
+                    logger.info(f"Received reclaimed task: {task.get('submission_id')}")
+                    self.consumer.process_task(task, message_id)
                 stream_task = queue_service.pop_stream_task(timeout_ms=5000)
                 if stream_task:
                     message_id, task = stream_task
@@ -58,6 +68,8 @@ class JudgeWorker:
         """Stop the judge worker."""
         logger.info("Stopping Judge Worker...")
         self.running = False
+        if self.heartbeat_thread and self.heartbeat_thread.is_alive():
+            self.heartbeat_thread.join(timeout=2)
         queue_service.clear_worker_alive()
         queue_service.disconnect()
 
@@ -66,6 +78,23 @@ class JudgeWorker:
         logger.info(f"Received signal {signum}, shutting down...")
         self.stop()
         sys.exit(0)
+
+    def _start_heartbeat(self) -> None:
+        self.heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            name="judge-worker-heartbeat",
+            daemon=True,
+        )
+        self.heartbeat_thread.start()
+
+    def _heartbeat_loop(self) -> None:
+        interval = max(1, settings.JUDGE_WORKER_HEARTBEAT_TTL_SECONDS // 3)
+        while self.running:
+            try:
+                queue_service.mark_worker_alive()
+            except Exception as exc:
+                logger.error("Failed to refresh judge worker heartbeat: %s", exc)
+            time.sleep(interval)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,14 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  SUPPORTED_LOCALES,
   LOCALE_STORAGE_KEY,
   canonicalTagQuery,
+  htmlLangForLocale,
+  localeText,
   localizedProblem,
   matchesLocalizedProblem,
+  nextLocale,
   normalizeLocale,
   readStoredLocale,
   writeStoredLocale,
@@ -40,6 +44,13 @@ describe("localized problem search", () => {
 
     writeStoredLocale("en");
     expect(readStoredLocale()).toBe("en");
+  });
+
+  test("keeps locale metadata and fallback copy centralized", () => {
+    expect(SUPPORTED_LOCALES).toContain("zh");
+    expect(htmlLangForLocale("zh")).toBe("zh-CN");
+    expect(nextLocale("zh")).toBe("en");
+    expect(localeText("en", { zh: "默认" })).toBe("默认");
   });
 
   test("canonical tag search accepts Chinese comma and case variants", () => {

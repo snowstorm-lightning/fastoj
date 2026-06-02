@@ -22,7 +22,7 @@ Monaco 编程工作台、双语界面、实时提交状态和安全的 AI 解释
   输出不会返回给用户，也不会发送给 AI 服务商。
 - **前端不是演示壳。** 页面支持浅色和深色两种主题；题库、卡片/列表布局、
   三栏工作台、可编辑公开运行输入、官方解法生成期望输出、输出对比、判题
-  时间线、AI 侧栏、提交轨迹、本地讨论、设置页、管理后台和知识图谱都已经
+  时间线、AI 侧栏、提交轨迹、浏览器本地讨论记录、设置页、管理后台和知识图谱都已经
   接入。
 - **适合做 AI Provider 实验。** AI 层使用 OpenAI-compatible profile，既能
   接 DeepSeek 风格的托管 API，也能接本地 Qwen/llama.cpp 服务。
@@ -150,6 +150,11 @@ cd frontend
 npm ci
 npm run dev
 ```
+
+直接在宿主机开发时 `.env.example` 使用 `DEBUG=true`，异步队列不可用时 API
+可以 inline 判题，方便调试。Docker Compose 和生产环境使用 `JUDGE_ASYNC=true`
+并关闭 `JUDGE_INLINE_FALLBACK`；Redis 或 Worker 不可用时会返回
+`503 Judge service unavailable`，不会把提交判题负载转移到 API 进程。
 
 Vite 开发服务器默认可以调用同源 API。只有当前端和 API 分别跑在不同 origin
 时，才需要设置 `VITE_API_BASE_URL`。
@@ -517,6 +522,8 @@ FastOJ 已包含 GitHub Actions：
   理员管理。
 - 生产判题只使用 Docker 沙箱；`FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true`
   只允许本地开发使用。
+- 生产提交必须走 Redis Streams Worker。inline judge fallback 只允许
+  `DEBUG=true` 或显式设置 `JUDGE_INLINE_FALLBACK=true` 的本地调试场景。
 - 在 Docker Compose 中，API 服务也会挂载 Docker socket，这样管理员专用的
   出题 Agent 可以在发布前或手动编辑后同步用沙箱校验官方草稿解法；多语言草稿
   会按每种官方解法语言分别校验。双模式校验只运行函数式规范解法，这份可信实现

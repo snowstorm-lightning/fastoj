@@ -94,27 +94,41 @@ class JudgeTaskConsumer:
         except Exception as e:
             logger.error(f"Error processing submission {submission_id}: {e}")
             error_message = str(e)
+            terminal_failure = True
 
-            # Update status to error
+            try:
+                if message_id:
+                    terminal_failure = queue_service.retry_or_dead_letter(message_id, task, error_message)
+            except Exception as retry_error:
+                logger.error(f"Failed to retry or dead-letter task: {retry_error}")
+
             try:
                 service = SubmissionService(db)
-                service.update_submission_status(
-                    submission_id,
-                    SubmissionStatus.FINISHED,
-                    result=SubmissionResult.SE,
-                    error_message=error_message,
-                )
+                if terminal_failure:
+                    service.update_submission_status(
+                        submission_id,
+                        SubmissionStatus.FINISHED,
+                        result=SubmissionResult.SE,
+                        error_message=error_message,
+                    )
+                else:
+                    service.update_submission_status(submission_id, SubmissionStatus.PENDING)
             except Exception as update_error:
                 logger.error(f"Failed to update submission status: {update_error}")
 
             try:
-                queue_service.publish_status(
-                    submission_id,
-                    "error",
-                    {"status": "finished", "result": "se", "message": error_message, "code": "JUDGE_ERROR"},
-                )
-                if message_id:
-                    queue_service.retry_or_dead_letter(message_id, task, error_message)
+                if terminal_failure:
+                    queue_service.publish_status(
+                        submission_id,
+                        "error",
+                        {"status": "finished", "result": "se", "message": error_message, "code": "JUDGE_ERROR"},
+                    )
+                else:
+                    queue_service.publish_status(
+                        submission_id,
+                        "pending",
+                        {"status": "pending", "message": "Judge task will retry"},
+                    )
             except Exception:
                 pass
 

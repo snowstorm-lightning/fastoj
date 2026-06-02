@@ -104,7 +104,12 @@ FASTOJ_IMAGE_OWNER=你的 GitHub 用户名或组织名，必须小写
 POSTGRES_PASSWORD=足够长的随机数据库密码
 SECRET_KEY=足够长的随机应用密钥
 CORS_ORIGINS=["https://你的域名"]
+JUDGE_INLINE_FALLBACK=false
 ```
+
+生产环境应保持 `FASTOJ_DEBUG=false` 和 `JUDGE_INLINE_FALLBACK=false`。Redis 或
+Judge Worker 不可用时提交接口会返回 `503 Judge service unavailable`，而不是在
+API 容器内执行用户提交。
 
 在服务器生成随机密钥：
 
