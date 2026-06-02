@@ -41,37 +41,37 @@ FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。前端用 Re
 
 I needed more than fire-and-forget queueing. Redis Streams gives message ids, consumer groups, ack, pending messages, and a path for reclaiming or dead-lettering failed work. That fits judge workers because tasks can be slow, workers can crash, and multiple workers should be able to consume from the same stream safely.
 
-代码锚点：[QueueService.push_task](../../backend/services/queue_service.py#L56)、[QueueService.pop_stream_task](../../backend/services/queue_service.py#L74)、[retry_or_dead_letter](../../backend/services/queue_service.py#L95)。
+代码锚点：[QueueService.push_task](../../backend/services/queue_service.py#L116)、[QueueService.pop_stream_task](../../backend/services/queue_service.py#L134)、[retry_or_dead_letter](../../backend/services/queue_service.py#L155)。
 
 ### 2. How do you execute untrusted user code safely?
 
 Production execution is Docker-first. The executor creates a temporary container from the judge runtime image, copies source and input through the Docker archive API, disables networking, limits memory and process count, drops Linux capabilities, enables no-new-privileges, and runs as a non-root user. Unsafe host subprocess execution is disabled unless explicitly configured for local experiments.
 
-代码锚点：[Docker sandbox](../../backend/sandbox/executor.py#L118)、[network disabled](../../backend/sandbox/executor.py#L146)、[cap drop](../../backend/sandbox/executor.py#L148)。
+代码锚点：[Docker sandbox](../../backend/sandbox/executor.py#L92)、[network disabled](../../backend/sandbox/executor.py#L186)、[cap drop](../../backend/sandbox/executor.py#L188)。
 
 ### 3. How do you prevent hidden test leakage?
 
 There are multiple layers. The judge does not store hidden input, expected output, or actual output in testcase result rows. The submission API filters hidden results for normal users. The AI service builds context only from public testcase results and uses a hidden failure notice instead of hidden data. WebSocket progress for full submissions also avoids exposing hidden case details.
 
-代码锚点：[JudgeTask hidden result write](../../backend/worker/tasks/judge_task.py#L216)、[submission API filter](../../backend/api/submissions/__init__.py#L83)、[AI context](../../backend/ai/service.py#L112)。
+代码锚点：[JudgeTask hidden result write](../../backend/worker/tasks/judge_task.py#L219)、[submission API filter](../../backend/api/submissions/__init__.py#L85)、[AI context](../../backend/ai/service.py#L112)。
 
 ### 4. How does Function mode work?
 
 Function mode is a transformation layer. The user writes a function, but before judging the backend wraps it in a generated stdin/stdout harness based on the problem signature. The harness parses JSON-line input, calls the function, formats the return value, and then the same Docker judge pipeline can execute it like a normal program.
 
-代码锚点：[SubmissionService._prepare_judge_code](../../backend/services/submission_service.py#L110)、[wrap_function_submission](../../backend/services/function_mode.py#L2468)、[frontend starter generation](../../frontend/src/lib/problemModes.ts#L712)。
+代码锚点：[SubmissionService._prepare_judge_code](../../backend/services/submission_service.py#L126)、[wrap_function_submission](../../backend/services/function_mode.py#L2468)、[frontend starter generation](../../frontend/src/lib/problemModes.ts#L712)。
 
 ### 5. What happens if the worker is down?
 
 The API checks for a live worker heartbeat before pushing an async judge task. In debug/development mode, inline fallback can be used for local troubleshooting. In production, inline fallback is disabled, so Redis or worker unavailability returns `503 Judge service unavailable` instead of moving judge load into the FastAPI process. Workers refresh heartbeat in the background while long judge tasks are running. Each task runs in a child process supervised by the worker parent; if the child hangs, the parent terminates it and retries or dead-letters the stream message. If the parent crashes, its heartbeat expires and pending reclaim can move the unacked message to another worker.
 
-代码锚点：[worker heartbeat](../../backend/services/queue_service.py#L36)、[has_live_worker](../../backend/services/queue_service.py#L50)、[worker parent](../../backend/worker/judge_worker.py)、[dispatch policy](../../backend/services/submission_service.py#L137)。
+代码锚点：[worker heartbeat](../../backend/services/queue_service.py#L44)、[has_live_worker](../../backend/services/queue_service.py#L58)、[worker parent](../../backend/worker/judge_worker.py)、[dispatch policy](../../backend/services/submission_service.py#L136)。
 
 ### 6. How does the frontend get real-time status?
 
 After a submission is created, the workbench opens a WebSocket for that submission and also starts polling the submission detail endpoint. WebSocket gives real-time progress; polling guarantees the final state still appears if the socket misses a result event.
 
-代码锚点：[judge action](../../frontend/src/main.tsx#L1675)、[connectStatus](../../frontend/src/main.tsx#L1716)、[makeJudgeSocket](../../frontend/src/lib/api.ts#L564)。
+代码锚点：[judge action](../../frontend/src/main.tsx#L1456)、[connectStatus](../../frontend/src/main.tsx#L1497)、[makeJudgeSocket](../../frontend/src/lib/api.ts#L564)。
 
 ### 7. How did you test it?
 
@@ -97,13 +97,13 @@ For this project size, Docker Compose is enough to make the full topology reprod
 
 ### 为什么前端很多逻辑集中在 `main.tsx`？
 
-The current frontend prioritized product completeness and fast iteration. The state boundaries are already visible: API client, i18n, problem mode helpers, editor, run result panel, AI panel, graph, and store are separate. A future refactor would split view components into route-level modules without changing backend contracts.
+The current frontend prioritized product completeness and fast iteration. The state boundaries are already visible: API client, i18n, problem mode helpers, editor, run result panel, AI panel, graph, and store are separate. Heavy modules such as Monaco, Shiki, React Flow, xterm, auth/settings, and side panels are already lazy-loaded, so the current tradeoff is mainly that view orchestration still lives in one file. A future refactor would split view components into route-level modules without changing backend contracts.
 
 ### 如何扩展第三种语言？
 
 I would add the locale metadata and fallback labels in the frontend registry, add backend locale metadata and validation in one place, then fill UI copy incrementally through `localeText`/`localeValue` fallback helpers. That avoids scattering binary language checks across components and keeps API validation tied to the supported locale list.
 
-代码锚点：[frontend LOCALE_META](../../frontend/src/lib/i18n.ts#L4)、[backend locale validator](../../backend/core/locales.py#L30)、[App lang sync](../../frontend/src/main.tsx#L3647)。
+代码锚点：[frontend LOCALE_META](../../frontend/src/lib/i18n.ts#L4)、[backend locale validator](../../backend/core/locales.py#L30)、[App lang sync](../../frontend/src/main.tsx#L3462)。
 
 ### 为什么 AI 不直接生成最终答案？
 
@@ -113,7 +113,7 @@ The product goal is training, not answer dumping. AI is constrained to hints, ex
 
 1. Add automated Playwright e2e coverage for auth, library search, run/submit, WebSocket fallback, AI stale-state cleanup, and admin workflows.
 2. Add queue observability: worker heartbeat dashboard, pending count, dead-letter count, average judge latency, and per-language failure rate.
-3. Split the frontend workbench into smaller route-level modules and lazy-load Monaco/Shiki to reduce bundle size.
+3. Split the frontend workbench into smaller route-level modules; Monaco/Shiki are already lazy-loaded, but route-level modules would further reduce the main entry and make `main.tsx` easier to maintain.
 4. Improve sandbox isolation further with stronger seccomp profiles, per-run filesystem isolation, and stricter CPU accounting.
 5. Add multi-worker load testing and explicit pending reclaim scheduling.
 

@@ -6,6 +6,8 @@
 
 ## 学习路线
 
+如果是第一次读，建议先把每篇当成“流程说明”看，不要一开始就逐个点击代码锚点。第一遍只建立系统地图；第二遍从一个请求追到数据库、队列和前端状态；第三遍再打开锚点确认实现细节。
+
 1. 先读 [01-architecture.md](01-architecture.md)：知道 FastOJ 是什么，服务如何部署，FastAPI、PostgreSQL、Redis、Worker、Docker 和 React 如何配合。
 2. 再读 [02-judge-pipeline.md](02-judge-pipeline.md)：这是最容易被追问的核心，重点理解提交从前端到 Docker 沙箱再回到 WebSocket 的全过程。
 3. 接着读 [03-data-and-problem-modes.md](03-data-and-problem-modes.md)：把表结构、题目模式、测试用例和提交结果串起来。
@@ -34,13 +36,13 @@
 ## 代码导航
 
 - FastAPI 路由注册：[backend/main.py:91](../../backend/main.py#L91)
-- API 启动时开启 Redis 状态 relay：[backend/main.py:110](../../backend/main.py#L110)
-- 提交服务入口：[backend/services/submission_service.py:27](../../backend/services/submission_service.py#L27)
-- Redis 队列服务：[backend/services/queue_service.py:10](../../backend/services/queue_service.py#L10)
-- Worker 消费任务：[backend/worker/tasks/consumer.py:19](../../backend/worker/tasks/consumer.py#L19)
-- 判题执行核心：[backend/worker/tasks/judge_task.py:126](../../backend/worker/tasks/judge_task.py#L126)
-- Docker 沙箱执行：[backend/sandbox/executor.py:118](../../backend/sandbox/executor.py#L118)
-- 前端工作台入口：[frontend/src/main.tsx:1446](../../frontend/src/main.tsx#L1446)
+- API 启动时开启 Redis 状态 relay：[backend/main.py:116](../../backend/main.py#L116)
+- 提交服务入口：[backend/services/submission_service.py:33](../../backend/services/submission_service.py#L33)
+- Redis 队列服务：[backend/services/queue_service.py:15](../../backend/services/queue_service.py#L15)
+- Worker 消费任务：[backend/worker/tasks/consumer.py:111](../../backend/worker/tasks/consumer.py#L111)
+- 判题执行核心：[backend/worker/tasks/judge_task.py:127](../../backend/worker/tasks/judge_task.py#L127)
+- Docker 沙箱执行：[backend/sandbox/executor.py:92](../../backend/sandbox/executor.py#L92)
+- 前端工作台入口：[frontend/src/main.tsx:1227](../../frontend/src/main.tsx#L1227)
 
 ## 阅读建议
 
@@ -52,6 +54,8 @@
 4. 看到安全相关分支时停下来确认隐藏用例是否可能被传到 UI、日志或 AI。
 5. 最后回到测试，确认关键边界有回归覆盖。
 
+每篇文档里的代码行号只是定位入口，不是要背诵的数字。如果代码后续继续移动，优先确认函数名、类名和职责是否仍然一致。
+
 ## 面试准备优先级
 
 必须能讲清楚：
@@ -61,4 +65,4 @@
 - Function mode 如何把“用户写函数”转换成“沙箱里可执行的 stdin/stdout 程序”。
 - 隐藏用例在 API、WebSocket、AI prompt 中如何被隔离。
 - Worker 不在线时，开发 fallback 和生产 503 边界如何保护 API 服务。
-- 如果继续迭代，你会如何做自动化浏览器验收、队列可观测性、Worker 横向扩展和前端代码拆分。
+- 如果继续迭代，你会如何做自动化浏览器验收、队列可观测性、Worker 横向扩展和更彻底的前端页面级拆分。

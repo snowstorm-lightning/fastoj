@@ -11,7 +11,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-服务拓扑来自 [docker-compose.yml:1](../../docker-compose.yml#L1)。API 默认通过 Compose 设置 `JUDGE_ASYNC=true`，并连接 Compose 内的 PostgreSQL 和 Redis，看 [docker-compose.yml:43](../../docker-compose.yml#L43)。
+服务拓扑来自 [docker-compose.yml:1](../../docker-compose.yml#L1)。API 默认通过 Compose 设置 `JUDGE_ASYNC=true`，并连接 Compose 内的 PostgreSQL 和 Redis，看 [docker-compose.yml:46](../../docker-compose.yml#L46)。
 
 如果只做后端开发，也可以只启动基础服务，再在宿主机跑 FastAPI：
 
@@ -119,9 +119,9 @@ docker compose ps
 - `docker compose ps` 看 worker 是否 running。
 - Redis 是否 healthy。
 - Worker 是否能连接 Docker socket。
-- Worker heartbeat 是否存在。相关代码在 [backend/services/queue_service.py:36](../../backend/services/queue_service.py#L36)。
+- Worker heartbeat 是否存在。相关代码在 [backend/services/queue_service.py:44](../../backend/services/queue_service.py#L44)。
 - Worker active task marker 是否长期不变。可以用 `docker compose exec redis sh -lc 'for key in $(redis-cli --scan --pattern "judge:worker:active-task:*"); do echo "$key"; redis-cli GET "$key"; done'` 查看，里面有 `submission_id`、`message_id`、`last_progress_at` 和 `deadline_at`。
-- 生产环境如果没有 heartbeat 会返回 `503 Judge service unavailable`；只有 `DEBUG=true` 或 `JUDGE_INLINE_FALLBACK=true` 才允许 inline fallback。相关代码在 [backend/services/submission_service.py:132](../../backend/services/submission_service.py#L137)。
+- 生产环境如果没有 heartbeat 会返回 `503 Judge service unavailable`；只有 `DEBUG=true` 或 `JUDGE_INLINE_FALLBACK=true` 才允许 inline fallback。相关代码在 [backend/services/submission_service.py:136](../../backend/services/submission_service.py#L136)。
 
 ### 提交一直 judging
 
@@ -138,7 +138,7 @@ docker compose ps
 
 检查：
 
-- API startup 是否创建 relay task：[backend/main.py:115](../../backend/main.py#L115)
+- API startup 是否创建 relay task：[backend/main.py:116](../../backend/main.py#L116)
 - relay 是否订阅状态 channel：[backend/api/websocket/status_relay.py:13](../../backend/api/websocket/status_relay.py#L13)
 - 前端是否调用 `makeJudgeSocket`：[frontend/src/lib/api.ts:564](../../frontend/src/lib/api.ts#L564)
 
@@ -151,7 +151,7 @@ docker compose ps
 - `JUDGE_CONTAINER_IMAGE` 是否等于当前 judge image。
 - `FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION` 是否保持关闭。生产不要依赖 host subprocess。
 
-Docker 执行入口在 [backend/sandbox/executor.py:118](../../backend/sandbox/executor.py#L118)。
+Docker 执行入口在 [backend/sandbox/executor.py:92](../../backend/sandbox/executor.py#L92)。
 
 ### AI 模型不可用
 
@@ -165,7 +165,13 @@ Docker 执行入口在 [backend/sandbox/executor.py:118](../../backend/sandbox/e
 
 ### 前端 build 很大
 
-当前 Monaco 和 Shiki 直接进入前端 bundle，README 和 handoff 已记录 bundle size 偏大。后续可以用 lazy loading 和路由级拆分优化。
+当前首屏主入口已经做过组件级 code splitting：Monaco editor、Shiki 代码高亮、React Flow 图谱、xterm 判题时间线、AI 面板、运行结果、认证/设置页都会按需加载。`cd frontend && npm run build` 时如果仍看到 Vite 大 chunk 警告，先看具体 chunk 名：
+
+- `index-*.js`：主入口。当前应约 499.81 kB；如果明显变大，说明又有重依赖被同步 import。
+- `editor.api2-*.js`：Monaco editor lazy chunk，只有工作台编辑器加载时需要。
+- `cpp-*.js`：Shiki C++ grammar lazy chunk，只有题解代码块按 C++ 高亮时需要。
+
+不要直接调高 `chunkSizeWarningLimit` 来掩盖新的主入口膨胀；只有确认超限 chunk 都是已懒加载资产时，警告才是可接受的。
 
 ## 代码导航
 
@@ -173,9 +179,9 @@ Docker 执行入口在 [backend/sandbox/executor.py:118](../../backend/sandbox/e
 - Compose 拓扑：[docker-compose.yml:1](../../docker-compose.yml#L1)
 - API health：[backend/main.py:104](../../backend/main.py#L104)
 - API startup tasks：[backend/main.py:110](../../backend/main.py#L110)
-- Queue heartbeat：[backend/services/queue_service.py:36](../../backend/services/queue_service.py#L36)
-- Inline fallback：[backend/services/submission_service.py:138](../../backend/services/submission_service.py#L138)
-- Docker sandbox：[backend/sandbox/executor.py:118](../../backend/sandbox/executor.py#L118)
+- Queue heartbeat：[backend/services/queue_service.py:44](../../backend/services/queue_service.py#L44)
+- Inline fallback：[backend/services/submission_service.py:136](../../backend/services/submission_service.py#L136)
+- Docker sandbox：[backend/sandbox/executor.py:92](../../backend/sandbox/executor.py#L92)
 - 部署文档：[docs/DEPLOYMENT.md](../DEPLOYMENT.md)
 - 验收手册：[docs/ACCEPTANCE_HARNESS.md](../ACCEPTANCE_HARNESS.md)
 
