@@ -63,9 +63,9 @@ Function mode is a transformation layer. The user writes a function, but before 
 
 ### 5. What happens if the worker is down?
 
-The API checks for a live worker heartbeat before pushing an async judge task. In debug/development mode, inline fallback can be used for local troubleshooting. In production, inline fallback is disabled, so Redis or worker unavailability returns `503 Judge service unavailable` instead of moving judge load into the FastAPI process. Workers refresh heartbeat in the background while long judge tasks are running.
+The API checks for a live worker heartbeat before pushing an async judge task. In debug/development mode, inline fallback can be used for local troubleshooting. In production, inline fallback is disabled, so Redis or worker unavailability returns `503 Judge service unavailable` instead of moving judge load into the FastAPI process. Workers refresh heartbeat in the background while long judge tasks are running. Each task runs in a child process supervised by the worker parent; if the child hangs, the parent terminates it and retries or dead-letters the stream message. If the parent crashes, its heartbeat expires and pending reclaim can move the unacked message to another worker.
 
-代码锚点：[worker heartbeat](../../backend/services/queue_service.py#L36)、[has_live_worker](../../backend/services/queue_service.py#L50)、[dispatch policy](../../backend/services/submission_service.py#L137)。
+代码锚点：[worker heartbeat](../../backend/services/queue_service.py#L36)、[has_live_worker](../../backend/services/queue_service.py#L50)、[worker parent](../../backend/worker/judge_worker.py)、[dispatch policy](../../backend/services/submission_service.py#L137)。
 
 ### 6. How does the frontend get real-time status?
 

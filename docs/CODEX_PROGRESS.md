@@ -1,5 +1,16 @@
 # Codex Progress
 
+## 2026-06-02 Worker Parent/Child Judge Hardening
+
+- [x] Added worker parent/child supervision so each Redis Streams judge task runs in a spawned child process while the parent keeps heartbeat, active-task state, timeout supervision, and retry/dead-letter handling.
+- [x] Added active task Redis markers with TTL and progress refreshes from `JudgeTask`, plus operator docs for inspecting `judge:worker:active-task:*`.
+- [x] Hardened child timeout/crash/start-failure handling: parent now terminates or kills stuck children, cleans matching leftover Docker judge containers by submission/message labels, and reuses shared failure handling.
+- [x] Changed retry/dead-letter recovery to a Redis Lua script that only appends retry/dead-letter work when the original pending message is successfully `XACK`ed; already handled messages no longer create duplicate retries or overwrite completed status.
+- [x] Improved idempotency around duplicate task execution by summarizing already persisted testcase results and serializing submission status updates with row locks before incrementing accepted counts.
+- [x] Added/updated tests for worker success, timeout, crash, start failure, shutdown race, child entrypoint wiring, active task markers, duplicate ACK handling, Docker container labels, and cleanup.
+- [x] Updated local and production Compose worker configuration, env examples, deployment docs, READMEs, and project-guide judge/ops documentation for the new watchdog behavior and residual-container caveat.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (176 passed); `cd frontend && npm run build`; `cd frontend && npm test` (9 files / 26 tests); `docker compose config`; production config validation with placeholder env; `docker compose up --build -d api worker`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps --format json` reported API, worker, PostgreSQL, and Redis healthy.
+
 ## 2026-06-02 Production Judge Dispatch Hardening
 
 - [x] Added an explicit judge inline fallback policy: fallback follows `DEBUG` by default, can be overridden by `JUDGE_INLINE_FALLBACK`, and is disabled in local/production Docker Compose.

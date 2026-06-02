@@ -13,6 +13,7 @@ from backend.sandbox.executor import SandboxExecutor
 from backend.services.function_mode import wrap_function_submission
 from backend.services.problem_modes import FUNCTION_SIGNATURES
 from backend.services.problem_service import ProblemService
+from backend.services.queue_service import queue_service
 
 logger = logging.getLogger(__name__)
 
@@ -158,17 +159,14 @@ class JudgeTask:
                 }
 
             existing_results = (
-                db.query(TestCaseResult).filter(TestCaseResult.submission_id == submission_id).count()
+                db.query(TestCaseResult)
+                .filter(TestCaseResult.submission_id == submission_id)
+                .order_by(TestCaseResult.created_at.asc())
+                .all()
             )
             if existing_results:
                 logger.info("Submission %s already has testcase results; skipping duplicate write", submission_id)
-                return {
-                    "result": SubmissionResult.SE,
-                    "error_message": "Duplicate judge task ignored",
-                    "execute_time": 0,
-                    "memory_used": 0,
-                    "score": 0,
-                }
+                return self.summarize_existing_results(db, existing_results)
 
             # Get testcases based on use_hidden flag. Custom run cases are user
             # supplied and never participate in full hidden judging.
@@ -235,8 +233,6 @@ class JudgeTask:
                     total_score += testcase.score  # type: ignore[assignment]
 
                 try:
-                    from backend.services.queue_service import queue_service
-
                     progress_payload = {
                         "status": "judging",
                         "progress": 90 if use_hidden and testcase.is_hidden else int(((i + 1) / len(testcases)) * 100),
@@ -250,6 +246,10 @@ class JudgeTask:
                             }
                         )
                     queue_service.publish_status(submission_id, "progress", progress_payload)
+                    try:
+                        queue_service.touch_active_task(progress=int(progress_payload["progress"]))
+                    except Exception as exc:
+                        logger.warning("Failed to refresh active judge task progress: %s", exc)
                 except Exception:
                     pass
 
@@ -306,6 +306,56 @@ class JudgeTask:
                 "memory_used": 0,
                 "score": 0,
             }
+
+    def summarize_existing_results(
+        self,
+        db: Session,
+        testcase_results: list[TestCaseResult],
+    ) -> dict[str, Any]:
+        """Build a submission verdict from already persisted testcase results."""
+        total_execute_time = sum(result.execute_time or 0 for result in testcase_results)
+        max_memory_used = max((result.memory_used or 0 for result in testcase_results), default=0)
+
+        accepted_testcase_ids = [
+            result.testcase_id for result in testcase_results if result.testcase_id and result.status == SubmissionResult.AC
+        ]
+        score = 0
+        if accepted_testcase_ids:
+            score_rows = db.query(TestCase.score).filter(TestCase.id.in_(accepted_testcase_ids)).all()
+            score = sum(int(row[0] or 0) for row in score_rows)
+
+        final_result = SubmissionResult.AC
+        first_error_message = None
+        error_messages = {
+            SubmissionResult.CE: "Compilation error",
+            SubmissionResult.RE: "Runtime error",
+            SubmissionResult.TLE: "Time limit exceeded",
+            SubmissionResult.MLE: "Memory limit exceeded",
+            SubmissionResult.SE: "System error",
+        }
+        statuses = [result.status for result in testcase_results]
+        for status in [
+            SubmissionResult.CE,
+            SubmissionResult.RE,
+            SubmissionResult.TLE,
+            SubmissionResult.MLE,
+            SubmissionResult.SE,
+        ]:
+            if status in statuses:
+                final_result = status
+                first_error_message = error_messages[status]
+                break
+        else:
+            if any(status != SubmissionResult.AC for status in statuses):
+                final_result = SubmissionResult.WA
+
+        return {
+            "result": final_result,
+            "error_message": first_error_message,
+            "execute_time": total_execute_time,
+            "memory_used": max_memory_used,
+            "score": score,
+        }
 
     def _custom_run_testcases(
         self,

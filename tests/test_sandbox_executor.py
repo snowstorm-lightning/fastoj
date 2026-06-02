@@ -2,7 +2,8 @@ import io
 import tarfile
 
 from backend.core.config import settings
-from backend.sandbox.executor import SandboxExecutor
+from backend.sandbox import executor as executor_module
+from backend.sandbox.executor import SandboxExecutor, cleanup_judge_containers
 
 
 def test_docker_execution_takes_precedence_with_json_line_input(monkeypatch):
@@ -72,6 +73,8 @@ def test_docker_execution_copies_code_and_input_by_archive(monkeypatch):
             assert "tmpfs" not in kwargs
             assert kwargs["read_only"] is False
             assert kwargs["network_disabled"] is True
+            assert kwargs["name"].startswith("fastoj_judge_")
+            assert kwargs["labels"]["fastoj.judge"] == "true"
             return FakeContainer()
 
     class FakeDockerClient:
@@ -87,3 +90,73 @@ def test_docker_execution_copies_code_and_input_by_archive(monkeypatch):
 
     assert result["status"] == "ac"
     assert result["output"] == "ok\n"
+
+
+def test_docker_execution_labels_task_container(monkeypatch):
+    executor = SandboxExecutor()
+    captured = {}
+
+    class FakeContainer:
+        def put_archive(self, path, data):
+            return True
+
+        def exec_run(self, command, stdout, stderr, workdir, user):
+            return 0, b"ok\n"
+
+        def remove(self, force):
+            return None
+
+    class FakeContainers:
+        def run(self, image, command, **kwargs):
+            captured.update(kwargs)
+            return FakeContainer()
+
+    class FakeDockerClient:
+        containers = FakeContainers()
+
+    monkeypatch.setattr(SandboxExecutor, "docker_client", property(lambda self: FakeDockerClient()))
+    monkeypatch.setenv("FASTOJ_JUDGE_SUBMISSION_ID", "s1")
+    monkeypatch.setenv("FASTOJ_JUDGE_MESSAGE_ID", "1-0")
+
+    executor.execute(code="print(input())", language="python", input_data="hello")
+
+    assert captured["labels"] == {
+        "fastoj.judge": "true",
+        "fastoj.submission_id": "s1",
+        "fastoj.message_id": "1-0",
+    }
+
+
+def test_cleanup_judge_containers_removes_only_matching_task(monkeypatch):
+    removed = []
+
+    class FakeContainer:
+        id = "container-1"
+
+        def remove(self, force):
+            removed.append(force)
+
+    class FakeContainers:
+        def list(self, all, filters):
+            assert all is True
+            assert filters == {
+                "label": [
+                    "fastoj.judge=true",
+                    "fastoj.submission_id=s1",
+                    "fastoj.message_id=1-0",
+                ]
+            }
+            return [FakeContainer()]
+
+    class FakeDockerClient:
+        containers = FakeContainers()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(executor_module, "get_docker_client", lambda: FakeDockerClient())
+
+    count = cleanup_judge_containers("s1", "1-0")
+
+    assert count == 1
+    assert removed == [True]

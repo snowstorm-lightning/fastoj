@@ -39,6 +39,7 @@ npm run dev
 - JWT secret 和过期时间
 - Judge Docker 配置
 - Redis Stream 配置
+- Worker child-process watchdog 配置：`JUDGE_CHILD_PROCESS_ENABLED`、`JUDGE_TASK_HARD_TIMEOUT_SECONDS`、`JUDGE_CHILD_TERMINATE_GRACE_SECONDS`、`JUDGE_ACTIVE_TASK_TTL_SECONDS`
 - AI provider 配置
 
 不要把真实 `.env`、API key、JWT 或生产数据库密码写进文档、日志或截图。
@@ -80,6 +81,7 @@ docker compose ps
 - 队列语义：`tests/test_queue_streams.py`
 - 提交服务生产拒绝、开发 fallback 和权限：`tests/test_submission_service.py`
 - Worker 消费任务：`tests/test_judge_consumer.py`
+- Worker parent/child watchdog：`tests/test_judge_worker.py`
 - Docker 沙箱：`tests/test_sandbox_executor.py`
 - Function mode 包装：`tests/test_function_mode.py`
 - AI hidden-test safety：`tests/test_ai_service.py`
@@ -118,7 +120,17 @@ docker compose ps
 - Redis 是否 healthy。
 - Worker 是否能连接 Docker socket。
 - Worker heartbeat 是否存在。相关代码在 [backend/services/queue_service.py:36](../../backend/services/queue_service.py#L36)。
+- Worker active task marker 是否长期不变。可以用 `docker compose exec redis sh -lc 'for key in $(redis-cli --scan --pattern "judge:worker:active-task:*"); do echo "$key"; redis-cli GET "$key"; done'` 查看，里面有 `submission_id`、`message_id`、`last_progress_at` 和 `deadline_at`。
 - 生产环境如果没有 heartbeat 会返回 `503 Judge service unavailable`；只有 `DEBUG=true` 或 `JUDGE_INLINE_FALLBACK=true` 才允许 inline fallback。相关代码在 [backend/services/submission_service.py:132](../../backend/services/submission_service.py#L137)。
+
+### 提交一直 judging
+
+优先区分是 child 卡住还是 parent/worker 崩了：
+
+- Child 卡住：parent 仍有 heartbeat，active task marker 会显示当前 submission。超过 `JUDGE_TASK_HARD_TIMEOUT_SECONDS` 后 parent 会 terminate/kill child，按 submission/message 标签清理残留 Docker judge 容器，并把任务 retry 或 dead-letter。
+- Parent 崩溃：heartbeat 会消失，原 stream message 留在 pending；其他 worker 的 `claim_pending` 会在 owner heartbeat 失效后接管。
+- Compose 层：worker 服务配置了 `restart: unless-stopped`；进程崩溃会由 Docker 重启。healthcheck 只验证配置可 import 且 Redis 可 ping，不执行判题，也不会替代业务层 watchdog。
+- 残留容器：正常 Docker executor 路径会在 `finally` 里删除容器；如果 parent hard-kill child，child 可能来不及执行 `finally`。当前 parent 会清理当前 task 标签匹配的 `fastoj_judge_*` 容器，生产上仍建议监控残留容器数量。
 
 ### WebSocket 没有实时进度
 

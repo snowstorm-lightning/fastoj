@@ -26,7 +26,6 @@ class JudgeServiceUnavailableError(RuntimeError):
     """Raised when production policy requires a live async judge worker."""
 
 
-
 class SubmissionService:
     def __init__(self, db: Session):
         self.db = db
@@ -324,10 +323,11 @@ class SubmissionService:
         score: int = 0,
     ) -> Submission:
         """Update submission status and result."""
-        submission = self.db.query(Submission).filter(Submission.id == submission_id).first()
+        submission = self.db.query(Submission).filter(Submission.id == submission_id).with_for_update().first()
         if not submission:
             raise ValueError("Submission not found")
 
+        was_accepted = submission.status == SubmissionStatus.FINISHED and submission.result == SubmissionResult.AC
         submission.status = status  # type: ignore[assignment]
         if result:
             submission.result = result  # type: ignore[assignment]
@@ -343,11 +343,11 @@ class SubmissionService:
             submission.finished_at = utc_now()  # type: ignore[assignment]
 
             # Update problem accepted count if AC
-            if result and result.value == "ac":
+            result_value = result.value if hasattr(result, "value") else result
+            if result_value == "ac" and not was_accepted:
                 problem = self.db.query(Problem).filter(Problem.id == submission.problem_id).first()
                 if problem:
                     problem.accepted_submissions = problem.accepted_submissions + 1  # type: ignore[assignment]
-                    self.db.commit()
 
         self.db.commit()
         self.db.refresh(submission)

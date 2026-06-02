@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     DEFAULT_MEMORY_LIMIT: int = 256  # MB
     JUDGE_ASYNC: bool = False  # Local dev defaults to inline judging; Docker enables queue mode.
     JUDGE_INLINE_FALLBACK: bool | None = None  # None follows DEBUG; false makes worker queue mandatory.
+    JUDGE_CHILD_PROCESS_ENABLED: bool = True
+    JUDGE_TASK_HARD_TIMEOUT_SECONDS: int = 120
+    JUDGE_CHILD_TERMINATE_GRACE_SECONDS: int = 3
+    JUDGE_ACTIVE_TASK_TTL_SECONDS: int = 180
 
     # Queue
     JUDGE_QUEUE_NAME: str = "judge_tasks"
@@ -43,6 +47,7 @@ class Settings(BaseSettings):
     JUDGE_PENDING_IDLE_MS: int = 30000
     JUDGE_WORKER_HEARTBEAT_KEY: str = "judge:worker:heartbeat"
     JUDGE_WORKER_HEARTBEAT_TTL_SECONDS: int = 15
+    JUDGE_WORKER_ACTIVE_TASK_KEY: str = "judge:worker:active-task"
 
     # Sandbox safety
     FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION: bool = False

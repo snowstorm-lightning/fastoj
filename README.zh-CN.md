@@ -156,6 +156,11 @@ npm run dev
 并关闭 `JUDGE_INLINE_FALLBACK`；Redis 或 Worker 不可用时会返回
 `503 Judge service unavailable`，不会把提交判题负载转移到 API 进程。
 
+Worker 默认会把每个队列判题任务放进独立 child process。Parent 负责 Redis
+heartbeat、active-task 标记和 hard timeout；child 如果卡死，parent 会在
+`JUDGE_TASK_HARD_TIMEOUT_SECONDS` 后终止它，并把原 stream message 重试或写入
+dead-letter。
+
 Vite 开发服务器默认可以调用同源 API。只有当前端和 API 分别跑在不同 origin
 时，才需要设置 `VITE_API_BASE_URL`。
 
@@ -524,12 +529,17 @@ FastOJ 已包含 GitHub Actions：
   只允许本地开发使用。
 - 生产提交必须走 Redis Streams Worker。inline judge fallback 只允许
   `DEBUG=true` 或显式设置 `JUDGE_INLINE_FALLBACK=true` 的本地调试场景。
+- Judge Worker 会用 parent/child 模式监督单个判题任务，防止 Docker API 或
+  数据库调用卡住时 parent 也失去调度能力；真正的不可信代码隔离仍由 Docker
+  sandbox 提供。
 - 在 Docker Compose 中，API 服务也会挂载 Docker socket，这样管理员专用的
   出题 Agent 可以在发布前或手动编辑后同步用沙箱校验官方草稿解法；多语言草稿
   会按每种官方解法语言分别校验。双模式校验只运行函数式规范解法，这份可信实现
   同时定义函数模式和 ACM 模式的期望输出。
 - 沙箱容器默认禁用网络，带内存限制、pid 限制、capability drop、
-  `no-new-privileges`、非 root 用户、输出截断、超时终止和清理。
+  `no-new-privileges`、非 root 用户、输出截断、超时终止；正常 executor 路径会
+  清理容器。如果 worker parent hard-kill 卡住的 judge child，child 可能来不及
+  执行 Docker 清理逻辑，生产运维仍应监控和清理残留的 `fastoj_judge_*` 容器。
 
 ## 内置题库
 
@@ -567,7 +577,8 @@ flowchart LR
 
 - 后端：Python 3.11+、FastAPI、SQLAlchemy 2.0、Pydantic v2、Alembic、
   PostgreSQL、Redis Streams。
-- 判题：Docker 沙箱 Worker，支持异步队列、重试、死信队列和重复任务保护。
+- 判题：Docker 沙箱 Worker，支持异步队列、parent/child 任务 watchdog、
+  active-task 标记、重试、死信队列和重复任务保护。
 - 前端：React、TypeScript、Vite、Tailwind CSS、Monaco Editor、TanStack
   Query、Zustand、Zod、xterm、Shiki、React Flow、Pretext 文本测量。
 - 工具：`uv`、`ruff`、`pytest`、`npm`、Docker Compose。

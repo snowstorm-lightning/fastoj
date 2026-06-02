@@ -46,6 +46,10 @@ services:
       JUDGE_CONTAINER_IMAGE: ${FASTOJ_IMAGE_REGISTRY:-ghcr.io}/${FASTOJ_IMAGE_OWNER:?set FASTOJ_IMAGE_OWNER}/fastoj-judge:${FASTOJ_IMAGE_TAG:-latest}
       JUDGE_USE_DOCKER: "true"
       FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION: "false"
+      JUDGE_CHILD_PROCESS_ENABLED: ${JUDGE_CHILD_PROCESS_ENABLED:-true}
+      JUDGE_TASK_HARD_TIMEOUT_SECONDS: ${JUDGE_TASK_HARD_TIMEOUT_SECONDS:-120}
+      JUDGE_CHILD_TERMINATE_GRACE_SECONDS: ${JUDGE_CHILD_TERMINATE_GRACE_SECONDS:-3}
+      JUDGE_ACTIVE_TASK_TTL_SECONDS: ${JUDGE_ACTIVE_TASK_TTL_SECONDS:-180}
       AI_PROVIDER: ${AI_PROVIDER:-disabled}
       AI_BASE_URL: ${AI_BASE_URL:-http://host.docker.internal:8080/v1}
       AI_API_KEY: ${AI_API_KEY:-sk-no-key-required}
@@ -84,6 +88,10 @@ services:
       JUDGE_CONTAINER_IMAGE: ${FASTOJ_IMAGE_REGISTRY:-ghcr.io}/${FASTOJ_IMAGE_OWNER:?set FASTOJ_IMAGE_OWNER}/fastoj-judge:${FASTOJ_IMAGE_TAG:-latest}
       JUDGE_USE_DOCKER: "true"
       FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION: "false"
+      JUDGE_CHILD_PROCESS_ENABLED: ${JUDGE_CHILD_PROCESS_ENABLED:-true}
+      JUDGE_TASK_HARD_TIMEOUT_SECONDS: ${JUDGE_TASK_HARD_TIMEOUT_SECONDS:-120}
+      JUDGE_CHILD_TERMINATE_GRACE_SECONDS: ${JUDGE_CHILD_TERMINATE_GRACE_SECONDS:-3}
+      JUDGE_ACTIVE_TASK_TTL_SECONDS: ${JUDGE_ACTIVE_TASK_TTL_SECONDS:-180}
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,7 +102,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
-      test: ["CMD", "python", "-c", "print('ok')"]
+      test: ["CMD", "uv", "run", "python", "-c", "import redis; from backend.core.config import settings; client = redis.from_url(settings.REDIS_URL); client.ping(); client.close()"]
       interval: 30s
       timeout: 10s
       retries: 3

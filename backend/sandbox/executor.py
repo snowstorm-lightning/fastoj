@@ -4,6 +4,7 @@ import os
 import subprocess
 import tarfile
 import tempfile
+import uuid
 from typing import Any
 
 import docker
@@ -18,12 +19,42 @@ from backend.sandbox.languages.python import PythonRunner
 
 logger = logging.getLogger(__name__)
 
+JUDGE_CONTAINER_LABEL = "fastoj.judge"
+JUDGE_SUBMISSION_LABEL = "fastoj.submission_id"
+JUDGE_MESSAGE_LABEL = "fastoj.message_id"
+
 
 def get_docker_client() -> docker.DockerClient:
     """Get Docker client with platform-aware connection."""
     if os.name == "nt":
         return docker.DockerClient(base_url="tcp://localhost:2375")
     return docker.DockerClient(base_url="unix://var/run/docker.sock")
+
+
+def cleanup_judge_containers(submission_id: str, message_id: str) -> int:
+    """Remove Docker judge containers left behind for one stream task."""
+    try:
+        client = get_docker_client()
+        filters = {
+            "label": [
+                f"{JUDGE_CONTAINER_LABEL}=true",
+                f"{JUDGE_SUBMISSION_LABEL}={submission_id}",
+                f"{JUDGE_MESSAGE_LABEL}={message_id}",
+            ]
+        }
+        containers = client.containers.list(all=True, filters=filters)
+        removed = 0
+        for container in containers:
+            try:
+                container.remove(force=True)
+                removed += 1
+            except Exception as exc:
+                logger.warning("Failed to remove leftover judge container %s: %s", container.id, exc)
+        client.close()
+        return removed
+    except docker.errors.DockerException as exc:
+        logger.warning("Failed to inspect leftover judge containers: %s", exc)
+        return 0
 
 
 class SandboxExecutor:
@@ -134,11 +165,20 @@ class SandboxExecutor:
             image = settings.JUDGE_CONTAINER_IMAGE
             run_cmd = self._get_run_command_docker(code_file, language)
             timeout_seconds = max(1, int(time_limit / 1000) + 2)
+            labels = {JUDGE_CONTAINER_LABEL: "true"}
+            submission_id = os.environ.get("FASTOJ_JUDGE_SUBMISSION_ID")
+            message_id = os.environ.get("FASTOJ_JUDGE_MESSAGE_ID")
+            if submission_id:
+                labels[JUDGE_SUBMISSION_LABEL] = submission_id
+            if message_id:
+                labels[JUDGE_MESSAGE_LABEL] = message_id
 
             container = self.docker_client.containers.run(
                 image,
                 "sh -lc 'sleep 600'",
+                name=f"{self.container_name_prefix}{uuid.uuid4().hex}",
                 detach=True,
+                labels=labels,
                 mem_limit=f"{memory_limit}m",
                 memswap_limit=f"{memory_limit}m",
                 cpu_period=100000,

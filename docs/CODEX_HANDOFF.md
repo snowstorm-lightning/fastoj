@@ -6,6 +6,17 @@ Updated: 2026-06-02
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
 
+## 2026-06-02 Worker Parent/Child Judge Hardening
+
+- Judge worker now uses a parent/child model by default. The parent keeps heartbeat, pending reclaim, Redis task intake, active-task markers, and hard-timeout supervision; each child processes exactly one judge task through `JudgeTaskConsumer`.
+- New config: `JUDGE_CHILD_PROCESS_ENABLED`, `JUDGE_TASK_HARD_TIMEOUT_SECONDS`, `JUDGE_CHILD_TERMINATE_GRACE_SECONDS`, and `JUDGE_ACTIVE_TASK_TTL_SECONDS`. Local and production Compose pass these into the worker; production `.env` can tune them.
+- Active task markers live under `judge:worker:active-task:*` and include consumer, stream message id, submission id, progress, start time, last progress time, and deadline. They are observational only; `claim_pending` still avoids stealing from live workers.
+- Parent handles child timeout, crash, spawn/start failure, and shutdown race cases. On hard timeout it terminates/kills the child, then removes Docker judge containers labelled with the same submission/message id before retrying or dead-lettering the Redis message.
+- Retry/dead-letter now uses a Redis Lua script that `XACK`s and conditionally `XADD`s atomically. If the original message is already ACKed by a child or another recovery path, parent-side late failure handling no-ops instead of creating duplicate retry work or overwriting status.
+- Duplicate execution is safer: if testcase results already exist, the judge summarizes persisted rows instead of writing duplicates, and submission status updates use row locks before accepted-count increments.
+- Residual risk: parent hard-kill can still interrupt child cleanup at awkward moments; the parent now removes matching labelled containers, but production should still monitor `fastoj_judge_*` leftovers. A database-level unique constraint on `(submission_id, testcase_id)` remains a future hardening option.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (176 passed); `cd frontend && npm run build`; `cd frontend && npm test` (9 files / 26 tests); `docker compose config`; production config validation with placeholder env; `docker compose up --build -d api worker`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps --format json` reported API, worker, PostgreSQL, and Redis healthy.
+
 ## 2026-06-02 Production Judge Dispatch Hardening
 
 - Judge inline fallback is now an explicit dispatch policy. It follows `DEBUG` by default, can be overridden with `JUDGE_INLINE_FALLBACK`, and is set to false in both local and production Docker Compose.

@@ -3,11 +3,109 @@ from typing import Any
 
 from backend.core.database import SessionLocal
 from backend.models import SubmissionResult, SubmissionStatus
-from backend.services.queue_service import queue_service
+from backend.services.queue_service import TaskAlreadyHandledError, queue_service
 from backend.services.submission_service import SubmissionService
 from backend.worker.tasks.judge_task import JudgeTask
 
 logger = logging.getLogger(__name__)
+
+
+def handle_task_failure(
+    task: dict[str, Any],
+    message_id: str | None,
+    error_message: str,
+    db=None,
+) -> bool:
+    """Retry/dead-letter a failed task and update submission state.
+
+    Returns true when the failure is terminal.
+    """
+    submission_id = task.get("submission_id")
+    terminal_failure = True
+    owns_db = db is None
+    db = db or SessionLocal()
+    try:
+        service = SubmissionService(db)
+        try:
+            submission = service.get_submission_for_judge(submission_id) if submission_id else None
+            existing_results = list(getattr(submission, "testcase_results", []) or []) if submission else []
+            if existing_results:
+                if getattr(submission, "status", None) != SubmissionStatus.FINISHED:
+                    result = JudgeTask().summarize_existing_results(db, existing_results)
+                    service.update_submission_status(
+                        submission_id,
+                        SubmissionStatus.FINISHED,
+                        result=result.get("result"),
+                        error_message=result.get("error_message"),
+                        execute_time=result.get("execute_time"),
+                        memory_used=result.get("memory_used"),
+                        score=result.get("score", 0),
+                    )
+                    try:
+                        queue_service.publish_status(
+                            submission_id,
+                            "result",
+                            {
+                                "status": "finished",
+                                "result": result.get("result").value if result.get("result") else None,
+                                "execute_time": result.get("execute_time", 0),
+                                "memory_used": result.get("memory_used", 0),
+                                "score": result.get("score", 0),
+                            },
+                        )
+                    except Exception:
+                        pass
+                if message_id:
+                    try:
+                        queue_service.ack_task(message_id)
+                    except Exception as ack_error:
+                        logger.error(f"Failed to ack recovered duplicate task: {ack_error}")
+                return True
+        except Exception as recovery_error:
+            logger.error(f"Failed to recover already persisted judge results: {recovery_error}")
+
+        try:
+            if message_id:
+                terminal_failure = queue_service.retry_or_dead_letter(message_id, task, error_message)
+        except TaskAlreadyHandledError as handled_error:
+            logger.info("Judge task failure already handled elsewhere: %s", handled_error)
+            return True
+        except Exception as retry_error:
+            logger.error(f"Failed to retry or dead-letter task: {retry_error}")
+
+        try:
+            if terminal_failure:
+                service.update_submission_status(
+                    submission_id,
+                    SubmissionStatus.FINISHED,
+                    result=SubmissionResult.SE,
+                    error_message=error_message,
+                )
+            else:
+                service.update_submission_status(submission_id, SubmissionStatus.PENDING)
+        except Exception as update_error:
+            logger.error(f"Failed to update submission status: {update_error}")
+
+        try:
+            if terminal_failure:
+                queue_service.publish_status(
+                    submission_id,
+                    "error",
+                    {"status": "finished", "result": "se", "message": error_message, "code": "JUDGE_ERROR"},
+                )
+            else:
+                queue_service.publish_status(
+                    submission_id,
+                    "pending",
+                    {"status": "pending", "message": "Judge task will retry"},
+                )
+        except Exception:
+            pass
+
+        return terminal_failure
+    finally:
+        if owns_db:
+            db.close()
 
 
 class JudgeTaskConsumer:
@@ -93,44 +191,7 @@ class JudgeTaskConsumer:
 
         except Exception as e:
             logger.error(f"Error processing submission {submission_id}: {e}")
-            error_message = str(e)
-            terminal_failure = True
-
-            try:
-                if message_id:
-                    terminal_failure = queue_service.retry_or_dead_letter(message_id, task, error_message)
-            except Exception as retry_error:
-                logger.error(f"Failed to retry or dead-letter task: {retry_error}")
-
-            try:
-                service = SubmissionService(db)
-                if terminal_failure:
-                    service.update_submission_status(
-                        submission_id,
-                        SubmissionStatus.FINISHED,
-                        result=SubmissionResult.SE,
-                        error_message=error_message,
-                    )
-                else:
-                    service.update_submission_status(submission_id, SubmissionStatus.PENDING)
-            except Exception as update_error:
-                logger.error(f"Failed to update submission status: {update_error}")
-
-            try:
-                if terminal_failure:
-                    queue_service.publish_status(
-                        submission_id,
-                        "error",
-                        {"status": "finished", "result": "se", "message": error_message, "code": "JUDGE_ERROR"},
-                    )
-                else:
-                    queue_service.publish_status(
-                        submission_id,
-                        "pending",
-                        {"status": "pending", "message": "Judge task will retry"},
-                    )
-            except Exception:
-                pass
+            handle_task_failure(task, message_id, str(e), db=db)
 
         finally:
             db.close()

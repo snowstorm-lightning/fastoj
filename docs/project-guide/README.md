@@ -29,7 +29,7 @@
 
 ![FastOJ 总体运行架构](assets/architecture.svg)
 
-这个图可以作为面试回答的第一层：前端负责交互，API 负责鉴权和业务入口，数据库保存题目/提交/结果，Redis Streams 解耦异步判题，Worker 调 Docker 沙箱执行用户代码，WebSocket 把进度推回页面，AI 服务只拿到安全上下文。
+这个图可以作为面试回答的第一层：前端负责交互，API 负责鉴权和业务入口，数据库保存题目/提交/结果，Redis Streams 解耦异步判题，Worker parent 监督 judge child 调 Docker 沙箱执行用户代码，WebSocket 把进度推回页面，AI 服务只拿到安全上下文。
 
 ## 代码导航
 

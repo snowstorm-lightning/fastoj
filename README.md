@@ -181,6 +181,11 @@ when the async worker queue is unavailable. Docker Compose and production set
 path returns `503 Judge service unavailable` instead of moving submission load
 into the API process.
 
+The worker also runs each queued judge task in a child process by default. The
+parent process keeps the Redis heartbeat, records an active-task marker, and
+terminates a stuck child after `JUDGE_TASK_HARD_TIMEOUT_SECONDS` before retrying
+or dead-lettering the stream message.
+
 ## AI Configuration
 
 AI is disabled by default, so the core OJ flow works without any model server or
@@ -558,6 +563,9 @@ Full deployment steps are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - Production submissions require the Redis Streams worker path. Inline judge
   fallback is limited to `DEBUG=true` or an explicit
   `JUDGE_INLINE_FALLBACK=true` local override.
+- Judge workers supervise each task in a separate child process. This protects
+  the worker parent from Docker API or database call hangs, while Docker remains
+  the actual sandbox boundary for untrusted user code.
 - In Docker Compose, the API service also mounts the Docker socket so the
   admin-only Problem Authoring Agent can synchronously sandbox-check official
   draft solutions before approval or after an admin edit/revalidation pass.
@@ -567,7 +575,10 @@ Full deployment steps are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
   and ACM-mode expected outputs.
 - Sandbox containers run with network disabled, memory limits, pid limits,
   dropped capabilities, `no-new-privileges`, non-root execution, output
-  truncation, timeout kill, and cleanup.
+  truncation, timeout kill, and cleanup on the normal executor path. If the
+  worker parent hard-kills a stuck judge child, the child may not reach Docker
+  cleanup code, so production operations should monitor and clean residual
+  `fastoj_judge_*` containers.
 
 ## Seeded Curriculum
 
@@ -607,8 +618,9 @@ Core stack:
 
 - Backend: Python 3.11+, FastAPI, SQLAlchemy 2.0, Pydantic v2, Alembic,
   PostgreSQL, Redis Streams.
-- Judge: Docker sandbox worker with async queueing, retries, dead-letter handling,
-  and duplicate-task protection.
+- Judge: Docker sandbox worker with async queueing, parent/child task watchdog,
+  active-task markers, retries, dead-letter handling, and duplicate-task
+  protection.
 - Frontend: React, TypeScript, Vite, Tailwind CSS, Monaco Editor, TanStack Query,
   Zustand, Zod, xterm, Shiki, React Flow, Pretext text measurement.
 - Tooling: `uv`, `ruff`, `pytest`, `npm`, Docker Compose.

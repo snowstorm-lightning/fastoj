@@ -111,6 +111,21 @@ JUDGE_INLINE_FALLBACK=false
 Judge Worker 不可用时提交接口会返回 `503 Judge service unavailable`，而不是在
 API 容器内执行用户提交。
 
+Worker 默认开启 parent/child 判题监督：
+
+```text
+JUDGE_CHILD_PROCESS_ENABLED=true
+JUDGE_TASK_HARD_TIMEOUT_SECONDS=120
+JUDGE_CHILD_TERMINATE_GRACE_SECONDS=3
+JUDGE_ACTIVE_TASK_TTL_SECONDS=180
+```
+
+`JUDGE_TASK_HARD_TIMEOUT_SECONDS` 是整次 submission 的 parent 级兜底时间，不是
+单个 testcase 的 time limit。题目用例很多或单题时间限制较高时，应在生产 `.env`
+中调大这个值，并让 `JUDGE_ACTIVE_TASK_TTL_SECONDS` 大于 hard timeout 或至少覆盖
+最长的无进度阶段。Worker 服务在 Compose 中使用 `restart: unless-stopped`，
+healthcheck 只验证应用配置可 import 且 Redis 可 ping，不会执行判题。
+
 在服务器生成随机密钥：
 
 ```bash
@@ -156,6 +171,18 @@ cd /opt/projects/fastoj
 docker compose ps
 docker compose logs --tail=100 api worker
 ```
+
+如果提交长时间停在 judging，可以检查 worker 的 active task marker：
+
+```bash
+docker compose exec redis sh -lc 'for key in $(redis-cli --scan --pattern "judge:worker:active-task:*"); do echo "$key"; redis-cli GET "$key"; done'
+```
+
+marker 的 JSON 里有 `submission_id`、`message_id`、`last_progress_at` 和
+`deadline_at`。如果 worker parent 终止或 kill 了 judge child，child 内部的 Docker
+executor `finally` 可能来不及清理容器；生产排障时也要检查是否有残留
+`fastoj_judge_*` 容器。如果 worker parent 崩溃，heartbeat 会过期，pending message
+会由其他 worker 的 reclaim 流程接管。
 
 手动按当前 `.env` 镜像标签重启：
 

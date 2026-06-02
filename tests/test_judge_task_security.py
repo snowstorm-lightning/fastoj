@@ -21,7 +21,7 @@ def test_judge_task_does_not_store_hidden_actual_output(monkeypatch):
     )
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = problem
-    db.query.return_value.filter.return_value.count.return_value = 0
+    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
     monkeypatch.setattr(
         "backend.worker.tasks.judge_task.ProblemService.get_all_testcases",
         lambda self, problem_id: [hidden_case],
@@ -66,7 +66,7 @@ def test_hidden_progress_event_does_not_expose_case_metadata(monkeypatch):
     )
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = problem
-    db.query.return_value.filter.return_value.count.return_value = 0
+    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
     monkeypatch.setattr(
         "backend.worker.tasks.judge_task.ProblemService.get_all_testcases",
         lambda self, problem_id: [hidden_case],
@@ -95,6 +95,42 @@ def test_hidden_progress_event_does_not_expose_case_metadata(monkeypatch):
     assert "last_status" not in progress_payload
 
 
+def test_summarize_existing_results_uses_persisted_verdict_and_score():
+    class FakeScoreQuery:
+        def filter(self, *args, **kwargs):
+            return self
+
+        def all(self):
+            return [(10,)]
+
+    db = SimpleNamespace(query=lambda *args, **kwargs: FakeScoreQuery())
+    task = JudgeTask()
+
+    result = task.summarize_existing_results(
+        db,
+        [
+            SimpleNamespace(
+                testcase_id="tc-ac",
+                status=SubmissionResult.AC,
+                execute_time=7,
+                memory_used=16,
+            ),
+            SimpleNamespace(
+                testcase_id="tc-wa",
+                status=SubmissionResult.WA,
+                execute_time=3,
+                memory_used=8,
+            ),
+        ],
+    )
+
+    assert result["result"] == SubmissionResult.WA
+    assert result["error_message"] is None
+    assert result["execute_time"] == 10
+    assert result["memory_used"] == 16
+    assert result["score"] == 10
+
+
 def test_outputs_match_json_equivalent_lists():
     assert _outputs_match("[0,1]", "[0, 1]")
 
@@ -116,7 +152,7 @@ def test_custom_run_testcases_store_visible_user_outputs(monkeypatch):
     )
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = problem
-    db.query.return_value.filter.return_value.count.return_value = 0
+    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
     monkeypatch.setattr(
         "backend.services.queue_service.queue_service.publish_status",
         lambda *args, **kwargs: None,
@@ -167,7 +203,7 @@ def test_custom_run_generates_expected_output_with_official_solution(monkeypatch
     )
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = problem
-    db.query.return_value.filter.return_value.count.return_value = 0
+    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
     monkeypatch.setattr(
         "backend.worker.tasks.judge_task.ProblemService.get_public_testcases",
         lambda self, problem_id: [],
