@@ -1,11 +1,10 @@
-from typing import Literal
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
+from backend.core.locales import DEFAULT_LOCALE, normalize_locale, validate_locale
 from backend.core.security import (
     create_access_token,
     create_refresh_token,
@@ -23,7 +22,12 @@ class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
-    locale: Literal["zh", "en"] = "zh"
+    locale: str = DEFAULT_LOCALE
+
+    @field_validator("locale", mode="before")
+    @classmethod
+    def clean_locale(cls, value):
+        return validate_locale(value)
 
 
 class UserResponse(BaseModel):
@@ -31,7 +35,7 @@ class UserResponse(BaseModel):
     username: str
     email: str
     avatar_url: str | None = None
-    locale: Literal["zh", "en"] = "zh"
+    locale: str = DEFAULT_LOCALE
     role: str = "user"
     is_active: bool = True
     created_at: str
@@ -43,9 +47,14 @@ class UserUpdate(BaseModel):
     username: str | None = None
     email: EmailStr | None = None
     avatar_url: str | None = None
-    locale: Literal["zh", "en"] | None = None
+    locale: str | None = None
     current_password: str | None = None
     new_password: str | None = None
+
+    @field_validator("locale", mode="before")
+    @classmethod
+    def clean_locale(cls, value):
+        return validate_locale(value) if value is not None else None
 
 
 class TokenResponse(BaseModel):
@@ -55,8 +64,8 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
-def _normalize_locale(value: str | None) -> Literal["zh", "en"]:
-    return "en" if value == "en" else "zh"
+def _normalize_locale(value: str | None) -> str:
+    return normalize_locale(value)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

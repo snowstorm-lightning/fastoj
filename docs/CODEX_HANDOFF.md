@@ -1,10 +1,20 @@
 # Codex Handoff
 
-Updated: 2026-06-01
+Updated: 2026-06-02
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-06-02 Production Judge Dispatch Hardening
+
+- Judge inline fallback is now an explicit dispatch policy. It follows `DEBUG` by default, can be overridden with `JUDGE_INLINE_FALLBACK`, and is set to false in both local and production Docker Compose.
+- Production submissions require the Redis Streams worker path. If Redis or a live judge worker is unavailable, submit/run returns `503 Judge service unavailable` rather than executing `JudgeTask` inside the API process.
+- Queue `XADD` success is treated as dispatch success; status pub/sub failures after enqueue are logged but do not cause inline duplicate judging.
+- Worker heartbeat now refreshes in a background thread during long judge tasks. Pending reclaim now processes claimed payloads and skips tasks owned by consumers that still have heartbeat.
+- Worker retry handling no longer marks submissions terminal `SE` before retries are exhausted; terminal errors are written only on final failure/dead-letter.
+- The workbench discussion tab is now labeled as browser-local notes, safely handles corrupt local storage, and disables local posting while logged out. There is still no shared server-backed discussion model/API.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (162 passed); `cd frontend && npm run build`; `cd frontend && npm test` (9 files / 26 tests); `docker compose config`; `docker compose up --build -d api worker`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps` reported API, worker, PostgreSQL, and Redis healthy.
 
 ## 2026-06-01 CI/CD And Tencent Cloud Deployment Prep
 
@@ -73,7 +83,7 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 ## 2026-05-29 Workbench Run Panel And Auth Feedback
 
 - Workbench public runs now support editable public run inputs. The new result panel below Monaco shows sample input, official/reference generated expected output, the user's actual output, and line-level diffs with mismatches highlighted.
-- Async judging now uses a Redis worker heartbeat. If Redis is reachable but no judge worker is alive, the API falls back to inline Docker judging instead of leaving submissions pending indefinitely.
+- Async judging now uses a Redis worker heartbeat. The original local fallback avoided permanently pending submissions; as of 2026-06-02 that fallback is debug/local-only and production returns 503 when the queue or worker path is unavailable.
 - Frontend polling now appends a terminal result/error event when it observes a finished submission, so the judge timeline recovers even if the WebSocket result event was missed.
 - Backend public runs accept a bounded `run_testcases` payload containing input only, ignore any client-provided expected output, and persist those results without a testcase foreign key. Hidden/full-submit behavior still uses stored testcases only and no hidden input/expected/actual output is returned.
 - Custom public-run expected output is generated server-side by running the official solution in the sandbox when available. `next-permutation`, `diameter-of-binary-tree`, and `maximum-depth-of-binary-tree` also have built-in Python reference generators; exact public sample input can fall back to already visible public sample output.

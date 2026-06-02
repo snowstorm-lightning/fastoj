@@ -2,9 +2,9 @@
 """Seed sample data for FastOJ."""
 
 import uuid
-from datetime import datetime
 
 from backend.core.database import Base, SessionLocal, engine
+from backend.core.time import utc_now
 from backend.models import Difficulty, Problem, Solution, TestCase
 from backend.scripts.hot100_data import HOT100_LEGACY_SLUG_ALIASES, HOT100_PROBLEMS_DATA
 from backend.services.problem_modes import FUNCTION_SIGNATURES
@@ -404,7 +404,7 @@ def seed_problems():
                     total_submissions=0,
                     accepted_submissions=0,
                     is_public=True,
-                    created_at=datetime.utcnow(),
+                    created_at=utc_now(),
                     **problem_data,
                 )
                 db.add(problem)
@@ -432,7 +432,7 @@ def seed_problems():
                             id=uuid.uuid4(),
                             problem_id=problem.id,
                             order=order,
-                            created_at=datetime.utcnow(),
+                            created_at=utc_now(),
                             **tc_data,
                         )
                     )
@@ -467,7 +467,7 @@ def seed_problems():
                             id=uuid.uuid4(),
                             problem_id=problem.id,
                             is_official=True,
-                            created_at=datetime.utcnow(),
+                            created_at=utc_now(),
                             **solution_data,
                         )
                     )

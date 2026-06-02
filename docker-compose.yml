@@ -44,6 +44,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
       - JUDGE_ASYNC=true
+      - JUDGE_INLINE_FALLBACK=${JUDGE_INLINE_FALLBACK:-false}
       - DEBUG=false
       - AI_PROVIDER=${AI_PROVIDER:-disabled}
       - AI_BASE_URL=${AI_BASE_URL:-http://host.docker.internal:8080/v1}

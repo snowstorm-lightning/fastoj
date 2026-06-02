@@ -1,6 +1,5 @@
 import enum
 import uuid
-from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy import Enum as SQLEnum
@@ -8,6 +7,8 @@ from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import relationship
 
 from backend.core.database import Base
+from backend.core.locales import DEFAULT_LOCALE
+from backend.core.time import utc_now
 
 
 class Difficulty(str, enum.Enum):
@@ -50,11 +51,11 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     avatar_url = Column(String(500), nullable=True)
-    locale = Column(String(10), nullable=False, default="zh")
+    locale = Column(String(10), nullable=False, default=DEFAULT_LOCALE)
     role = Column(String(20), default="user")
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     submissions = relationship("Submission", back_populates="user")
 
@@ -85,8 +86,8 @@ class Problem(Base):
     source = Column(String(200), nullable=True)
     is_public = Column(Boolean, default=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     testcases = relationship("TestCase", back_populates="problem")
     submissions = relationship("Submission", back_populates="problem")
@@ -104,7 +105,7 @@ class TestCase(Base):
     is_sample = Column(Boolean, default=False)
     score = Column(Integer, default=10)
     order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     problem = relationship("Problem", back_populates="testcases")
 
@@ -129,7 +130,7 @@ class Submission(Base):
     score = Column(Integer, default=0)
     ip_address = Column(String(45), nullable=True)
     judge_version = Column(String(20), default="v1")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
     finished_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="submissions")
@@ -150,7 +151,7 @@ class TestCaseResult(Base):
     execute_time = Column(Integer, nullable=True)
     memory_used = Column(Integer, nullable=True)
     is_hidden = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     submission = relationship("Submission", back_populates="testcase_results")
 
@@ -170,8 +171,8 @@ class Solution(Base):
     space_complexity = Column(String(50), nullable=True)
     is_official = Column(Boolean, default=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     problem = relationship("Problem", back_populates="solutions")
 
@@ -209,8 +210,8 @@ class ProblemDraft(Base):
     status = Column(String(30), nullable=False, default="draft")
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     approved_problem_id = Column(UUID(as_uuid=True), ForeignKey("problems.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     runs = relationship("AgentRun", back_populates="draft")
 
@@ -229,10 +230,10 @@ class AgentRun(Base):
     output_json = Column(Text, nullable=False, default="{}")
     error_message = Column(Text, nullable=True)
     model_profile = Column(String(30), nullable=False, default="default")
-    locale = Column(String(10), nullable=False, default="en")
+    locale = Column(String(10), nullable=False, default=DEFAULT_LOCALE)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     draft_id = Column(UUID(as_uuid=True), ForeignKey("problem_drafts.id"), nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
     finished_at = Column(DateTime, nullable=True)
 
     draft = relationship("ProblemDraft", back_populates="runs")
@@ -254,6 +255,6 @@ class AgentStep(Base):
     output_json = Column(Text, nullable=False, default="{}")
     status = Column(String(30), nullable=False, default="running")
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     run = relationship("AgentRun", back_populates="steps")

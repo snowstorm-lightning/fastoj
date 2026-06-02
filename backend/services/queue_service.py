@@ -30,8 +30,8 @@ class QueueService:
             self.redis_client.close()
             self.redis_client = None
 
-    def worker_heartbeat_key(self) -> str:
-        return f"{settings.JUDGE_WORKER_HEARTBEAT_KEY}:{self.consumer_name}"
+    def worker_heartbeat_key(self, consumer_name: str | None = None) -> str:
+        return f"{settings.JUDGE_WORKER_HEARTBEAT_KEY}:{consumer_name or self.consumer_name}"
 
     def mark_worker_alive(self) -> None:
         """Publish a short-lived worker heartbeat for API fallback decisions."""
@@ -52,6 +52,10 @@ class QueueService:
         self.connect()
         pattern = f"{settings.JUDGE_WORKER_HEARTBEAT_KEY}:*"
         return any(True for _key in self.redis_client.scan_iter(match=pattern, count=10))  # type: ignore[union-attr]
+
+    def is_worker_alive(self, consumer_name: str) -> bool:
+        self.connect()
+        return bool(self.redis_client.exists(self.worker_heartbeat_key(consumer_name)))  # type: ignore[union-attr]
 
     def push_task(self, task_data: dict[str, Any]) -> str:
         """Push a task to the Redis Stream queue."""
@@ -92,7 +96,8 @@ class QueueService:
         self.connect()
         self.redis_client.xack(self.queue_name, self.group_name, message_id)  # type: ignore[union-attr]
 
-    def retry_or_dead_letter(self, message_id: str, task_data: dict[str, Any], error: str) -> None:
+    def retry_or_dead_letter(self, message_id: str, task_data: dict[str, Any], error: str) -> bool:
+        """Retry a task or dead-letter it. Returns true when the task is terminal."""
         self.connect()
         attempt = int(task_data.get("attempt", 0)) + 1
         task_data["attempt"] = attempt
@@ -100,12 +105,13 @@ class QueueService:
         if attempt >= settings.JUDGE_TASK_MAX_RETRIES:
             self.redis_client.xadd(self.dead_letter_name, {"payload": json.dumps(task_data)})  # type: ignore[union-attr]
             self.ack_task(message_id)
-            return
+            return True
         self.redis_client.xadd(self.queue_name, {"payload": json.dumps(task_data)})  # type: ignore[union-attr]
         self.ack_task(message_id)
+        return False
 
-    def reclaim_pending(self) -> int:
-        """Reclaim idle pending tasks for this consumer. Returns claimed count."""
+    def claim_pending(self) -> list[tuple[str, dict[str, Any]]]:
+        """Claim idle pending tasks for this consumer and return their payloads."""
         self.connect()
         self.ensure_group()
         try:
@@ -117,21 +123,31 @@ class QueueService:
                 count=10,
             )
         except redis.ResponseError:
-            return 0
-        claimed = 0
+            return []
+        claimed: list[tuple[str, dict[str, Any]]] = []
         for item in pending:
             if item.get("time_since_delivered", 0) < settings.JUDGE_PENDING_IDLE_MS:
                 continue
+            owner = item.get("consumer") or item.get("consumer_name")
+            if owner and str(owner) != self.consumer_name and self.is_worker_alive(str(owner)):
+                continue
             message_id = item["message_id"]
-            self.redis_client.xclaim(  # type: ignore[union-attr]
+            messages = self.redis_client.xclaim(  # type: ignore[union-attr]
                 self.queue_name,
                 self.group_name,
                 self.consumer_name,
                 settings.JUDGE_PENDING_IDLE_MS,
                 [message_id],
             )
-            claimed += 1
+            for claimed_id, fields in messages or []:
+                payload = fields.get("payload")
+                if payload:
+                    claimed.append((claimed_id, json.loads(payload)))
         return claimed
+
+    def reclaim_pending(self) -> int:
+        """Compatibility wrapper returning only claimed count."""
+        return len(self.claim_pending())
 
     def pop_task(self, timeout: int = 0) -> dict[str, Any] | None:
         """Compatibility wrapper returning only payload."""

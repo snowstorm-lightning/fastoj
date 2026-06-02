@@ -1,4 +1,4 @@
-import type { Locale } from "../lib/i18n";
+import { localeValue, type Locale } from "../lib/i18n";
 import type { SubmissionDetail } from "../lib/schemas";
 
 export type EditableRunCase = {
@@ -65,6 +65,9 @@ const LABELS = {
   },
 } as const;
 
+type RunResultLabels = Record<keyof (typeof LABELS)["zh"], string>;
+const LABEL_LOOKUP: Partial<Record<Locale, RunResultLabels>> & Record<"zh", RunResultLabels> = LABELS;
+
 export function RunResultPanel({
   locale,
   cases,
@@ -92,7 +95,7 @@ export function RunResultPanel({
   onResetCases: () => void;
   onRun: () => void;
 }) {
-  const labels = LABELS[locale];
+  const labels = localeValue(locale, LABEL_LOOKUP);
   const safeCases = cases.length ? cases : [{ id: "case-1", input: "", expected_output: "" }];
   const currentIndex = Math.min(activeIndex, safeCases.length - 1);
   const currentCase = safeCases[currentIndex];
@@ -209,7 +212,7 @@ function renderSegments(segments: DiffSegment[]) {
   ));
 }
 
-function statusLabel(status: string | undefined, labels: typeof LABELS.zh | typeof LABELS.en) {
+function statusLabel(status: string | undefined, labels: RunResultLabels) {
   if (status === "pending" || status === "judging") return labels.pending;
   if (status === "ac") return labels.same;
   if (status && status !== "idle") return labels.different;

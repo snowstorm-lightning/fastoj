@@ -33,11 +33,31 @@ class FakeRedis:
     def delete(self, key):
         self.values.pop(key, None)
 
+    def exists(self, key):
+        return int(key in self.values)
+
     def scan_iter(self, match=None, count=None):
         prefix = (match or "").rstrip("*")
         for key in list(self.values):
             if not match or key.startswith(prefix):
                 yield key
+
+    def xpending_range(self, *args, **kwargs):
+        return [
+            {
+                "message_id": "1-0",
+                "consumer": "stale-worker",
+                "time_since_delivered": 60000,
+            }
+        ]
+
+    def xclaim(self, stream, group, consumer, min_idle_time, message_ids):
+        return [
+            (
+                message_ids[0],
+                {"payload": json.dumps({"submission_id": "s1", "attempt": 1})},
+            )
+        ]
 
 
 def test_queue_enqueue_and_ack():
@@ -53,10 +73,31 @@ def test_retry_then_dead_letter(monkeypatch):
     queue = QueueService()
     queue.redis_client = FakeRedis()
     monkeypatch.setattr("backend.services.queue_service.settings.JUDGE_TASK_MAX_RETRIES", 1)
-    queue.retry_or_dead_letter("1-0", {"submission_id": "s1"}, "boom")
+    terminal = queue.retry_or_dead_letter("1-0", {"submission_id": "s1"}, "boom")
     streams = [item[0] for item in queue.redis_client.added]
+    assert terminal is True
     assert queue.dead_letter_name in streams
     assert queue.redis_client.acked
+
+
+def test_retry_before_dead_letter_returns_non_terminal(monkeypatch):
+    queue = QueueService()
+    queue.redis_client = FakeRedis()
+    monkeypatch.setattr("backend.services.queue_service.settings.JUDGE_TASK_MAX_RETRIES", 3)
+    terminal = queue.retry_or_dead_letter("1-0", {"submission_id": "s1"}, "boom")
+    streams = [item[0] for item in queue.redis_client.added]
+    assert terminal is False
+    assert queue.queue_name in streams
+    assert queue.dead_letter_name not in streams
+    assert queue.redis_client.acked
+
+
+def test_claim_pending_returns_claimed_payload(monkeypatch):
+    queue = QueueService()
+    queue.redis_client = FakeRedis()
+    monkeypatch.setattr("backend.services.queue_service.settings.JUDGE_PENDING_IDLE_MS", 30000)
+    claimed = queue.claim_pending()
+    assert claimed == [("1-0", {"submission_id": "s1", "attempt": 1})]
 
 
 def test_publish_status_event():

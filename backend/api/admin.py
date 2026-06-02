@@ -2,7 +2,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from backend.api.auth import get_current_user
 from backend.core.code_normalization import normalize_source_code
 from backend.core.database import get_db
 from backend.core.languages import Language
+from backend.core.locales import DEFAULT_LOCALE, ai_response_language
 from backend.models import (
     Difficulty,
     Problem,
@@ -71,8 +72,10 @@ class AdminSolutionUpsert(BaseModel):
 
 
 class AdminSolutionGenerateRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     language: str
-    locale: AILocale = "zh"
+    locale: AILocale = DEFAULT_LOCALE
     model_profile: AIModelProfile = "default"
     problem: AdminProblemUpdate | None = None
     solutions: list[AdminSolutionUpsert] | None = Field(default=None, max_length=7)
@@ -621,7 +624,7 @@ def _solution_generation_context(problem: Problem, payload: AdminSolutionGenerat
 
     return {
         "target_language": payload.language.strip().lower(),
-        "response_language": "Simplified Chinese" if payload.locale == "zh" else "English",
+        "response_language": ai_response_language(payload.locale),
         "title": redact(patched("title", problem.title)),
         "slug": redact(patched("slug", problem.slug)),
         "description": redact(patched("description", problem.description)),

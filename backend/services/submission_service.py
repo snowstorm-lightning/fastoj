@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from backend.core.config import settings
 from backend.core.languages import Language
-from backend.models import Problem, Submission, SubmissionStatus
+from backend.core.time import utc_now
+from backend.models import Problem, Submission, SubmissionResult, SubmissionStatus
 from backend.schemas.submission import (
     SubmissionCreate,
     SubmissionDetail,
@@ -17,6 +18,13 @@ from backend.services.function_mode import wrap_function_submission
 from backend.services.queue_service import queue_service
 
 logger = logging.getLogger(__name__)
+
+JUDGE_SERVICE_UNAVAILABLE_MESSAGE = "Judge service unavailable"
+
+
+class JudgeServiceUnavailableError(RuntimeError):
+    """Raised when production policy requires a live async judge worker."""
+
 
 
 class SubmissionService:
@@ -42,6 +50,7 @@ class SubmissionService:
         if not problem.is_public and not is_admin:
             raise ValueError("Problem not found")
         judge_code = self._prepare_judge_code(submission_data, problem)
+        self._ensure_judge_dispatch_available()
 
         # Create submission
         submission = Submission(
@@ -57,11 +66,15 @@ class SubmissionService:
         self.db.commit()
         self.db.refresh(submission)
 
-        # Update problem total submissions
+        try:
+            self._queue_or_judge_now(submission, use_hidden=True, judge_code=judge_code)
+        except JudgeServiceUnavailableError:
+            self._mark_submission_judge_unavailable(submission)
+            raise
+
+        # Count only submissions that were accepted into the judge dispatch path.
         problem.total_submissions = problem.total_submissions + 1  # type: ignore[assignment]
         self.db.commit()
-
-        self._queue_or_judge_now(submission, use_hidden=True, judge_code=judge_code)
 
         return submission
 
@@ -82,6 +95,7 @@ class SubmissionService:
         if not problem.is_public and not is_admin:
             raise ValueError("Problem not found")
         judge_code = self._prepare_judge_code(submission_data, problem)
+        self._ensure_judge_dispatch_available()
 
         # Create submission
         submission = Submission(
@@ -97,12 +111,16 @@ class SubmissionService:
         self.db.commit()
         self.db.refresh(submission)
 
-        self._queue_or_judge_now(
-            submission,
-            use_hidden=False,
-            judge_code=judge_code,
-            run_testcases=[{"input": item.input} for item in (submission_data.run_testcases or [])] or None,
-        )
+        try:
+            self._queue_or_judge_now(
+                submission,
+                use_hidden=False,
+                judge_code=judge_code,
+                run_testcases=[{"input": item.input} for item in (submission_data.run_testcases or [])] or None,
+            )
+        except JudgeServiceUnavailableError:
+            self._mark_submission_judge_unavailable(submission)
+            raise
 
         return submission
 
@@ -123,7 +141,7 @@ class SubmissionService:
         judge_code: str | None = None,
         run_testcases: list[dict[str, str]] | None = None,
     ) -> None:
-        """Queue a judge task, or execute it inline when Redis/worker is unavailable."""
+        """Queue a judge task, or execute it inline when policy allows fallback."""
         task = {
             "submission_id": str(submission.id),
             "problem_id": str(submission.problem_id),
@@ -136,18 +154,57 @@ class SubmissionService:
 
         if settings.JUDGE_ASYNC:
             try:
-                if not queue_service.has_live_worker():
-                    raise RuntimeError("judge worker heartbeat not found")
-                queue_service.push_task(task)
-                queue_service.publish_status(
-                    str(submission.id),
-                    "pending",
-                    {"status": "pending", "progress": 0},
-                )
+                self._enqueue_judge_task(task, str(submission.id))
                 return
             except Exception as exc:
+                if not self._allow_inline_judge_fallback():
+                    logger.error("Judge queue unavailable; rejecting submission: %s", exc)
+                    raise JudgeServiceUnavailableError(JUDGE_SERVICE_UNAVAILABLE_MESSAGE) from exc
                 logger.warning("Judge queue unavailable; running submission inline: %s", exc)
+        elif not self._allow_inline_judge_fallback():
+            logger.error("Inline judging is disabled outside debug/development mode")
+            raise JudgeServiceUnavailableError(JUDGE_SERVICE_UNAVAILABLE_MESSAGE)
 
+        self._run_inline_judge(submission, use_hidden, judge_code, run_testcases)
+
+    def _allow_inline_judge_fallback(self) -> bool:
+        if settings.JUDGE_INLINE_FALLBACK is not None:
+            return settings.JUDGE_INLINE_FALLBACK
+        return settings.DEBUG
+
+    def _ensure_judge_dispatch_available(self) -> None:
+        """Reject early when production policy requires a live async worker."""
+        if self._allow_inline_judge_fallback():
+            return
+        if not settings.JUDGE_ASYNC:
+            raise JudgeServiceUnavailableError(JUDGE_SERVICE_UNAVAILABLE_MESSAGE)
+        try:
+            if not queue_service.has_live_worker():
+                raise RuntimeError("judge worker heartbeat not found")
+        except Exception as exc:
+            logger.error("Judge service unavailable before submission creation: %s", exc)
+            raise JudgeServiceUnavailableError(JUDGE_SERVICE_UNAVAILABLE_MESSAGE) from exc
+
+    def _enqueue_judge_task(self, task: dict[str, object], submission_id: str) -> None:
+        if not queue_service.has_live_worker():
+            raise RuntimeError("judge worker heartbeat not found")
+        queue_service.push_task(task)
+        try:
+            queue_service.publish_status(
+                submission_id,
+                "pending",
+                {"status": "pending", "progress": 0},
+            )
+        except Exception as exc:
+            logger.warning("Judge status publish failed after queueing submission %s: %s", submission_id, exc)
+
+    def _run_inline_judge(
+        self,
+        submission: Submission,
+        use_hidden: bool,
+        judge_code: str | None = None,
+        run_testcases: list[dict[str, str]] | None = None,
+    ) -> None:
         from backend.worker.tasks.judge_task import JudgeTask
 
         self.update_submission_status(str(submission.id), SubmissionStatus.JUDGING)
@@ -169,6 +226,17 @@ class SubmissionService:
             memory_used=result.get("memory_used"),
             score=result.get("score", 0),
         )
+
+    def _mark_submission_judge_unavailable(self, submission: Submission) -> None:
+        try:
+            self.update_submission_status(
+                str(submission.id),
+                SubmissionStatus.FINISHED,
+                result=SubmissionResult.SE,
+                error_message=JUDGE_SERVICE_UNAVAILABLE_MESSAGE,
+            )
+        except Exception as exc:
+            logger.error("Failed to mark submission %s as judge unavailable: %s", submission.id, exc)
 
     def get_submission(
         self,
@@ -272,7 +340,7 @@ class SubmissionService:
         submission.score = score  # type: ignore[assignment]
 
         if status == SubmissionStatus.FINISHED:
-            submission.finished_at = datetime.utcnow()  # type: ignore[assignment]
+            submission.finished_at = utc_now()  # type: ignore[assignment]
 
             # Update problem accepted count if AC
             if result and result.value == "ac":

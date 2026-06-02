@@ -1,12 +1,14 @@
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+import warnings
+from datetime import timedelta
 
 from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
 from backend.core.config import settings
+from backend.core.time import utc_now
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -52,9 +54,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     """Create a JWT access token."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = utc_now() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = utc_now() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire, "type": "access"})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -63,7 +65,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 def create_refresh_token(data: dict) -> str:
     """Create a JWT refresh token."""
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = utc_now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -72,7 +74,14 @@ def create_refresh_token(data: dict) -> str:
 def decode_token(token: str) -> dict:
     """Decode and validate a JWT token."""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"datetime\.datetime\.utcnow\(\) is deprecated.*",
+                category=DeprecationWarning,
+                module=r"jose\.jwt",
+            )
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         return payload
     except JWTError:
         raise HTTPException(

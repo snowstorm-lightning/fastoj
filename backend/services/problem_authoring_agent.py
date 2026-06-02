@@ -1,7 +1,6 @@
 import json
 import re
 import uuid
-from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -12,6 +11,8 @@ from backend.ai.prompts import problem_authoring
 from backend.ai.providers import AIProviderUnavailableError, BaseAIProvider, build_provider
 from backend.core.code_normalization import normalize_source_code
 from backend.core.languages import Language
+from backend.core.locales import ai_response_language, normalize_locale
+from backend.core.time import utc_now
 from backend.models import (
     AgentRun,
     AgentStep,
@@ -476,7 +477,7 @@ class ProblemAuthoringAgentService:
             run.draft_id = draft.id
             run.status = "succeeded"
             run.output_json = dump_json({"draft_id": str(draft.id), "validation": validation_report})
-            run.finished_at = datetime.utcnow()
+            run.finished_at = utc_now()
             self._add_step(
                 run,
                 "persistence",
@@ -669,10 +670,10 @@ class ProblemAuthoringAgentService:
             ),
             output_json=dump_json({"draft_id": str(draft.id), "validation": validation_report}),
             model_profile="manual",
-            locale="en",
+            locale=normalize_locale(current_user.locale),
             created_by=current_user.id,
             draft_id=draft.id,
-            finished_at=datetime.utcnow(),
+            finished_at=utc_now(),
         )
         self.db.add(run)
         self.db.flush()
@@ -743,7 +744,7 @@ class ProblemAuthoringAgentService:
             solution = self._parse_solution_response(raw, language)
             run.status = "succeeded"
             run.output_json = dump_json({"language": solution.language, "code_length": len(solution.code)})
-            run.finished_at = datetime.utcnow()
+            run.finished_at = utc_now()
             self.db.commit()
             return solution
         except AIProviderUnavailableError as exc:
@@ -779,7 +780,7 @@ class ProblemAuthoringAgentService:
             config = resolve_ai_config(payload.model_profile)
             provider = build_provider(config)
         context = payload.model_dump()
-        context["response_language"] = "Simplified Chinese" if payload.locale == "zh" else "English"
+        context["response_language"] = ai_response_language(payload.locale)
         if repair_context:
             context["repair_request"] = repair_context
         return provider.complete_json(problem_authoring.SYSTEM_PROMPT, problem_authoring.build_prompt(context))
@@ -1003,7 +1004,7 @@ class ProblemAuthoringAgentService:
 
         return {
             "target_language": language,
-            "response_language": "Simplified Chinese" if locale == "zh" else "English",
+            "response_language": ai_response_language(locale),
             "title": redact(values.get("title", draft.title)),
             "slug": redact(values.get("slug", draft.slug)),
             "description": redact(values.get("description", draft.description)),
@@ -1351,7 +1352,7 @@ class ProblemAuthoringAgentService:
         self._add_step(run, step_type, "problem_authoring_agent", {}, {}, "failed", message)
         run.status = "failed"
         run.error_message = message
-        run.finished_at = datetime.utcnow()
+        run.finished_at = utc_now()
         self.db.commit()
 
     def _add_approval_step(
@@ -1370,10 +1371,10 @@ class ProblemAuthoringAgentService:
                 input_json="{}",
                 output_json="{}",
                 model_profile="manual",
-                locale="en",
+                locale=normalize_locale(current_user.locale),
                 created_by=current_user.id,
                 draft_id=draft.id,
-                finished_at=datetime.utcnow(),
+                finished_at=utc_now(),
             )
             self.db.add(run)
             self.db.flush()

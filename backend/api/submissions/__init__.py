@@ -13,7 +13,7 @@ from backend.schemas.submission import (
     SubmissionListItem,
     SubmissionResponse,
 )
-from backend.services.submission_service import SubmissionService
+from backend.services.submission_service import JudgeServiceUnavailableError, SubmissionService
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 
@@ -51,6 +51,8 @@ async def create_submission(
             created_at=submission.created_at.isoformat(),
             finished_at=submission.finished_at.isoformat() if submission.finished_at else None,
         )
+    except JudgeServiceUnavailableError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except ValueError as e:
         if "Unsupported language" in str(e) or "Function mode" in str(e) or "Custom run" in str(e):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

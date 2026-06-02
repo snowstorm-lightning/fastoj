@@ -1,6 +1,5 @@
 import json
 import uuid
-from datetime import datetime
 from typing import Any
 
 import pytest
@@ -28,6 +27,7 @@ from backend.api.admin import (
 )
 from backend.api.admin_agent import create_problem_draft
 from backend.core.config import settings
+from backend.core.time import utc_now
 from backend.models import (
     AgentRun,
     AgentStep,
@@ -37,11 +37,13 @@ from backend.models import (
     Solution,
     Submission,
     SubmissionResult,
-    TestCaseResult,
     User,
 )
 from backend.models import (
     TestCase as OJTestCase,
+)
+from backend.models import (
+    TestCaseResult as CaseResultModel,
 )
 from backend.schemas.problem_authoring import (
     AuthoredOfficialSolution,
@@ -100,9 +102,9 @@ class FakeSession:
 
     def add(self, item):
         if getattr(item, "created_at", None) is None:
-            item.created_at = datetime.utcnow()
+            item.created_at = utc_now()
         if hasattr(item, "updated_at") and getattr(item, "updated_at", None) is None:
-            item.updated_at = datetime.utcnow()
+            item.updated_at = utc_now()
         self.data.setdefault(type(item), []).append(item)
 
     def flush(self):
@@ -112,11 +114,11 @@ class FakeSession:
         for items in self.data.values():
             for item in items:
                 if hasattr(item, "updated_at"):
-                    item.updated_at = datetime.utcnow()
+                    item.updated_at = utc_now()
 
     def refresh(self, item):
         if hasattr(item, "updated_at"):
-            item.updated_at = datetime.utcnow()
+            item.updated_at = utc_now()
 
     def query(self, model):
         return FakeQuery(self.data.setdefault(model, []))
@@ -925,7 +927,7 @@ def test_admin_can_delete_problem_and_related_rows():
         code="print(1)",
         language="python",
     )
-    testcase_result = TestCaseResult(
+    testcase_result = CaseResultModel(
         id=uuid.uuid4(),
         submission_id=submission.id,
         testcase_id=testcase.id,
@@ -973,7 +975,7 @@ def test_admin_can_delete_problem_and_related_rows():
     assert db.data[Problem] == []
     assert db.data[OJTestCase] == []
     assert db.data[Submission] == []
-    assert db.data[TestCaseResult] == []
+    assert db.data[CaseResultModel] == []
     assert db.data[Solution] == []
     assert draft.approved_problem_id is None
 

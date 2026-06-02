@@ -29,7 +29,7 @@ for that.
   themes, and includes a searchable problem library, card/list layouts, a
   three-column workbench, editable public-run inputs with official-solution
   expected output generation, output diffing, judge timeline, AI drawer,
-  submission trail, local discussion, settings, admin screens with testcase
+  submission trail, browser-local discussion notes, settings, admin screens with testcase
   management, and a training graph.
 - **It is ready for provider experiments.** The AI layer uses an
   OpenAI-compatible profile, with examples for hosted DeepSeek-style APIs and a
@@ -174,6 +174,12 @@ npm run dev
 
 The Vite dev server can call the same-origin API by default. Set
 `VITE_API_BASE_URL` only when the API runs on a separate origin.
+
+Direct host development uses `DEBUG=true`, so the API may run judge work inline
+when the async worker queue is unavailable. Docker Compose and production set
+`JUDGE_ASYNC=true` with `JUDGE_INLINE_FALLBACK=false`, so a missing Redis/worker
+path returns `503 Judge service unavailable` instead of moving submission load
+into the API process.
 
 ## AI Configuration
 
@@ -549,6 +555,9 @@ Full deployment steps are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - Production judging uses Docker sandbox execution. The
   `FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true` escape hatch is for local
   development only.
+- Production submissions require the Redis Streams worker path. Inline judge
+  fallback is limited to `DEBUG=true` or an explicit
+  `JUDGE_INLINE_FALLBACK=true` local override.
 - In Docker Compose, the API service also mounts the Docker socket so the
   admin-only Problem Authoring Agent can synchronously sandbox-check official
   draft solutions before approval or after an admin edit/revalidation pass.

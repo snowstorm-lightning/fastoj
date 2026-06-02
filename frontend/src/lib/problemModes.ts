@@ -1,5 +1,5 @@
 import type { ProblemDetail, ProblemListItem } from "./schemas";
-import type { Locale } from "./i18n";
+import { DEFAULT_LOCALE, localeText, localeValue, SUPPORTED_LOCALES, type Locale } from "./i18n";
 
 export type JudgeMode = "function" | "acm";
 
@@ -9,16 +9,19 @@ type AnyProblem = Pick<ProblemDetail | ProblemListItem, "slug" | "title" | "tags
   function_signature?: string | null;
 };
 
+type LocalizedString = Partial<Record<Locale, string>> & { zh: string };
+type LocalizedStringList = Partial<Record<Locale, string[]>> & { zh: string[] };
+
 type FunctionSpec = {
   signature: string;
-  description: Record<Locale, string>;
+  description: LocalizedString;
   starter: string;
   dynamic?: boolean;
 };
 
 type VisualSpec = {
-  title: Record<Locale, string>;
-  steps: Record<Locale, string[]>;
+  title: LocalizedString;
+  steps: LocalizedStringList;
 };
 
 const TODO = "    # TODO: implement your solution here\n";
@@ -529,18 +532,19 @@ function cReturnSignature(parsed: ParsedFunctionSignature, functionName: string)
 }
 
 function localizeFunctionStarter(starter: string, locale: Locale): string {
-  if (locale !== "zh") return starter;
+  const todoText = localeText(locale, { zh: TODO_ZH, en: "TODO" });
+  if (todoText === "TODO") return starter;
   return starter
-    .replace(/# TODO: implement your solution here/g, `# ${TODO_ZH}`)
-    .replace(/\/\/ TODO(?:: implement your solution here)?/g, `// ${TODO_ZH}`)
-    .replace(/\/\* TODO(?:: implement your solution here)? \*\//g, `/* ${TODO_ZH} */`);
+    .replace(/# TODO: implement your solution here/g, `# ${todoText}`)
+    .replace(/\/\/ TODO(?:: implement your solution here)?/g, `// ${todoText}`)
+    .replace(/\/\* TODO(?:: implement your solution here)? \*\//g, `/* ${todoText} */`);
 }
 
 function buildDynamicFunctionStarter(spec: FunctionSpec, language: string, locale: Locale): string {
   const parsed = parseFunctionSignature(spec.signature);
   const snakeName = parsed.functionName;
   const camelName = toCamelCase(snakeName);
-  const todoLine = locale === "zh" ? TODO_ZH : "TODO";
+  const todoLine = localeText(locale, { zh: TODO_ZH, en: "TODO" });
   if (language === "python") return localizeFunctionStarter(spec.starter, locale);
   if (language === "javascript") {
     return `function ${camelName}(${parsed.params.map((param) => param.name).join(", ")}) {\n  // ${todoLine}\n  return ${jsDefault(parsed.returnType)};\n}\n`;
@@ -689,8 +693,8 @@ export function getProblemMode(problem?: AnyProblem | null) {
 function sampleComment(problem: AnyProblem | null | undefined, language: string, locale: Locale): string {
   const sample = problem?.sample_testcases?.[0];
   if (!sample) return "";
-  const inputLabel = locale === "zh" ? "示例输入：" : "Sample input:";
-  const outputLabel = locale === "zh" ? "示例输出：" : "Sample output:";
+  const inputLabel = localeText(locale, { zh: "示例输入：", en: "Sample input:" });
+  const outputLabel = localeText(locale, { zh: "示例输出：", en: "Sample output:" });
   const lines = [
     inputLabel,
     sample.input,
@@ -705,13 +709,16 @@ function sampleComment(problem: AnyProblem | null | undefined, language: string,
   return "";
 }
 
-export function buildStarter(problem: AnyProblem | null | undefined, language: string, mode: JudgeMode, locale: Locale = "en"): string {
+export function buildStarter(problem: AnyProblem | null | undefined, language: string, mode: JudgeMode, locale: Locale = DEFAULT_LOCALE): string {
   const spec = getFunctionSpec(problem);
   if (mode === "function" && spec) {
     const fixedStarter = FUNCTION_STARTERS[problem?.slug ?? ""]?.[language];
     return localizeFunctionStarter(fixedStarter ?? buildDynamicFunctionStarter(spec, language, locale), locale);
   }
-  const starter = locale === "zh" ? ACM_STARTERS_ZH[language] : ACM_STARTERS[language];
+  const starter = localeText(locale, {
+    zh: ACM_STARTERS_ZH[language] ?? ACM_STARTERS[language] ?? "",
+    en: ACM_STARTERS[language] ?? "",
+  });
   return `${sampleComment(problem, language, locale)}${starter ?? ""}`;
 }
 
@@ -722,7 +729,7 @@ function normalizedCode(code: string): string {
 export function isStarterCode(problem: AnyProblem | null | undefined, language: string, mode: JudgeMode, code: string): boolean {
   const normalized = normalizedCode(code);
   if (!normalized) return false;
-  return (["en", "zh"] as const).some((locale) => normalizedCode(buildStarter(problem, language, mode, locale)) === normalized);
+  return SUPPORTED_LOCALES.some((locale) => normalizedCode(buildStarter(problem, language, mode, locale)) === normalized);
 }
 
 export function isLikelyStaleAcmDraft(problem: AnyProblem | null | undefined, language: string, code: string): boolean {
@@ -735,7 +742,8 @@ export function isLikelyStaleAcmDraft(problem: AnyProblem | null | undefined, la
 }
 
 export function getLocalizedFunctionDescription(problem: AnyProblem | null | undefined, locale: Locale): string | null {
-  return getFunctionSpec(problem)?.description[locale] ?? null;
+  const description = getFunctionSpec(problem)?.description;
+  return description ? localeValue(locale, description) : null;
 }
 
 export function getVisualSpec(problem?: AnyProblem | null): VisualSpec {

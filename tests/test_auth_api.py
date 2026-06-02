@@ -1,4 +1,3 @@
-from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -16,6 +15,7 @@ from backend.api.auth import (
     update_me,
 )
 from backend.core.security import create_access_token, get_password_hash
+from backend.core.time import utc_now
 from backend.models import User
 
 
@@ -45,7 +45,7 @@ class FakeAuthDb:
 
     def refresh(self, user):
         user.id = user.id or uuid4()
-        user.created_at = user.created_at or datetime.utcnow()
+        user.created_at = user.created_at or utc_now()
 
 
 def test_register_success():
@@ -124,7 +124,7 @@ def test_update_me_persists_locale_preference():
         password_hash=get_password_hash("password123"),
         locale="zh",
         is_active=True,
-        created_at=datetime.utcnow(),
+        created_at=utc_now(),
     )
     response = update_me(UserUpdate(locale="en"), FakeAuthDb([user]), user)
     assert response.locale == "en"
@@ -139,7 +139,7 @@ def test_get_me_returns_locale_preference():
         password_hash=get_password_hash("password123"),
         locale="en",
         is_active=True,
-        created_at=datetime.utcnow(),
+        created_at=utc_now(),
     )
     response = get_me(user)
     assert response.locale == "en"

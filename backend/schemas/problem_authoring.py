@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from backend.ai.schemas import AILocale, AIModelProfile
 from backend.core.code_normalization import normalize_source_code
 from backend.core.languages import Language
+from backend.core.locales import DEFAULT_LOCALE
 
 ProblemMode = Literal["function", "acm", "both"]
 ProblemDraftStatus = Literal[
@@ -26,7 +27,7 @@ class ProblemAuthoringRequest(BaseModel):
     mode: ProblemMode
     target_language: str = "python"
     target_languages: list[str] | None = Field(default=None, max_length=7)
-    locale: AILocale = "zh"
+    locale: AILocale = DEFAULT_LOCALE
     model_profile: AIModelProfile = "default"
     constraints: str | None = Field(default=None, max_length=2000)
 
@@ -273,7 +274,7 @@ class ProblemDraftSolutionGenerateRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     language: str = Field(max_length=20)
-    locale: AILocale = "zh"
+    locale: AILocale = DEFAULT_LOCALE
     model_profile: AIModelProfile = "default"
     draft: ProblemDraftUpdate | None = None
 

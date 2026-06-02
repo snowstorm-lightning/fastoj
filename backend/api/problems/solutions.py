@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
+from backend.core.locales import DEFAULT_LOCALE, normalize_locale, uses_source_text
 from backend.services.problem_service import ProblemService
 from backend.services.solution_service import SolutionService
 
@@ -35,7 +36,7 @@ ZH_EXPLANATIONS["longest-substring-without-repeating-characters"] = ZH_EXPLANATI
 async def get_problem_solutions(
     problem_id: str,
     language: str | None = None,
-    locale: str = "zh",
+    locale: str = DEFAULT_LOCALE,
     db: Session = Depends(get_db),
 ):
     """Get solutions for a problem."""
@@ -50,9 +51,10 @@ async def get_problem_solutions(
 
     solution_service = SolutionService(db)
     solutions = solution_service.get_solutions(problem_id, language)
+    normalized_locale = normalize_locale(locale)
 
     def explanation_for(value: str) -> str:
-        if locale == "zh":
+        if not uses_source_text(normalized_locale):
             return ZH_EXPLANATIONS.get(problem.slug, value)
         return value
 

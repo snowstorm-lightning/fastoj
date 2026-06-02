@@ -6,7 +6,7 @@ import pytest
 from backend.models import SubmissionResult, SubmissionStatus
 from backend.schemas.submission import SubmissionCreate
 from backend.services import submission_service as submission_module
-from backend.services.submission_service import SubmissionService
+from backend.services.submission_service import JudgeServiceUnavailableError, SubmissionService
 
 
 def test_async_submission_falls_back_inline_when_no_worker_heartbeat(monkeypatch):
@@ -28,6 +28,8 @@ def test_async_submission_falls_back_inline_when_no_worker_heartbeat(monkeypatch
             }
 
     monkeypatch.setattr(submission_module.settings, "JUDGE_ASYNC", True)
+    monkeypatch.setattr(submission_module.settings, "DEBUG", True)
+    monkeypatch.setattr(submission_module.settings, "JUDGE_INLINE_FALLBACK", None)
     monkeypatch.setattr(submission_module.queue_service, "has_live_worker", lambda: False)
     monkeypatch.setattr(submission_module.queue_service, "push_task", lambda task: pushed.append(task))
     monkeypatch.setattr("backend.worker.tasks.judge_task.JudgeTask", FakeJudgeTask)
@@ -41,6 +43,72 @@ def test_async_submission_falls_back_inline_when_no_worker_heartbeat(monkeypatch
     assert updates[0][1] == SubmissionStatus.JUDGING
     assert updates[1][1] == SubmissionStatus.FINISHED
     assert updates[1][2]["result"] == SubmissionResult.AC
+
+
+def test_async_submission_rejects_when_worker_missing_outside_debug(monkeypatch):
+    pushed = []
+
+    class FakeJudgeTask:
+        def execute(self, **kwargs):
+            raise AssertionError("production fallback must not execute inline")
+
+    monkeypatch.setattr(submission_module.settings, "JUDGE_ASYNC", True)
+    monkeypatch.setattr(submission_module.settings, "DEBUG", False)
+    monkeypatch.setattr(submission_module.settings, "JUDGE_INLINE_FALLBACK", None)
+    monkeypatch.setattr(submission_module.queue_service, "has_live_worker", lambda: False)
+    monkeypatch.setattr(submission_module.queue_service, "push_task", lambda task: pushed.append(task))
+    monkeypatch.setattr("backend.worker.tasks.judge_task.JudgeTask", FakeJudgeTask)
+
+    service = SubmissionService(db=SimpleNamespace())
+    submission = SimpleNamespace(id="s1", problem_id="p1", code="print(1)", language="python")
+
+    with pytest.raises(JudgeServiceUnavailableError, match="Judge service unavailable"):
+        service._queue_or_judge_now(submission, use_hidden=False, judge_code="print(1)")
+
+    assert pushed == []
+
+
+def test_inline_fallback_can_be_explicitly_enabled(monkeypatch):
+    updates = []
+
+    class FakeService(SubmissionService):
+        def update_submission_status(self, submission_id, status, **kwargs):
+            updates.append(status)
+
+    class FakeJudgeTask:
+        def execute(self, **kwargs):
+            return {
+                "result": SubmissionResult.AC,
+                "error_message": None,
+                "execute_time": 7,
+                "memory_used": 16,
+                "score": 10,
+            }
+
+    monkeypatch.setattr(submission_module.settings, "JUDGE_ASYNC", True)
+    monkeypatch.setattr(submission_module.settings, "DEBUG", False)
+    monkeypatch.setattr(submission_module.settings, "JUDGE_INLINE_FALLBACK", True)
+    monkeypatch.setattr(submission_module.queue_service, "has_live_worker", lambda: False)
+    monkeypatch.setattr("backend.worker.tasks.judge_task.JudgeTask", FakeJudgeTask)
+
+    service = FakeService(db=SimpleNamespace())
+    submission = SimpleNamespace(id="s1", problem_id="p1", code="print(1)", language="python")
+
+    service._queue_or_judge_now(submission, use_hidden=False, judge_code="print(1)")
+
+    assert updates == [SubmissionStatus.JUDGING, SubmissionStatus.FINISHED]
+
+
+def test_inline_judging_requires_debug_or_explicit_fallback(monkeypatch):
+    monkeypatch.setattr(submission_module.settings, "JUDGE_ASYNC", False)
+    monkeypatch.setattr(submission_module.settings, "DEBUG", False)
+    monkeypatch.setattr(submission_module.settings, "JUDGE_INLINE_FALLBACK", None)
+
+    service = SubmissionService(db=SimpleNamespace())
+    submission = SimpleNamespace(id="s1", problem_id="p1", code="print(1)", language="python")
+
+    with pytest.raises(JudgeServiceUnavailableError, match="Judge service unavailable"):
+        service._queue_or_judge_now(submission, use_hidden=False, judge_code="print(1)")
 
 
 def test_regular_user_cannot_submit_private_problem():
