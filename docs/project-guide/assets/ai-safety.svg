@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-labelledby="title desc">
+  <title id="title">AI safety boundary</title>
+  <desc id="desc">Public problem context, user code after redaction, public testcase results, and hidden failure summary can be sent to AI. Hidden testcase bodies and secrets are blocked.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#16a34a"/>
+    </marker>
+    <marker id="block" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#dc2626"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .box { fill: #ffffff; stroke: #111827; stroke-width: 2; rx: 12; }
+      .allow { fill: #f0fdf4; stroke: #16a34a; }
+      .deny { fill: #fef2f2; stroke: #dc2626; }
+      .ai { fill: #faf5ff; stroke: #9333ea; }
+      .title { font: 700 24px Arial, "Microsoft YaHei", sans-serif; fill: #111827; }
+      .label { font: 700 17px Arial, "Microsoft YaHei", sans-serif; fill: #111827; }
+      .small { font: 14px Arial, "Microsoft YaHei", sans-serif; fill: #374151; }
+      .ok { stroke: #16a34a; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .no { stroke: #dc2626; stroke-width: 2.5; stroke-dasharray: 7 6; fill: none; marker-end: url(#block); }
+    </style>
+  </defs>
+  <rect class="bg" width="1100" height="620"/>
+  <text x="50" y="54" class="title">AI 安全边界：只给安全上下文</text>
+
+  <rect x="70" y="120" width="330" height="330" class="box allow"/>
+  <text x="105" y="162" class="label">Allowed context</text>
+  <text x="105" y="202" class="small">题目标题、描述、难度、标签</text>
+  <text x="105" y="238" class="small">用户代码，先做 secret redaction</text>
+  <text x="105" y="274" class="small">公开用例 input / expected / actual</text>
+  <text x="105" y="310" class="small">verdict、公开错误信息</text>
+  <text x="105" y="346" class="small">隐藏失败摘要，不含隐藏内容</text>
+
+  <rect x="700" y="120" width="330" height="330" class="box deny"/>
+  <text x="735" y="162" class="label">Blocked context</text>
+  <text x="735" y="202" class="small">隐藏用例 input</text>
+  <text x="735" y="238" class="small">隐藏 expected output</text>
+  <text x="735" y="274" class="small">隐藏 actual output</text>
+  <text x="735" y="310" class="small">JWT、API key、数据库连接串</text>
+  <text x="735" y="346" class="small">模型原始敏感响应和日志</text>
+
+  <rect x="445" y="220" width="210" height="130" class="box ai"/>
+  <text x="495" y="268" class="label">AI Provider</text>
+  <text x="482" y="300" class="small">OpenAI-compatible</text>
+  <text x="484" y="326" class="small">JSON response schema</text>
+
+  <path class="ok" d="M400 285 H445"/>
+  <text x="415" y="270" class="small">send</text>
+  <path class="no" d="M700 285 H655"/>
+  <text x="660" y="270" class="small">omit / redact</text>
+
+  <rect x="160" y="500" width="780" height="70" class="box"/>
+  <text x="190" y="532" class="label">三层保护</text>
+  <text x="190" y="558" class="small">JudgeTask 写库省略隐藏内容；提交 API 过滤隐藏结果；AIService 只构造公开上下文。</text>
+</svg>
