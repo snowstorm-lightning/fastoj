@@ -180,6 +180,13 @@ function displayNameForUser(user?: Pick<CurrentUser, "id" | "username"> | null) 
   return saved || user?.username || "FastOJ User";
 }
 
+function createLocalDiscussionId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `${Date.now()}.${Math.random().toString(36).slice(2)}`;
+}
+
 function saveDisplayNameForUser(user: Pick<CurrentUser, "id"> | null | undefined, displayName: string) {
   const key = displayNameStorageKey(user?.id);
   if (!key) return;
@@ -2203,7 +2210,14 @@ function DiscussionPanel({
   const text = UI[locale];
   const key = `fastoj.discussion.${problemId}`;
   const [body, setBody] = useState("");
-  const [posts, setPosts] = useState<DiscussionPost[]>(() => JSON.parse(localStorage.getItem(key) ?? "[]"));
+  const [posts, setPosts] = useState<DiscussionPost[]>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) ?? "[]");
+      return Array.isArray(parsed) ? parsed as DiscussionPost[] : [];
+    } catch {
+      return [];
+    }
+  });
 
   function post() {
     if (!authenticated) {
@@ -2213,7 +2227,7 @@ function DiscussionPanel({
     const trimmed = body.trim();
     if (!trimmed) return;
     const next = [
-      { id: crypto.randomUUID(), author: displayNameForUser(currentUser), body: trimmed, createdAt: new Date().toISOString() },
+      { id: createLocalDiscussionId(), author: displayNameForUser(currentUser), body: trimmed, createdAt: new Date().toISOString() },
       ...posts,
     ];
     setPosts(next);
