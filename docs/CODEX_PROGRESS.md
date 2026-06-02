@@ -1,5 +1,14 @@
 # Codex Progress
 
+## 2026-06-02 Frontend Chunk Optimization
+
+- [x] Converted heavyweight frontend modules to `React.lazy` with localized `Suspense` fallbacks: Monaco editor, run result panel, AI copilot panel, judge timeline, submission trail, solution code block, training graph, auth page, and settings page.
+- [x] Changed Monaco from the package root import to the ESM editor API with explicit editor worker wiring and only FastOJ language contributions (`python`, `c/cpp`, `java`, `javascript`, `typescript`, `go`).
+- [x] Changed Shiki code highlighting from the full default bundle to `shiki/core` with cached per-language highlighters and dynamic loading for the supported solution languages plus the `github-dark` theme.
+- [x] Split auth/settings UI into a lazy-loaded component module without adding routing or new dependencies.
+- [x] `cd frontend && npm run build` passed; the main `index-*.js` chunk dropped from about 1.25 MB to 499.81 kB. Vite still warns because lazy-loaded Monaco `editor.api2` and the Shiki C++ grammar chunk exceed 500 kB.
+- [x] Verification passed: `cd frontend && npm test` (9 files / 26 tests); `uv run ruff check .`; `uv run pytest` (176 passed).
+
 ## 2026-06-02 Worker Parent/Child Judge Hardening
 
 - [x] Added worker parent/child supervision so each Redis Streams judge task runs in a spawned child process while the parent keeps heartbeat, active-task state, timeout supervision, and retry/dead-letter handling.

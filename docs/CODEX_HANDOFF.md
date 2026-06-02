@@ -6,6 +6,14 @@ Updated: 2026-06-02
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
 
+## 2026-06-02 Frontend Chunk Optimization
+
+- The frontend now lazy-loads heavy UI modules from the single `main.tsx` entry: code editor, run result panel, AI panel, judge timeline, submission trail, solution code block, training graph, auth page, and settings page.
+- Monaco is imported through the ESM editor API with explicit `editor.worker?worker` setup and only FastOJ language contributions. The editor remains lazy-loaded from the workbench.
+- Shiki no longer uses the full default bundle. `CodeBlock` dynamically imports `shiki/core`, the JavaScript regex engine, `github-dark`, and only the requested supported solution language, with cached highlighters per language.
+- The main production `index-*.js` chunk is now 499.81 kB, down from about 1.25 MB. `npm run build` still prints Vite's large chunk warning because lazy-loaded Monaco `editor.api2` and the Shiki C++ grammar chunk are larger than 500 kB; `chunkSizeWarningLimit` was intentionally not raised.
+- Verification passed: `cd frontend && npm run build`; `cd frontend && npm test` (9 files / 26 tests); `uv run ruff check .`; `uv run pytest` (176 passed).
+
 ## 2026-06-02 Worker Parent/Child Judge Hardening
 
 - Judge worker now uses a parent/child model by default. The parent keeps heartbeat, pending reclaim, Redis task intake, active-task markers, and hard-timeout supervision; each child processes exactly one judge task through `JudgeTaskConsumer`.

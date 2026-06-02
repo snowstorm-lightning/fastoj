@@ -1829,6 +1829,24 @@ p {
   min-height: 0;
 }
 
+.lazy-surface {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  color: var(--color-muted);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.lazy-surface.code-editor,
+.lazy-surface.run-result-panel,
+.lazy-surface.timeline,
+.lazy-surface.copilot-panel,
+.lazy-surface.trail {
+  min-height: 180px;
+}
+
 .run-result-panel {
   min-height: 0;
   overflow: hidden;

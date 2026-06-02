@@ -1,5 +1,22 @@
-import * as monaco from "monaco-editor";
 import { useEffect, useRef } from "react";
+import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
+import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import "monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution.js";
+import "monaco-editor/esm/vs/basic-languages/go/go.contribution.js";
+import "monaco-editor/esm/vs/basic-languages/java/java.contribution.js";
+import "monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution.js";
+import "monaco-editor/esm/vs/basic-languages/python/python.contribution.js";
+import "monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution.js";
+
+type MonacoGlobal = typeof globalThis & {
+  MonacoEnvironment?: {
+    getWorker(workerId: string, label: string): Worker;
+  };
+};
+
+(globalThis as MonacoGlobal).MonacoEnvironment = {
+  getWorker: () => new EditorWorker(),
+};
 
 const LANGUAGE_MAP: Record<string, string> = {
   python: "python",

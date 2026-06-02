@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 
@@ -17,7 +17,6 @@ import {
   type CurrentUser,
   type ProblemDraft,
   type ProblemFilters,
-  type UpdateMePayload,
 } from "./lib/api";
 import {
   type AIExplain,
@@ -60,15 +59,38 @@ import {
 } from "./lib/i18n";
 import { measureTrainingText } from "./lib/textLayout";
 import { LANGUAGES, useAppStore } from "./stores/useAppStore";
-import { AICopilotPanel } from "./components/AICopilotPanel";
-import { CodeBlock } from "./components/CodeBlock";
-import { CodeEditor } from "./components/CodeEditor";
-import { JudgeTimeline, type JudgeEvent } from "./components/JudgeTimeline";
-import { RunResultPanel, type EditableRunCase, type RunSnapshot } from "./components/RunResultPanel";
-import { SubmissionTrail } from "./components/SubmissionTrail";
-import { TrainingGraph } from "./components/TrainingGraph";
+import type { JudgeEvent } from "./components/JudgeTimeline";
+import type { EditableRunCase, RunSnapshot } from "./components/RunResultPanel";
 
 const queryClient = new QueryClient();
+
+const AICopilotPanel = React.lazy(() =>
+  import("./components/AICopilotPanel").then(({ AICopilotPanel }) => ({ default: AICopilotPanel })),
+);
+const AuthPage = React.lazy(() =>
+  import("./components/AuthPages").then(({ AuthPage }) => ({ default: AuthPage })),
+);
+const CodeBlock = React.lazy(() =>
+  import("./components/CodeBlock").then(({ CodeBlock }) => ({ default: CodeBlock })),
+);
+const CodeEditor = React.lazy(() =>
+  import("./components/CodeEditor").then(({ CodeEditor }) => ({ default: CodeEditor })),
+);
+const JudgeTimeline = React.lazy(() =>
+  import("./components/JudgeTimeline").then(({ JudgeTimeline }) => ({ default: JudgeTimeline })),
+);
+const RunResultPanel = React.lazy(() =>
+  import("./components/RunResultPanel").then(({ RunResultPanel }) => ({ default: RunResultPanel })),
+);
+const SettingsPage = React.lazy(() =>
+  import("./components/AuthPages").then(({ SettingsPage }) => ({ default: SettingsPage })),
+);
+const SubmissionTrail = React.lazy(() =>
+  import("./components/SubmissionTrail").then(({ SubmissionTrail }) => ({ default: SubmissionTrail })),
+);
+const TrainingGraph = React.lazy(() =>
+  import("./components/TrainingGraph").then(({ TrainingGraph }) => ({ default: TrainingGraph })),
+);
 
 type View = "library" | "workbench" | "graph" | "auth" | "settings" | "admin";
 type DetailTab = "cases" | "solution" | "judge" | "trail" | "discussion";
@@ -194,32 +216,6 @@ function createLocalDiscussionId() {
   return `${Date.now()}.${Math.random().toString(36).slice(2)}`;
 }
 
-function saveDisplayNameForUser(user: Pick<CurrentUser, "id"> | null | undefined, displayName: string) {
-  const key = displayNameStorageKey(user?.id);
-  if (!key) return;
-  const trimmed = displayName.trim();
-  if (trimmed) {
-    localStorage.setItem(key, trimmed);
-  } else {
-    localStorage.removeItem(key);
-  }
-}
-
-function localizedAuthError(message: string, text: ReturnType<typeof getUI>) {
-  const normalized = message.trim();
-  if (!normalized) return text.authFailure;
-  if (normalized === "Login failed" || normalized === "Incorrect username or password") {
-    return text.authInvalidCredentials;
-  }
-  if (normalized === "Username or email already registered") {
-    return text.authAlreadyRegistered;
-  }
-  if (normalized.startsWith("Validation failed:")) {
-    return text.authInvalidFields;
-  }
-  return normalized;
-}
-
 function runCasesFromProblem(problem?: ProblemDetail): EditableRunCase[] {
   const samples = problem?.sample_testcases ?? [];
   if (!samples.length) return [{ id: "case-1", input: "", expected_output: "" }];
@@ -320,228 +316,6 @@ function AuthBar({
         )}
       </div>
     </header>
-  );
-}
-
-function AuthPage({
-  mode,
-  locale,
-  onMode,
-  onDone,
-}: {
-  mode: AuthMode;
-  locale: Locale;
-  onMode: (mode: AuthMode) => void;
-  onDone: () => void;
-}) {
-  const text = getUI(locale);
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [message, setMessage] = useState<string>(text.authMessage);
-  const [dialog, setDialog] = useState<{ title: string; message: string; tone: "error" | "success"; onConfirm?: () => void } | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    setMessage(text.authMessage);
-  }, [text.authMessage]);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (mode === "register" && password !== confirmPassword) {
-      setMessage(text.passwordMismatch);
-      setDialog({ title: text.authDialogTitle, message: text.passwordMismatch, tone: "error" });
-      return;
-    }
-    setBusy(true);
-    try {
-      if (mode === "register") {
-        await api.register(username, email, password, locale);
-      }
-      await api.login(username, password);
-      setMessage(text.authSuccess);
-      if (mode === "register") {
-        setDialog({
-          title: text.registerSuccessTitle,
-          message: text.registerSuccessMessage,
-          tone: "success",
-          onConfirm: onDone,
-        });
-      } else {
-        onDone();
-      }
-    } catch (error) {
-      const errorMessage = localizedAuthError(error instanceof Error ? error.message : "", text);
-      setMessage(errorMessage);
-      setDialog({ title: text.authDialogTitle, message: errorMessage, tone: "error" });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <main className="auth-page">
-      <section className="auth-card">
-        <div className="auth-copy">
-          <p className="eyebrow">{localeText(locale, { zh: "FastOJ 账号", en: "FastOJ Account" })}</p>
-          <h1>{text.authPanelTitle}</h1>
-          <p>{text.accountCopy}</p>
-          <div className="auth-proof">
-            <span>{localeText(locale, { zh: "题库练习", en: "Problem practice" })}</span>
-            <span>{localeText(locale, { zh: "智能反馈", en: "Smart feedback" })}</span>
-            <span>{localeText(locale, { zh: "公平评测", en: "Fair judging" })}</span>
-          </div>
-        </div>
-        <form className="auth-form" onSubmit={submit} autoComplete="off">
-          <div className="auth-tabs" role="tablist" aria-label={localeText(locale, { zh: "认证方式", en: "Authentication mode" })}>
-            <button type="button" className={mode === "login" ? "active" : ""} onClick={() => onMode("login")}>{text.login}</button>
-            <button type="button" className={mode === "register" ? "active" : ""} onClick={() => onMode("register")}>{text.register}</button>
-          </div>
-          <label>{text.username}<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" /></label>
-          {mode === "register" ? <label>{text.email}<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="off" /></label> : null}
-          <label>{text.password}<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="off" /></label>
-          {mode === "register" ? <label>{text.confirmPassword}<input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="off" /></label> : null}
-          <button className="primary auth-submit" disabled={busy}>
-            {busy ? text.processing : mode === "login" ? text.loginContinue : text.registerContinue}
-          </button>
-          <p className="muted">{message}</p>
-        </form>
-        {dialog ? (
-          <div className="auth-dialog-backdrop" role="presentation">
-            <div className={`auth-dialog ${dialog.tone}`} role="alertdialog" aria-modal="true" aria-labelledby="auth-dialog-title">
-              <h2 id="auth-dialog-title">{dialog.title}</h2>
-              <p>{dialog.message}</p>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => {
-                  const onConfirm = dialog.onConfirm;
-                  setDialog(null);
-                  onConfirm?.();
-                }}
-              >
-                {text.dialogConfirm}
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </section>
-    </main>
-  );
-}
-
-function SettingsPage({
-  locale,
-  currentUser,
-  theme,
-  onTheme,
-  onLocaleChange,
-  onClose,
-  onProfileSaved,
-}: {
-  locale: Locale;
-  currentUser: CurrentUser | null;
-  theme: AppTheme;
-  onTheme: (theme: AppTheme) => void;
-  onLocaleChange: (locale: Locale) => void;
-  onClose: () => void;
-  onProfileSaved: (user: CurrentUser) => void;
-}) {
-  const text = getUI(locale);
-  const [displayName, setDisplayName] = useState(() => displayNameForUser(currentUser));
-  const [username, setUsername] = useState(currentUser?.username ?? "");
-  const [email, setEmail] = useState(currentUser?.email ?? "");
-  const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatar_url ?? "");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [compact, setCompact] = useState(localStorage.getItem("fastoj.compactMode") === "true");
-  const [saved, setSaved] = useState("");
-
-  useEffect(() => {
-    setDisplayName(displayNameForUser(currentUser));
-    setUsername(currentUser?.username ?? "");
-    setEmail(currentUser?.email ?? "");
-    setAvatarUrl(currentUser?.avatar_url ?? "");
-  }, [currentUser?.id, currentUser?.username, currentUser?.email, currentUser?.avatar_url]);
-
-  async function save() {
-    localStorage.setItem("fastoj.compactMode", String(compact));
-    const payload: UpdateMePayload = {
-      username: username.trim(),
-      email: email.trim(),
-      avatar_url: avatarUrl.trim() || null,
-      locale,
-    };
-    if (newPassword) {
-      payload.current_password = currentPassword;
-      payload.new_password = newPassword;
-    }
-    try {
-      const updated = await api.updateMe(payload);
-      saveDisplayNameForUser(updated, displayName);
-      onProfileSaved(updated);
-      setCurrentPassword("");
-      setNewPassword("");
-      setSaved(localeText(locale, { zh: "已保存。", en: "Saved." }));
-    } catch (error) {
-      setSaved(error instanceof Error ? error.message : localeText(locale, { zh: "保存失败。", en: "Save failed." }));
-    }
-  }
-
-  return (
-    <main className="settings-page">
-      <section className="settings-card account-card">
-        <button className="icon-button close-button tip" data-tip={localeText(locale, { zh: "关闭", en: "Close" })} onClick={onClose}>
-          <IconGlyph>x</IconGlyph>
-        </button>
-        <p className="eyebrow">{localeText(locale, { zh: "账号", en: "Account" })}</p>
-        <h1>{text.settingsTitle}</h1>
-        <p className="muted">{text.settingsCopy}</p>
-        <div className="account-profile">
-          <div className="avatar-preview">{avatarUrl ? <img src={avatarUrl} alt="" /> : (displayName.trim() || username || "F").slice(0, 1).toUpperCase()}</div>
-          <div>
-            <strong>{displayName.trim() || username || "FastOJ User"}</strong>
-            <span>{currentUser?.role === "admin" ? localeText(locale, { zh: "管理员", en: "Admin" }) : localeText(locale, { zh: "用户", en: "User" })}</span>
-          </div>
-        </div>
-        <div className="settings-grid">
-          <label>{text.displayName}<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
-          <label>{text.username}<input value={username} onChange={(event) => setUsername(event.target.value)} /></label>
-          <label>{text.email}<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" /></label>
-          <label>{localeText(locale, { zh: "头像 URL", en: "Avatar URL" })}<input value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value)} /></label>
-          <label>{localeText(locale, { zh: "当前密码", en: "Current password" })}<input value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} type="password" autoComplete="current-password" /></label>
-          <label>{localeText(locale, { zh: "新密码", en: "New password" })}<input value={newPassword} onChange={(event) => setNewPassword(event.target.value)} type="password" autoComplete="new-password" /></label>
-        </div>
-        <label className="toggle-row">
-          <input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} />
-          {text.compactMode}
-        </label>
-        <div className="theme-settings">
-          <span>{localeText(locale, { zh: "界面语言", en: "Interface language" })}</span>
-          <div className="segmented theme-segmented" role="group" aria-label={localeText(locale, { zh: "界面语言", en: "Interface language" })}>
-            {SUPPORTED_LOCALES.map((item) => (
-              <button type="button" key={item} className={locale === item ? "active" : ""} aria-pressed={locale === item} onClick={() => onLocaleChange(item)}>
-                {localeLabel(item)}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="theme-settings">
-          <span>{localeText(locale, { zh: "界面主题", en: "Theme" })}</span>
-          <div className="segmented theme-segmented" role="group" aria-label={localeText(locale, { zh: "界面主题", en: "Theme" })}>
-            <button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => onTheme("light")}>
-              {localeText(locale, { zh: "浅色", en: "Light" })}
-            </button>
-            <button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => onTheme("dark")}>
-              {localeText(locale, { zh: "深色", en: "Dark" })}
-            </button>
-          </div>
-        </div>
-        <button className="primary" onClick={save}>{text.saveSettings}</button>
-        {saved ? <p className="muted">{saved}</p> : null}
-      </section>
-    </main>
   );
 }
 
@@ -1977,7 +1751,9 @@ function Workspace({
             <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)}><IconGlyph>↑</IconGlyph></button>
           </div>
           <FunctionFrame problem={problem} mode={judgeMode} language={language} locale={locale} />
-          <CodeEditor language={language} value={code} onChange={updateCode} theme={theme} />
+          <Suspense fallback={<LazySurface className="code-editor" label={localeText(locale, { zh: "正在加载编辑器...", en: "Loading editor..." })} />}>
+            <CodeEditor language={language} value={code} onChange={updateCode} theme={theme} />
+          </Suspense>
           <div
             className="editor-result-resizer"
             role="separator"
@@ -1986,20 +1762,22 @@ function Workspace({
             title={localeText(locale, { zh: "拖动调整代码编辑器高度", en: "Drag to resize editor height" })}
             onPointerDown={startEditorResize}
           />
-          <RunResultPanel
-            locale={locale}
-            cases={runCases}
-            activeIndex={activeRunCase}
-            submission={submission}
-            snapshot={runSnapshot}
-            canRun={Boolean(problem)}
-            onActiveIndex={setActiveRunCase}
-            onChangeInput={updateRunCase}
-            onAddCase={addRunCase}
-            onRemoveCase={removeRunCase}
-            onResetCases={resetRunCases}
-            onRun={() => judge(true)}
-          />
+          <Suspense fallback={<LazySurface className="run-result-panel" label={localeText(locale, { zh: "正在加载运行结果...", en: "Loading run results..." })} />}>
+            <RunResultPanel
+              locale={locale}
+              cases={runCases}
+              activeIndex={activeRunCase}
+              submission={submission}
+              snapshot={runSnapshot}
+              canRun={Boolean(problem)}
+              onActiveIndex={setActiveRunCase}
+              onChangeInput={updateRunCase}
+              onAddCase={addRunCase}
+              onRemoveCase={removeRunCase}
+              onResetCases={resetRunCases}
+              onRun={() => judge(true)}
+            />
+          </Suspense>
         </section>
 
         <div className="panel-edge right-edge">
@@ -2018,7 +1796,9 @@ function Workspace({
         <aside className="result-sidebar feature-frame result-frame">
           {rightOpen ? (
             <div className="ai-region">
-              <AICopilotPanel submission={submission} explain={explain} review={review} hint={hint} chatLines={chatLines} error={aiError} disabled={!aiReady} disabledReason={aiDisabledReason} onExplain={explainSubmission} onReview={reviewSubmission} onHint={requestHint} onChat={sendChat} locale={locale} />
+              <Suspense fallback={<LazySurface className="copilot-panel" label={localeText(locale, { zh: "正在加载 AI 面板...", en: "Loading AI panel..." })} />}>
+                <AICopilotPanel submission={submission} explain={explain} review={review} hint={hint} chatLines={chatLines} error={aiError} disabled={!aiReady} disabledReason={aiDisabledReason} onExplain={explainSubmission} onReview={reviewSubmission} onHint={requestHint} onChat={sendChat} locale={locale} />
+              </Suspense>
             </div>
           ) : null}
         </aside>
@@ -2035,6 +1815,10 @@ function StatusBadge({ submission, locale }: { submission: SubmissionDetail | nu
 
 function TabButton({ tab, active, onClick, children }: { tab: DetailTab; active: DetailTab; onClick: (tab: DetailTab) => void; children: React.ReactNode }) {
   return <button title={String(children)} className={active === tab ? "active" : ""} role="tab" aria-selected={active === tab} onClick={() => onClick(tab)}>{children}</button>;
+}
+
+function LazySurface({ label, className = "" }: { label: string; className?: string }) {
+  return <div className={className ? `lazy-surface ${className}` : "lazy-surface"}>{label}</div>;
 }
 
 function DetailDock({
@@ -2079,8 +1863,16 @@ function DetailDock({
       <div className="detail-panel">
         {detailTab === "cases" ? <SampleCases problem={problem} locale={locale} /> : null}
         {detailTab === "solution" ? <OfficialSolution problem={problem} solution={solution} locale={locale} /> : null}
-        {detailTab === "judge" ? <JudgeTimeline events={events} submission={submission} theme={theme} /> : null}
-        {detailTab === "trail" ? <SubmissionTrail submissions={trail} locale={locale} /> : null}
+        {detailTab === "judge" ? (
+          <Suspense fallback={<LazySurface className="timeline" label={localeText(locale, { zh: "正在加载判题记录...", en: "Loading judge timeline..." })} />}>
+            <JudgeTimeline events={events} submission={submission} theme={theme} />
+          </Suspense>
+        ) : null}
+        {detailTab === "trail" ? (
+          <Suspense fallback={<LazySurface className="trail" label={localeText(locale, { zh: "正在加载提交轨迹...", en: "Loading submission trail..." })} />}>
+            <SubmissionTrail submissions={trail} locale={locale} />
+          </Suspense>
+        ) : null}
         {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} currentUser={currentUser} onRequireAuth={onRequireAuth} /> : null}
       </div>
     </section>
@@ -2230,7 +2022,11 @@ function OfficialSolution({ problem, solution, locale }: { problem?: ProblemDeta
   return (
     <article className="prose-panel">
       <p>{solution.explanation}</p>
-      {solution.code.trim() ? <CodeBlock code={solution.code} language={solution.language} /> : null}
+      {solution.code.trim() ? (
+        <Suspense fallback={<pre className="sample">{solution.code}</pre>}>
+          <CodeBlock code={solution.code} language={solution.language} />
+        </Suspense>
+      ) : null}
     </article>
   );
 }
@@ -3740,8 +3536,16 @@ function App() {
   return (
     <div className="app-shell" data-theme={theme}>
       <AuthBar view={view} authenticated={authenticated} currentUser={currentUser} locale={locale} theme={theme} onView={setView} onAuth={openAuth} onLogout={logout} onLocale={toggleLocale} onTheme={setTheme} />
-      {view === "auth" ? <AuthPage mode={authMode} locale={locale} onMode={setAuthMode} onDone={() => { setAuthenticated(true); setView("library"); }} /> : null}
-      {view === "settings" ? <SettingsPage locale={locale} currentUser={currentUser} theme={theme} onTheme={setTheme} onLocaleChange={setLocalePreference} onClose={() => setView("library")} onProfileSaved={setCurrentUser} /> : null}
+      {view === "auth" ? (
+        <Suspense fallback={<LazySurface className="auth-page" label={localeText(locale, { zh: "正在加载账号页面...", en: "Loading account page..." })} />}>
+          <AuthPage mode={authMode} locale={locale} onMode={setAuthMode} onDone={() => { setAuthenticated(true); setView("library"); }} />
+        </Suspense>
+      ) : null}
+      {view === "settings" ? (
+        <Suspense fallback={<LazySurface className="settings-page" label={localeText(locale, { zh: "正在加载设置...", en: "Loading settings..." })} />}>
+          <SettingsPage locale={locale} currentUser={currentUser} theme={theme} onTheme={setTheme} onLocaleChange={setLocalePreference} onClose={() => setView("library")} onProfileSaved={setCurrentUser} />
+        </Suspense>
+      ) : null}
       {view === "admin" ? <AdminPage locale={locale} currentUser={currentUser} onBack={() => setView("library")} /> : null}
       {view === "library" ? <LibraryPage selectedId={selectedId} selectedTag={graphTag} locale={locale} onSelect={openProblem} onGraph={() => setView("graph")} /> : null}
       {view === "workbench" ? (
@@ -3760,14 +3564,16 @@ function App() {
         />
       ) : null}
       {view === "graph" ? (
-        <TrainingGraph
-          problems={problems}
-          locale={locale}
-          onTag={(tag) => {
-            setGraphTag(tag);
-            setView("library");
-          }}
-        />
+        <Suspense fallback={<LazySurface className="graph-page" label={localeText(locale, { zh: "正在加载知识图谱...", en: "Loading knowledge graph..." })} />}>
+          <TrainingGraph
+            problems={problems}
+            locale={locale}
+            onTag={(tag) => {
+              setGraphTag(tag);
+              setView("library");
+            }}
+          />
+        </Suspense>
       ) : null}
     </div>
   );
