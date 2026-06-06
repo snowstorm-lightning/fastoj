@@ -1,10 +1,19 @@
 # Codex Handoff
 
-Updated: 2026-06-02
+Updated: 2026-06-06
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-06-06 Shared Discussions And Workbench History Polish
+
+- Problem discussions are now persisted server-side through the new `problem_discussions` table and Alembic revision `20260606_0007`. `GET /api/v1/problems/{problem_id}/discussions` returns recent public-problem posts; `POST /api/v1/problems/{problem_id}/discussions` requires authentication.
+- The workbench discussion tab no longer writes localStorage notes. It loads shared discussion with TanStack Query, posts to the API, updates the query cache after successful posting, and keeps copy warning users not to paste hidden testcase content.
+- Admin problem deletion now removes related discussion rows alongside testcase, submission, testcase-result, solution, and draft-link cleanup.
+- Submission trail cards are expandable. Expanding a row lazily fetches the owner-scoped submission detail endpoint and displays the exact submitted code without adding code to the submission list response.
+- The left/right workbench rails can be dragged open even when collapsed. The snap-close threshold is narrower (`88px`), so near-edge drags must be closer before auto-collapsing.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (177 passed, existing FastAPI `regex` deprecation warnings); `cd frontend && npm run build` (existing large chunk warnings); `cd frontend && npm test` (9 files / 26 tests).
 
 ## 2026-06-02 Frontend Chunk Optimization
 

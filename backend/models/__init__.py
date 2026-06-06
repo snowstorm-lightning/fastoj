@@ -58,6 +58,7 @@ class User(Base):
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     submissions = relationship("Submission", back_populates="user")
+    discussions = relationship("ProblemDiscussion", back_populates="user")
 
 
 class Problem(Base):
@@ -92,6 +93,7 @@ class Problem(Base):
     testcases = relationship("TestCase", back_populates="problem")
     submissions = relationship("Submission", back_populates="problem")
     solutions = relationship("Solution", back_populates="problem")
+    discussions = relationship("ProblemDiscussion", back_populates="problem")
 
 
 class TestCase(Base):
@@ -175,6 +177,23 @@ class Solution(Base):
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     problem = relationship("Problem", back_populates="solutions")
+
+
+class ProblemDiscussion(Base):
+    __tablename__ = "problem_discussions"
+    __table_args__ = (
+        Index("idx_problem_discussions_problem_created", "problem_id", "created_at"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    problem_id = Column(UUID(as_uuid=True), ForeignKey("problems.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    problem = relationship("Problem", back_populates="discussions")
+    user = relationship("User", back_populates="discussions")
 
 
 class ProblemDraft(Base):

@@ -14,6 +14,8 @@ FastOJ 用 FastAPI 提供 API，PostgreSQL 保存题目和提交，Redis Streams
 
 ![FastOJ 总体运行架构](assets/architecture.svg)
 
+读图时注意：API 到 PostgreSQL 是常规业务数据读写；API 到 Redis 是判题任务调度、worker heartbeat 检查和状态 relay；AI provider 调用由 API 里的 `AIService` 发起，Worker 不直接调用 AI。Worker 会直接访问 PostgreSQL 写入判题结果。
+
 ## 后端分层
 
 后端目录不是随意堆代码，而是按职责分层：

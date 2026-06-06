@@ -32,7 +32,7 @@
   <text x="445" y="168" class="label">FastAPI API</text>
   <text x="445" y="198" class="small">鉴权、路由、服务层</text>
   <text x="445" y="224" class="small">提交创建、题目查询</text>
-  <text x="445" y="250" class="small">Redis status relay</text>
+  <text x="445" y="250" class="small">判题调度 / AI 路由</text>
 
   <rect x="820" y="105" width="250" height="115" class="box data"/>
   <text x="850" y="148" class="label">PostgreSQL</text>
@@ -65,18 +65,22 @@
   <text x="300" y="284" class="small">WebSocket</text>
 
   <path class="arrow" d="M670 170 C720 158, 760 150, 820 150"/>
-  <text x="704" y="136" class="small">SQLAlchemy</text>
+  <text x="704" y="136" class="small">SQLAlchemy 读写</text>
   <path class="arrow" d="M670 260 C720 290, 760 315, 820 330"/>
-  <text x="704" y="314" class="small">XADD / publish</text>
+  <text x="704" y="314" class="small">提交调度 / 状态 relay</text>
 
   <path class="arrow" d="M820 360 C760 390, 720 430, 670 478"/>
   <text x="705" y="430" class="small">XREADGROUP</text>
+  <path class="muted" d="M670 455 C725 410, 770 390, 820 372"/>
+  <text x="702" y="392" class="small">ACK / publish progress</text>
+  <path class="arrow" d="M670 470 C730 390, 765 255, 820 200"/>
+  <text x="704" y="248" class="small">写回判题结果</text>
   <path class="arrow" d="M670 505 C725 515, 770 525, 820 535"/>
   <text x="708" y="548" class="small">Docker SDK</text>
   <path class="arrow" d="M820 565 C750 625, 520 630, 470 565"/>
   <text x="575" y="654" class="small">verdict / testcase results</text>
-  <path class="muted" d="M410 520 C350 545, 300 555, 280 555"/>
-  <text x="304" y="575" class="small">AI calls from API</text>
+  <path class="muted" d="M410 285 C330 335, 292 435, 280 540"/>
+  <text x="290" y="388" class="small">AIService 调 provider</text>
   <path class="arrow" d="M820 390 C650 410, 420 395, 250 280"/>
   <text x="500" y="410" class="small">status relay back to UI</text>
 </svg>

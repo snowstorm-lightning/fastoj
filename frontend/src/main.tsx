@@ -24,6 +24,7 @@ import {
   type AIHint,
   type AIReview,
   type ProblemDetail,
+  type ProblemDiscussion,
   type ProblemListItem,
   type SubmissionDetail,
 } from "./lib/schemas";
@@ -98,7 +99,6 @@ type AuthMode = "login" | "register";
 type LibraryLayout = "card" | "list";
 type AppTheme = "light" | "dark";
 type ProblemAuthoringMode = "function" | "acm" | "both";
-type DiscussionPost = { id: string; author: string; body: string; createdAt: string };
 type AIChatLine = { id: string; role: "user" | "assistant"; message: string; suggestions?: string[] };
 type DraftEditCase = {
   input: string;
@@ -194,27 +194,10 @@ const MAX_RUN_CASES = 8;
 const DEFAULT_LEFT_PANEL_WIDTH = 390;
 const DEFAULT_RIGHT_PANEL_WIDTH = 430;
 const DEFAULT_EDITOR_HEIGHT = 390;
-const SIDE_PANEL_SNAP_WIDTH = 140;
+const SIDE_PANEL_SNAP_WIDTH = 88;
 const SIDE_PANEL_DRAG_MIN = 56;
 const EDITOR_MIN_HEIGHT = 260;
 const EDITOR_MAX_HEIGHT = 720;
-
-function displayNameStorageKey(userId?: string | null) {
-  return userId ? `fastoj.displayName.${userId}` : null;
-}
-
-function displayNameForUser(user?: Pick<CurrentUser, "id" | "username"> | null) {
-  const key = displayNameStorageKey(user?.id);
-  const saved = key ? localStorage.getItem(key)?.trim() : "";
-  return saved || user?.username || "FastOJ User";
-}
-
-function createLocalDiscussionId() {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID();
-  }
-  return `${Date.now()}.${Math.random().toString(36).slice(2)}`;
-}
 
 function runCasesFromProblem(problem?: ProblemDetail): EditableRunCase[] {
   const samples = problem?.sample_testcases ?? [];
@@ -1379,10 +1362,20 @@ function Workspace({
   function startResize(side: "left" | "right", event: React.PointerEvent<HTMLDivElement>) {
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = side === "left" ? leftWidth : rightWidth;
+    const panelOpen = side === "left" ? leftOpen : rightOpen;
+    const startWidth = panelOpen ? (side === "left" ? leftWidth : rightWidth) : SIDE_PANEL_DRAG_MIN;
     const maxWidth = side === "left" ? 860 : 820;
     const defaultWidth = side === "left" ? DEFAULT_LEFT_PANEL_WIDTH : DEFAULT_RIGHT_PANEL_WIDTH;
     let latestWidth = startWidth;
+    if (!panelOpen) {
+      if (side === "left") {
+        setLeftOpen(true);
+        setLeftWidth(startWidth);
+      } else {
+        setRightOpen(true);
+        setRightWidth(startWidth);
+      }
+    }
     setResizing(side);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
@@ -1717,7 +1710,6 @@ function Workspace({
                 problemId={problemId}
                 locale={locale}
                 authenticated={authenticated}
-                currentUser={currentUser}
                 onRequireAuth={onRequireAuth}
               />
             </>
@@ -1732,7 +1724,7 @@ function Workspace({
             role="separator"
             aria-label={localeText(locale, { zh: "调整题面面板宽度", en: "Resize statement panel" })}
             title={localeText(locale, { zh: "拖动调整题面宽度", en: "Drag to resize statement" })}
-            onPointerDown={(event) => leftOpen && startResize("left", event)}
+            onPointerDown={(event) => startResize("left", event)}
           />
         </div>
 
@@ -1786,7 +1778,7 @@ function Workspace({
             role="separator"
             aria-label={localeText(locale, { zh: "调整 AI 辅助面板宽度", en: "Resize AI panel" })}
             title={localeText(locale, { zh: "拖动调整 AI 辅助宽度", en: "Drag to resize AI panel" })}
-            onPointerDown={(event) => rightOpen && startResize("right", event)}
+            onPointerDown={(event) => startResize("right", event)}
           />
           <button className="edge-toggle" title={rightOpen ? text.collapseRight : text.expandRight} onClick={() => setRightOpen((value) => !value)}>
             <PanelToggleIcon open={rightOpen} side="right" />
@@ -1833,7 +1825,6 @@ function DetailDock({
   problemId,
   locale,
   authenticated,
-  currentUser,
   onRequireAuth,
 }: {
   detailTab: DetailTab;
@@ -1847,7 +1838,6 @@ function DetailDock({
   problemId: string;
   locale: Locale;
   authenticated: boolean;
-  currentUser: CurrentUser | null;
   onRequireAuth: () => void;
 }) {
   const text = getUI(locale);
@@ -1873,7 +1863,7 @@ function DetailDock({
             <SubmissionTrail submissions={trail} locale={locale} />
           </Suspense>
         ) : null}
-        {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} currentUser={currentUser} onRequireAuth={onRequireAuth} /> : null}
+        {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} onRequireAuth={onRequireAuth} /> : null}
       </div>
     </section>
   );
@@ -2035,61 +2025,76 @@ function DiscussionPanel({
   problemId,
   locale,
   authenticated,
-  currentUser,
   onRequireAuth,
 }: {
   problemId: string;
   locale: Locale;
   authenticated: boolean;
-  currentUser: CurrentUser | null;
   onRequireAuth: () => void;
 }) {
   const text = getUI(locale);
-  const key = `fastoj.discussion.${problemId}`;
   const [body, setBody] = useState("");
-  const [posts, setPosts] = useState<DiscussionPost[]>(() => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(key) ?? "[]");
-      return Array.isArray(parsed) ? parsed as DiscussionPost[] : [];
-    } catch {
-      return [];
-    }
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const discussionsQuery = useQuery({
+    queryKey: ["problem-discussions", problemId],
+    queryFn: () => api.discussions(problemId),
+    enabled: Boolean(problemId),
   });
+  const posts = discussionsQuery.data ?? [];
 
-  function post() {
+  async function post() {
     if (!authenticated) {
       onRequireAuth();
       return;
     }
     const trimmed = body.trim();
     if (!trimmed) return;
-    const next = [
-      { id: createLocalDiscussionId(), author: displayNameForUser(currentUser), body: trimmed, createdAt: new Date().toISOString() },
-      ...posts,
-    ];
-    setPosts(next);
-    localStorage.setItem(key, JSON.stringify(next));
-    setBody("");
+    try {
+      setPosting(true);
+      setError(null);
+      const created = await api.createDiscussion(problemId, trimmed);
+      queryClient.setQueryData<ProblemDiscussion[]>(["problem-discussions", problemId], (items = []) => [
+        created,
+        ...items.filter((item) => item.id !== created.id),
+      ]);
+      setBody("");
+    } catch (postError) {
+      if (isUnauthorized(postError)) {
+        localStorage.removeItem("fastoj.jwt");
+        onRequireAuth();
+      }
+      setError(postError instanceof Error ? postError.message : localeText(locale, { zh: "发布失败。", en: "Post failed." }));
+    } finally {
+      setPosting(false);
+    }
   }
 
   return (
     <section className="discussion-panel">
       <h3>{text.discussionTitle}</h3>
       <p className="muted">{authenticated ? text.discussionLocalNotice : text.discussionLoginRequired}</p>
+      {discussionsQuery.isLoading ? <p className="muted">{localeText(locale, { zh: "正在加载讨论...", en: "Loading discussion..." })}</p> : null}
+      {discussionsQuery.isError ? <p className="muted">{localeText(locale, { zh: "讨论加载失败。", en: "Discussion failed to load." })}</p> : null}
+      {error ? <p className="muted">{error}</p> : null}
       <textarea
         value={body}
         onChange={(event) => setBody(event.target.value)}
         placeholder={text.discussionPlaceholder}
-        disabled={!authenticated}
+        disabled={!authenticated || posting}
+        maxLength={2000}
       />
-      <button className="primary" onClick={post} disabled={!authenticated || !body.trim()}>{text.postDiscussion}</button>
+      <button className="primary" onClick={post} disabled={!authenticated || !body.trim() || posting}>
+        {posting ? localeText(locale, { zh: "发布中...", en: "Posting..." }) : text.postDiscussion}
+      </button>
       {posts.length ? posts.map((item) => (
         <article className="discussion-post" key={item.id}>
           <strong>{item.author}</strong>
-          <small>{new Date(item.createdAt).toLocaleString()}</small>
+          <small>{new Date(item.created_at).toLocaleString()}</small>
           <p>{item.body}</p>
         </article>
-      )) : <p className="muted">{text.noDiscussion}</p>}
+      )) : null}
+      {!discussionsQuery.isLoading && !discussionsQuery.isError && !posts.length ? <p className="muted">{text.noDiscussion}</p> : null}
     </section>
   );
 }

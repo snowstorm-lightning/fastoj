@@ -29,7 +29,7 @@ for that.
   themes, and includes a searchable problem library, card/list layouts, a
   three-column workbench, editable public-run inputs with official-solution
   expected output generation, output diffing, judge timeline, AI drawer,
-  submission trail, browser-local discussion notes, settings, admin screens with testcase
+  expandable submission-code history, shared problem discussions, settings, admin screens with testcase
   management, and a training graph.
 - **It is ready for provider experiments.** The AI layer uses an
   OpenAI-compatible profile, with examples for hosted DeepSeek-style APIs and a
@@ -49,6 +49,8 @@ for that.
    judging, and watch status move from pending to result. When code is wrong,
    the page shows judge feedback and the right-side AI judge assistant continues
    with likely causes, suspicious code regions, boundary checks, and next steps.
+   Submission history entries expand to show the submitted code, and problem
+   discussions are shared through the backend instead of local browser storage.
 4. **AI Copilot** - request progressive hints, failed-submission explanations,
    code review, and contextual chat in the active UI language.
 5. **Training graph** - browse knowledge nodes and return to the library with the

@@ -4,6 +4,7 @@ import {
   aiHintSchema,
   aiReviewSchema,
   problemDetailSchema,
+  problemDiscussionSchema,
   problemListItemSchema,
   submissionDetailSchema,
   type AIExplain,
@@ -11,6 +12,7 @@ import {
   type AIHint,
   type AIReview,
   type ProblemDetail,
+  type ProblemDiscussion,
   type ProblemListItem,
   type SubmissionDetail,
 } from "./schemas";
@@ -483,6 +485,17 @@ export const api = {
     return request(`/api/v1/problems/${id}`, { method: "GET" }, (data: any) =>
       problemDetailSchema.parse(data.data),
     );
+  },
+  async discussions(problemId: string): Promise<ProblemDiscussion[]> {
+    return request(`/api/v1/problems/${problemId}/discussions`, { method: "GET" }, (data: any) =>
+      problemDiscussionSchema.array().parse(data.data ?? []),
+    );
+  },
+  async createDiscussion(problemId: string, body: string): Promise<ProblemDiscussion> {
+    return request(`/api/v1/problems/${problemId}/discussions`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    }, (data: any) => problemDiscussionSchema.parse(data.data));
   },
   async submit(
     problem_id: string,

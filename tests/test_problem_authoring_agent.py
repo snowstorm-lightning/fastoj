@@ -33,6 +33,7 @@ from backend.models import (
     AgentStep,
     Difficulty,
     Problem,
+    ProblemDiscussion,
     ProblemDraft,
     Solution,
     Submission,
@@ -944,6 +945,12 @@ def test_admin_can_delete_problem_and_related_rows():
         explanation="Return one.",
         is_official=True,
     )
+    discussion = ProblemDiscussion(
+        id=uuid.uuid4(),
+        problem_id=problem.id,
+        user_id=user.id,
+        body="Shared note",
+    )
     draft = ProblemDraft(
         id=uuid.uuid4(),
         title="Delete Me",
@@ -961,7 +968,7 @@ def test_admin_can_delete_problem_and_related_rows():
         created_by=user.id,
         approved_problem_id=problem.id,
     )
-    for item in [problem, testcase, submission, testcase_result, solution, draft]:
+    for item in [problem, testcase, submission, testcase_result, solution, discussion, draft]:
         db.add(item)
 
     response = delete_problem(str(problem.id), db, user)
@@ -971,12 +978,14 @@ def test_admin_can_delete_problem_and_related_rows():
     assert response["deleted"]["submissions"] == 1
     assert response["deleted"]["testcase_results"] == 1
     assert response["deleted"]["solutions"] == 1
+    assert response["deleted"]["discussions"] == 1
     assert response["deleted"]["draft_links_cleared"] == 1
     assert db.data[Problem] == []
     assert db.data[OJTestCase] == []
     assert db.data[Submission] == []
     assert db.data[CaseResultModel] == []
     assert db.data[Solution] == []
+    assert db.data[ProblemDiscussion] == []
     assert draft.approved_problem_id is None
 
 

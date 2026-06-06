@@ -34,6 +34,8 @@
 
 这个图可以作为项目讲解的第一层：前端负责交互，API 负责鉴权和业务入口，数据库保存题目/提交/结果，Redis Streams 解耦异步判题，Worker parent 监督 judge child 调 Docker 沙箱执行用户代码，WebSocket 把进度推回页面，AI 服务只拿到安全上下文。
 
+读图时注意三条容易混淆的线：API 访问 PostgreSQL 发生在题目查询、提交创建、鉴权、AI 上下文读取等持久化业务里；API 访问 Redis 主要发生在提交调度、worker heartbeat 检查和状态 relay；AI provider 调用由 API 进程里的 `AIService` 发起，Worker 不直接调用 AI。
+
 ## 代码导航
 
 - FastAPI 路由注册：[backend/main.py:91](../../backend/main.py#L91)

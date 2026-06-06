@@ -16,6 +16,7 @@ from backend.core.locales import DEFAULT_LOCALE, ai_response_language
 from backend.models import (
     Difficulty,
     Problem,
+    ProblemDiscussion,
     ProblemDraft,
     Solution,
     Submission,
@@ -304,6 +305,7 @@ def delete_problem(
     testcases = db.query(TestCase).filter(TestCase.problem_id == problem.id).all()
     submissions = db.query(Submission).filter(Submission.problem_id == problem.id).all()
     solutions = db.query(Solution).filter(Solution.problem_id == problem.id).all()
+    discussions = db.query(ProblemDiscussion).filter(ProblemDiscussion.problem_id == problem.id).all()
     linked_drafts = db.query(ProblemDraft).filter(ProblemDraft.approved_problem_id == problem.id).all()
 
     testcase_results: list[TestCaseResult] = []
@@ -330,6 +332,8 @@ def delete_problem(
         db.delete(submission)
     for solution in solutions:
         db.delete(solution)
+    for discussion in discussions:
+        db.delete(discussion)
     for testcase in testcases:
         db.delete(testcase)
     db.delete(problem)
@@ -342,6 +346,7 @@ def delete_problem(
             "submissions": len(submissions),
             "testcase_results": len(testcase_results),
             "solutions": len(solutions),
+            "discussions": len(discussions),
             "draft_links_cleared": len(linked_drafts),
         },
     }

@@ -65,6 +65,16 @@ export const problemDetailSchema = z.object({
   created_at: z.string(),
 });
 
+export const problemDiscussionSchema = z.object({
+  id: z.string(),
+  problem_id: z.string(),
+  user_id: z.string(),
+  author: z.string(),
+  body: z.string(),
+  created_at: z.string(),
+  updated_at: z.string().nullable().optional(),
+});
+
 export const aiExplainSchema = z.object({
   summary: z.string(),
   verdict: z.enum([
@@ -124,6 +134,7 @@ export const aiChatSchema = z.object({
 
 export type ProblemListItem = z.infer<typeof problemListItemSchema>;
 export type ProblemDetail = z.infer<typeof problemDetailSchema>;
+export type ProblemDiscussion = z.infer<typeof problemDiscussionSchema>;
 export type SubmissionDetail = z.infer<typeof submissionDetailSchema>;
 export type AIExplain = z.infer<typeof aiExplainSchema>;
 export type AIReview = z.infer<typeof aiReviewSchema>;

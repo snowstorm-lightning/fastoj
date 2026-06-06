@@ -1,5 +1,14 @@
 # Codex Progress
 
+## 2026-06-06 Shared Discussions And Workbench History Polish
+
+- [x] Added persisted problem discussions with a new `problem_discussions` table, Alembic migration, Pydantic schemas, and `GET/POST /api/v1/problems/{problem_id}/discussions`.
+- [x] Changed the workbench discussion tab from browser-local notes to server-backed problem discussion visible to other users; posting still requires login and keeps the hidden-testcase warning.
+- [x] Updated admin problem deletion to remove related discussion rows and added regression coverage for persisted discussion creation/listing and delete cleanup.
+- [x] Made submission trail items expandable; clicking a historical submission now fetches `/submissions/{id}` and shows the submitted code to the owning user.
+- [x] Changed collapsed left/right workbench resize rails so dragging the green rail reopens the panel, and reduced the snap-close threshold from 140px to 88px.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (177 passed); `cd frontend && npm run build` with existing large chunk warnings; `cd frontend && npm test` (9 files / 26 tests).
+
 ## 2026-06-02 Frontend Chunk Optimization
 
 - [x] Converted heavyweight frontend modules to `React.lazy` with localized `Suspense` fallbacks: Monaco editor, run result panel, AI copilot panel, judge timeline, submission trail, solution code block, training graph, auth page, and settings page.
