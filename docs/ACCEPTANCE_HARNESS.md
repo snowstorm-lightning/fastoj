@@ -1,6 +1,6 @@
 # FastOJ Acceptance Harness
 
-Updated: 2026-05-17
+Updated: 2026-06-06
 
 This document is the repeatable acceptance harness for the current product shape. It intentionally avoids printing or storing hidden testcase input, expected output, actual output, JWTs, `.env` values, or AI provider raw responses.
 
@@ -58,7 +58,9 @@ Use the in-app browser or an equivalent local browser against `http://127.0.0.1:
 - Switch programming language.
 - Toggle function mode and ACM mode where supported.
 - Verify the central editor remains usable at 1280 px wide, with no clipped AI/detail panel.
+- Toggle code completion from the workbench toolbar, reload, and verify the preference persists.
 - Run public cases from the starter; a failure is acceptable if the starter is intentionally incomplete.
+- Add a custom run case and verify the case tab close button appears on hover/focus and deletes the case.
 - Replace starter code with a known local test solution and run public cases again.
 - Submit once and verify status moves through pending/judging/result using WebSocket-first status with polling fallback available.
 - Verify the judge details show public cases only. Hidden testcase rows may show aggregate counts or hidden labels only, never hidden input, expected output, or actual output.
@@ -89,7 +91,10 @@ Use the in-app browser or an equivalent local browser against `http://127.0.0.1:
 - Toggle problem visibility and restore it.
 - Verify hidden testcase content is not shown; counts are acceptable.
 - Generate or select a validation-failed problem draft and verify the validation area shows failed checks, aggregate counts, failed-case counts, and sandbox statuses only. It must not show hidden testcase bodies, expected outputs, actual outputs, raw stderr, or provider payloads.
-- Verify the current admin surface exposes management basics, but problem editor, testcase manager, submission audit, judge queue, and system health remain planned follow-ups.
+- Open the `导入题目` tab, paste a disposable public-domain or self-written problem-style paragraph longer than 20 characters, add optional source URL/import notes, and verify `导入为草稿` calls the admin import flow.
+- Select the imported draft and verify it shows a `导入` chip, source summary, raw material length, and a collapsible admin-only raw preview.
+- Verify published/public problem views do not show imported raw material or source metadata.
+- Verify the current admin surface exposes user/problem/testcase/solution management and draft review basics; submission audit, judge queue, and system health remain planned follow-ups.
 
 ## Visual Screenshot Inventory
 
@@ -104,6 +109,7 @@ Capture or visually inspect these screens after frontend layout changes:
 - Auth page.
 - Settings page.
 - Admin dashboard/users/problems panels.
+- Admin original authoring and imported draft panels.
 - Error states for auth/settings/admin validation.
 
 ## Safety Checks
@@ -111,6 +117,7 @@ Capture or visually inspect these screens after frontend layout changes:
 - Search visible browser text after a full submit for hidden testcase sentinels used in local tests. The expected result is no hidden input, expected output, or actual output.
 - Do not save screenshots or logs that contain JWTs, `.env` values, provider responses, or hidden testcase content.
 - Do not send hidden testcase content to AI provider requests. AI context may include public samples, user code, aggregate verdict, and safe hidden-failure summaries only.
+- Imported raw material may be sent only through the admin import flow and must remain admin-only metadata afterward. It must not appear in public problem responses, learner AI prompts, screenshots, or logs.
 - Admin UI access is not a security boundary. Confirm backend routes still use server-side admin checks.
 
 ## Automation Roadmap

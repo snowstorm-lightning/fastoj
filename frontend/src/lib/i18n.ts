@@ -1,5 +1,6 @@
 import type { ProblemDetail, ProblemListItem } from "./schemas";
 import { PROBLEM_ZH_EXTRA } from "./problemZh";
+import { detailedZhProblemDescription } from "./problemStatementZh";
 
 export const LOCALE_META = {
   zh: {
@@ -158,6 +159,9 @@ export const UI = {
     backLibrary: "返回题库",
     workbench: "练习台",
     resetTemplate: "重置模板",
+    codeCompletion: "代码补全",
+    codeCompletionOn: "关闭代码补全提示",
+    codeCompletionOff: "开启代码补全提示",
     runTitle: "运行公开样例",
     submitTitle: "提交完整评测",
     publicCases: "用例",
@@ -259,6 +263,9 @@ export const UI = {
     backLibrary: "Back to problems",
     workbench: "Workbench",
     resetTemplate: "Reset template",
+    codeCompletion: "Autocomplete",
+    codeCompletionOn: "Turn autocomplete off",
+    codeCompletionOff: "Turn autocomplete on",
     runTitle: "Run public samples",
     submitTitle: "Submit full judging",
     publicCases: "Cases",
@@ -550,7 +557,7 @@ export function localizedProblem<T extends ProblemDetail | ProblemListItem | und
   if (!zh) return problem;
   const result = { ...problem, title: zh.title } as NonNullable<T>;
   if ("description" in result && zh.description) {
-    (result as ProblemDetail).description = zh.description;
+    (result as ProblemDetail).description = detailedZhProblemDescription(result, zh.description);
   }
   if ("hint" in result && zh.hint) {
     (result as ProblemDetail).hint = zh.hint;

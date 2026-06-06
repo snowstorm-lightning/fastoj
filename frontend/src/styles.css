@@ -844,6 +844,37 @@ p {
   font-size: 12px;
 }
 
+.agent-tabs {
+  justify-content: start;
+}
+
+.import-source-field {
+  grid-column: span 2;
+}
+
+.agent-constraints-field {
+  grid-column: 1 / span 6;
+}
+
+.agent-raw-material-field {
+  grid-column: 1 / -1;
+}
+
+.agent-constraints-field textarea {
+  min-height: 104px;
+  resize: vertical;
+}
+
+.agent-raw-material-field textarea {
+  min-height: 220px;
+  resize: vertical;
+}
+
+.agent-generate-button {
+  min-height: 42px;
+  align-self: end;
+}
+
 .language-checklist-label {
   grid-column: span 2;
 }
@@ -957,6 +988,40 @@ p {
   border-color: #ff3b3b;
   color: #d92d20;
   background: rgba(255, 59, 59, 0.12);
+}
+
+.draft-status-chip.imported {
+  border-color: #60a5fa;
+  color: #1d4ed8;
+  background: rgba(96, 165, 250, 0.14);
+}
+
+.draft-source-summary {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  background: rgba(96, 165, 250, 0.08);
+  padding: 10px;
+}
+
+.draft-source-summary p {
+  margin: 0;
+}
+
+.draft-source-summary summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.draft-source-summary pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
 }
 
 .agent-step {
@@ -1697,6 +1762,85 @@ p {
   width: 140px;
 }
 
+.reset-template-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.2;
+}
+
+.completion-toggle {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-control);
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 750;
+  line-height: 1;
+  user-select: none;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.completion-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.completion-toggle:hover,
+.completion-toggle:has(input:focus-visible) {
+  border-color: var(--color-accent-strong);
+  background: var(--color-control-hover);
+}
+
+.completion-toggle.active {
+  border-color: var(--color-accent-strong);
+  background: var(--color-accent-surface);
+  color: var(--color-accent);
+}
+
+.completion-switch {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #667085;
+  transition: background 140ms ease;
+}
+
+.completion-switch::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #f8fafc;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+  transition: transform 140ms ease;
+}
+
+.completion-toggle.active .completion-switch {
+  background: var(--color-accent);
+}
+
+.completion-toggle.active .completion-switch::after {
+  transform: translateX(12px);
+}
+
 .editor-toolbar .tip::after {
   top: calc(100% + 10px);
   bottom: auto;
@@ -1890,10 +2034,60 @@ p {
   overflow-x: auto;
 }
 
-.run-case-tabs button {
+.run-case-tab {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 4px 7px 0 0;
+}
+
+.run-case-tab-button {
   min-height: 30px;
-  padding: 5px 10px;
+  padding: 5px 22px 5px 10px;
   white-space: nowrap;
+}
+
+.run-case-tab.active .run-case-tab-button {
+  border-color: var(--color-accent-strong);
+  background: var(--color-accent-surface);
+  color: var(--color-accent);
+}
+
+.run-case-tab-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border-color: #9aa3af;
+  background: #d1d5db;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.92);
+  visibility: hidden;
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease, border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.run-case-tab:hover .run-case-tab-remove,
+.run-case-tab:focus-within .run-case-tab-remove {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  visibility: visible;
+}
+
+.run-case-tab-remove:hover {
+  border-color: var(--color-error);
+  background: var(--color-error-soft);
+  color: var(--color-error);
 }
 
 .run-result-body {
@@ -1927,12 +2121,6 @@ p {
   resize: vertical;
   white-space: pre-wrap;
   font-family: inherit;
-}
-
-.run-remove-case {
-  justify-self: start;
-  min-height: 30px;
-  padding: 5px 10px;
 }
 
 .run-status {
@@ -2554,8 +2742,19 @@ p {
 
   .authbar input,
   .authbar input[aria-label="email"],
-  .editor-toolbar select {
+  .editor-toolbar select,
+  .completion-toggle {
     width: 100%;
+  }
+
+  .agent-constraints-field,
+  .agent-raw-material-field,
+  .import-source-field {
+    grid-column: 1 / -1;
+  }
+
+  .completion-toggle {
+    justify-content: center;
   }
 
   .auth-card {
@@ -3530,6 +3729,15 @@ p {
 
 [data-theme="dark"] .draft-status-chip.draft-status-rejected {
   color: #ff8a8a;
+}
+
+[data-theme="dark"] .draft-status-chip.imported {
+  color: #93c5fd;
+}
+
+[data-theme="dark"] .draft-source-summary {
+  border-color: #3b82f6;
+  background: rgba(37, 99, 235, 0.12);
 }
 
 [data-theme="dark"] .feature-frame {

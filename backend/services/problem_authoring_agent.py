@@ -1,6 +1,7 @@
 import json
 import re
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import ValidationError
@@ -30,6 +31,7 @@ from backend.schemas.problem_authoring import (
     AuthoredTestCase,
     ProblemAuthoringRequest,
     ProblemDraftUpdate,
+    ProblemImportRequest,
 )
 from backend.services.function_mode import wrap_function_submission
 
@@ -351,9 +353,64 @@ class ProblemAuthoringAgentService:
         self.validator = validator or ProblemDraftValidationAdapter()
 
     def create_draft(self, payload: ProblemAuthoringRequest, current_user: User) -> tuple[ProblemDraft, AgentRun]:
+        return self._create_draft_from_model(
+            payload,
+            current_user,
+            run_type="problem_authoring",
+            system_prompt=problem_authoring.SYSTEM_PROMPT,
+            prompt_builder=problem_authoring.build_prompt,
+            model_step_type="model_call",
+            source_metadata={"kind": "generated"},
+            plan_items=[
+                "generate structured draft",
+                "validate fields and testcase counts",
+                "repair draft at most twice if validation fails",
+                "run official solution",
+                "persist final draft",
+            ],
+        )
+
+    def create_import_draft(self, payload: ProblemImportRequest, current_user: User) -> tuple[ProblemDraft, AgentRun]:
+        source_metadata = {
+            "kind": "imported",
+            "source_url": payload.source_url,
+            "raw_material": payload.raw_material,
+            "raw_material_length": len(payload.raw_material),
+            "import_notes": payload.import_notes,
+            "rewrite_policy": "rewrite",
+        }
+        return self._create_draft_from_model(
+            payload,
+            current_user,
+            run_type="problem_import",
+            system_prompt=problem_authoring.IMPORT_SYSTEM_PROMPT,
+            prompt_builder=problem_authoring.build_import_prompt,
+            model_step_type="extract_rewrite",
+            source_metadata=source_metadata,
+            plan_items=[
+                "extract problem intent, examples, constraints, and solution clues",
+                "rewrite statement, explanations, and official solutions",
+                "adapt inputs and outputs to FastOJ mode",
+                "repair draft at most twice if validation fails",
+                "persist final draft",
+            ],
+        )
+
+    def _create_draft_from_model(
+        self,
+        payload: ProblemAuthoringRequest | ProblemImportRequest,
+        current_user: User,
+        *,
+        run_type: str,
+        system_prompt: str,
+        prompt_builder: Callable[[dict[str, Any]], str],
+        model_step_type: str,
+        source_metadata: dict[str, Any],
+        plan_items: list[str],
+    ) -> tuple[ProblemDraft, AgentRun]:
         run = AgentRun(
             id=uuid.uuid4(),
-            run_type="problem_authoring",
+            run_type=run_type,
             status="running",
             input_json=dump_json(payload.model_dump()),
             output_json="{}",
@@ -369,18 +426,14 @@ class ProblemAuthoringAgentService:
             "plan",
             "problem_authoring_agent",
             {
-                "topic": payload.topic,
+                "topic": getattr(payload, "topic", None),
                 "mode": payload.mode,
                 "target_languages": payload.requested_languages(),
+                "source_kind": source_metadata.get("kind"),
+                "raw_material_length": source_metadata.get("raw_material_length"),
             },
             {
-                "plan": [
-                    "generate structured draft",
-                    "validate fields and testcase counts",
-                    "repair draft at most twice if validation fails",
-                    "run official solution",
-                    "persist final draft",
-                ],
+                "plan": plan_items,
                 "max_repair_attempts": MAX_AUTHORING_REPAIR_ATTEMPTS,
             },
             "succeeded",
@@ -395,10 +448,10 @@ class ProblemAuthoringAgentService:
             total_attempts = MAX_AUTHORING_REPAIR_ATTEMPTS + 1
 
             for attempt in range(1, total_attempts + 1):
-                raw = self._call_model(payload, repair_context)
+                raw = self._call_model(payload, repair_context, system_prompt, prompt_builder)
                 self._add_step(
                     run,
-                    "model_call",
+                    model_step_type,
                     "ai_provider.complete_json",
                     {
                         "model_profile": payload.model_profile,
@@ -469,6 +522,7 @@ class ProblemAuthoringAgentService:
                 space_complexity=authored.space_complexity,
                 testcases_json=dump_json(testcases),
                 validation_report_json=dump_json(validation_report),
+                source_metadata_json=dump_json(source_metadata),
                 status="validated" if validation_report["passed"] else "validation_failed",
                 created_by=current_user.id,
             )
@@ -774,7 +828,13 @@ class ProblemAuthoringAgentService:
         )
         return self._parse_solution_response(raw, language)
 
-    def _call_model(self, payload: ProblemAuthoringRequest, repair_context: dict[str, Any] | None = None) -> str:
+    def _call_model(
+        self,
+        payload: ProblemAuthoringRequest | ProblemImportRequest,
+        repair_context: dict[str, Any] | None,
+        system_prompt: str,
+        prompt_builder: Callable[[dict[str, Any]], str],
+    ) -> str:
         provider = self.provider
         if provider is None:
             config = resolve_ai_config(payload.model_profile)
@@ -783,12 +843,12 @@ class ProblemAuthoringAgentService:
         context["response_language"] = ai_response_language(payload.locale)
         if repair_context:
             context["repair_request"] = repair_context
-        return provider.complete_json(problem_authoring.SYSTEM_PROMPT, problem_authoring.build_prompt(context))
+        return provider.complete_json(system_prompt, prompt_builder(context))
 
     def _prepare_authored_draft(
         self,
         authored: AuthoredProblemDraft,
-        payload: ProblemAuthoringRequest,
+        payload: ProblemAuthoringRequest | ProblemImportRequest,
     ) -> AuthoredProblemDraft:
         requested = payload.requested_languages()
         solutions = self._ordered_solutions_for_languages(authored.official_solutions, requested)
@@ -1185,7 +1245,12 @@ class ProblemAuthoringAgentService:
         text = str(value).strip()
         return text or None
 
-    def _schema_repair_context(self, payload: ProblemAuthoringRequest, message: str, attempt: int) -> dict[str, Any]:
+    def _schema_repair_context(
+        self,
+        payload: ProblemAuthoringRequest | ProblemImportRequest,
+        message: str,
+        attempt: int,
+    ) -> dict[str, Any]:
         return {
             "kind": "schema_repair",
             "attempt": attempt + 1,

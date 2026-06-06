@@ -1,6 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
-import { formatApiErrorDetail, formatApiErrorResponse } from "./api";
+import { api, formatApiErrorDetail, formatApiErrorResponse } from "./api";
 
 describe("API error formatting", () => {
   test("summarizes FastAPI validation details without stringifying raw objects", () => {
@@ -34,5 +34,46 @@ describe("API error formatting", () => {
     expect(formatApiErrorResponse({
       detail: "AI provider is unreachable. If you selected Qwen local, start the local OpenAI-compatible server first.",
     })).toBe("AI provider is unreachable. If you selected Qwen local, start the local OpenAI-compatible server first.");
+  });
+
+  test("posts problem imports to the admin import endpoint", async () => {
+    localStorage.removeItem("fastoj.jwt");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      draft_id: "draft-1",
+      run_id: "run-1",
+      status: "validated",
+      validation_summary: { passed: true },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    const result = await api.adminCreateProblemImport({
+      raw_material: "A long imported problem statement with samples and solution notes.",
+      source_url: "https://example.com/problem",
+      difficulty: "medium",
+      tags: ["array"],
+      mode: "both",
+      target_language: "python",
+      target_languages: ["python", "cpp"],
+      locale: "zh",
+      model_profile: "default",
+      import_notes: "Rewrite and adapt for function mode.",
+    });
+
+    expect(result.draft_id).toBe("draft-1");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/admin/agent/problem-imports", expect.objectContaining({
+      method: "POST",
+    }));
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      raw_material: "A long imported problem statement with samples and solution notes.",
+      source_url: "https://example.com/problem",
+      mode: "both",
+      target_languages: ["python", "cpp"],
+      import_notes: "Rewrite and adapt for function mode.",
+    });
+
+    fetchMock.mockRestore();
   });
 });

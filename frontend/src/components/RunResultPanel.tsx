@@ -121,7 +121,9 @@ export function RunResultPanel({
       <div className="run-result-header">
         <h2>{labels.title}</h2>
         <div className="run-result-actions">
-          <button type="button" className="icon-button tip" data-tip={labels.reset} onClick={onResetCases}>R</button>
+          <button type="button" className="icon-button reset-template-button tip" data-tip={labels.reset} aria-label={labels.reset} onClick={onResetCases}>
+            <ResetIcon />
+          </button>
           <button type="button" className="icon-button tip" data-tip={labels.add} onClick={onAddCase}>+</button>
           <button type="button" className="icon-button primary tip" data-tip={labels.run} disabled={!canRun} onClick={onRun}>▶</button>
         </div>
@@ -129,16 +131,31 @@ export function RunResultPanel({
 
       <div className="run-case-tabs" role="tablist" aria-label={labels.caseLabel}>
         {safeCases.map((item, index) => (
-          <button
+          <div
             key={item.id}
-            type="button"
-            className={currentIndex === index ? "active" : ""}
-            role="tab"
-            aria-selected={currentIndex === index}
-            onClick={() => onActiveIndex(index)}
+            className={currentIndex === index ? "run-case-tab active" : "run-case-tab"}
           >
-            {labels.caseLabel} {index + 1}
-          </button>
+            <button
+              type="button"
+              className="run-case-tab-button"
+              role="tab"
+              aria-selected={currentIndex === index}
+              onClick={() => onActiveIndex(index)}
+            >
+              {labels.caseLabel} {index + 1}
+            </button>
+            {safeCases.length > 1 ? (
+              <button
+                type="button"
+                className="run-case-tab-remove tip"
+                data-tip={labels.remove}
+                aria-label={`${labels.remove} ${labels.caseLabel} ${index + 1}`}
+                onClick={() => onRemoveCase(index)}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
         ))}
       </div>
 
@@ -149,11 +166,6 @@ export function RunResultPanel({
             <textarea value={currentCase.input} spellCheck={false} onChange={(event) => onChangeInput(currentIndex, event.target.value)} />
           </label>
           <OutputBox title={labels.expected} value={expectedOutput} placeholder={running ? labels.pending : labels.expectedPending} />
-          {safeCases.length > 1 ? (
-            <button type="button" className="run-remove-case" onClick={() => onRemoveCase(currentIndex)}>
-              {labels.remove}
-            </button>
-          ) : null}
         </div>
 
         <div className="run-output-column">
@@ -174,6 +186,15 @@ export function RunResultPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function ResetIcon() {
+  return (
+    <svg className="reset-template-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5.4 9.2a7.2 7.2 0 1 1 1.2 6.9" />
+      <path d="M5.4 9.2H2.2V6" />
+    </svg>
   );
 }
 

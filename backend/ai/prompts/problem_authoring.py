@@ -16,6 +16,21 @@ When target_languages contains multiple languages, include one official solution
 For both mode, every official solution must be a function-style canonical solution, not a main/stdin program.
 Use ASCII straight quotes inside code. Do not use curly or smart quotes."""
 
+IMPORT_SYSTEM_PROMPT = """You are FastOJ's admin-only Problem Import Agent.
+Convert externally pasted algorithm-practice material into a FastOJ problem draft.
+Return only valid JSON matching the requested schema. Do not wrap it in Markdown.
+First extract the task intent, examples, constraints, representation rules, and solution clues from the raw material.
+Then rewrite the public statement, sample explanations, and official solutions in original FastOJ wording.
+Do not copy the source statement sentence-by-sentence, and do not preserve copyrighted expression.
+For function mode, provide a clear Python-style function_signature and testcase inputs that match the function arguments.
+Prefer JSON-line inputs with one JSON value per argument line; a single JSON object keyed by argument name is also acceptable.
+For ACM mode, provide stdin/stdout testcases and clear input_format/output_format.
+For both mode, provide both function_signature and input_format/output_format. Testcase input should use the function JSON argument format; ACM submissions receive the same input through stdin.
+Always include official solution code, explanation, time complexity, space complexity, and validation notes.
+When target_languages contains multiple languages, include one official solution per requested language.
+For both mode, every official solution must be a function-style canonical solution, not a main/stdin program.
+Use ASCII straight quotes inside code. Do not use curly or smart quotes."""
+
 SOLUTION_SYSTEM_PROMPT = """You are FastOJ's admin-only official solution assistant.
 Generate one correct official solution for an existing problem draft in the requested programming language.
 Return only valid JSON matching the requested schema. Do not wrap it in Markdown.
@@ -69,6 +84,33 @@ def build_prompt(context: dict[str, Any]) -> str:
         "input": context,
         "required_json_schema": JSON_SCHEMA,
         "hard_requirements": [
+            "At least 1 public_sample_testcase.",
+            "Use enough total testcases to cover meaningful behavior and boundaries; do not pad duplicate cases.",
+            "Hidden testcases are recommended for non-trivial problems, but simple deterministic or no-input tasks may use zero hidden_testcases.",
+            "Every testcase output must be non-empty.",
+            "official_solutions must include exactly one solution object for every requested target_languages entry.",
+            "official_solution_language/code/explanation should mirror the first official_solutions entry for backward compatibility.",
+            "For function mode, every official solution should define the function represented by function_signature in that language.",
+            "For both mode, every official solution should define only the function represented by function_signature; do not generate main methods, stdin readers, or stdout printing.",
+            "For function or both mode, testcase input must be either newline-separated JSON values matching the function arguments, a single JSON array matching all arguments, or a single JSON object keyed by argument names.",
+            "For function or both mode, testcase output must be the JSON-serializable return value, not printed stdout text.",
+            "For combination or set-like outputs, make the official solution and expected outputs use deterministic canonical ordering.",
+            "For ACM-only mode, every official solution must read stdin and write stdout.",
+            "Use only ASCII straight quotes in source code, never curly or smart quotes.",
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def build_import_prompt(context: dict[str, Any]) -> str:
+    payload = {
+        "task": "Import, rewrite, and adapt one external problem into a FastOJ problem draft.",
+        "input": context,
+        "required_json_schema": JSON_SCHEMA,
+        "hard_requirements": [
+            "Use raw_material only as source material; do not copy its wording directly.",
+            "Rewrite the statement, sample explanations, and official solution explanations in original FastOJ wording.",
+            "If the imported material includes code, use it only as an algorithm clue and write clean FastOJ official solutions.",
             "At least 1 public_sample_testcase.",
             "Use enough total testcases to cover meaningful behavior and boundaries; do not pad duplicate cases.",
             "Hidden testcases are recommended for non-trivial problems, but simple deterministic or no-input tasks may use zero hidden_testcases.",

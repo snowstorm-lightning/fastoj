@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from backend.ai.providers import BaseAIProvider
 from backend.api.admin import (
@@ -25,7 +26,7 @@ from backend.api.admin import (
     update_testcase,
     upsert_solution,
 )
-from backend.api.admin_agent import create_problem_draft
+from backend.api.admin_agent import create_problem_draft, create_problem_import
 from backend.core.config import settings
 from backend.core.time import utc_now
 from backend.models import (
@@ -50,6 +51,7 @@ from backend.schemas.problem_authoring import (
     AuthoredOfficialSolution,
     ProblemAuthoringRequest,
     ProblemDraftUpdate,
+    ProblemImportRequest,
 )
 from backend.services.problem_authoring_agent import (
     ProblemAuthoringAgentService,
@@ -57,6 +59,7 @@ from backend.services.problem_authoring_agent import (
     load_json,
     normalize_function_call_args,
 )
+from backend.services.problem_service import ProblemService
 
 
 class FakeQuery:
@@ -278,6 +281,21 @@ def request_payload() -> ProblemAuthoringRequest:
     )
 
 
+def import_payload(raw_material: str | None = None) -> ProblemImportRequest:
+    return ProblemImportRequest(
+        raw_material=raw_material
+        or "External source says: read one integer n and return n. Example input 7 has output 7.",
+        source_url="https://example.com/problem",
+        difficulty="easy",
+        tags=["io"],
+        mode="acm",
+        target_language="python",
+        locale="en",
+        model_profile="default",
+        import_notes="Rewrite the statement and keep the echo behavior.",
+    )
+
+
 def multilanguage_request_payload() -> ProblemAuthoringRequest:
     return ProblemAuthoringRequest(
         topic="echo number",
@@ -331,6 +349,89 @@ def test_create_draft_saves_draft_run_and_steps():
     assert len(db.data[ProblemDraft]) == 1
     assert len(db.data[AgentRun]) == 1
     assert {step.step_type for step in db.data[AgentStep]} >= {"plan", "model_call", "validation", "persistence"}
+
+
+def test_import_draft_saves_source_metadata_and_uses_import_prompt():
+    db = FakeSession()
+    provider = SequenceProvider([authored_payload(public_count=1, hidden_count=0)])
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=provider,
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+
+    draft, run = service.create_import_draft(import_payload(), admin_user())
+
+    assert draft.status == "validated"
+    assert run.run_type == "problem_import"
+    metadata = load_json(draft.source_metadata_json, {})
+    assert metadata["kind"] == "imported"
+    assert metadata["source_url"] == "https://example.com/problem"
+    assert metadata["rewrite_policy"] == "rewrite"
+    assert "External source says" in metadata["raw_material"]
+    assert {step.step_type for step in db.data[AgentStep]} >= {"plan", "extract_rewrite", "validation", "persistence"}
+
+    system_prompt, user_prompt = provider.calls[0]
+    prompt = json.loads(user_prompt)
+    assert "Problem Import Agent" in system_prompt
+    assert prompt["input"]["raw_material"] == metadata["raw_material"]
+    assert any("do not copy" in requirement.lower() for requirement in prompt["hard_requirements"])
+    assert any("FastOJ" in requirement for requirement in prompt["hard_requirements"])
+
+
+def test_import_raw_material_stays_out_of_public_problem_response():
+    db = FakeSession()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=FakeProvider(authored_payload(public_count=1, hidden_count=0)),
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+    user = admin_user()
+
+    draft, _run = service.create_import_draft(import_payload(), user)
+    approved = service.approve_draft(str(draft.id), user)
+    published = db.data[Problem][0]
+    published.total_submissions = 0
+    published.accepted_submissions = 0
+    problem = ProblemService(db).get_problem_by_id(str(approved.approved_problem_id))
+
+    assert problem is not None
+    response = problem.model_dump()
+    assert "source_metadata" not in response
+    assert "source_metadata_json" not in response
+    assert "External source says" not in json.dumps(response)
+
+
+def test_create_problem_import_endpoint_returns_draft_response(monkeypatch):
+    db = FakeSession()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=FakeProvider(authored_payload(public_count=1, hidden_count=0)),
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+
+    class FakeImportService:
+        def __init__(self, _db):
+            pass
+
+        def create_import_draft(self, payload, current_user):
+            return service.create_import_draft(payload, current_user)
+
+    monkeypatch.setattr("backend.api.admin_agent.ProblemAuthoringAgentService", FakeImportService)
+
+    response = create_problem_import(import_payload(), db, admin_user())
+
+    assert response.status == "validated"
+    assert response.draft_id == str(db.data[ProblemDraft][0].id)
+    assert db.data[AgentRun][0].run_type == "problem_import"
+
+
+def test_import_request_rejects_short_or_too_large_raw_material():
+    with pytest.raises(ValidationError):
+        import_payload("too short")
+
+    with pytest.raises(ValidationError):
+        import_payload("x" * 30001)
 
 
 def test_create_and_approve_draft_with_multiple_official_solution_languages():

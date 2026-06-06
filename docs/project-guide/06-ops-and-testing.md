@@ -54,6 +54,8 @@ uv run alembic -c backend/alembic.ini upgrade head
 
 Docker API 启动也有迁移/初始化相关脚本。已有数据库如果没有 `alembic_version`，项目提供了 `backend/scripts/migrate_or_stamp.py` 做安全 stamp。
 
+导入题目 Agent 增加了 `problem_drafts.source_metadata_json`，迁移是 `20260606_0008_problem_draft_source_metadata.py`。如果本地已有数据库想立即试导入功能，需要先执行上面的 `alembic upgrade head` 并重启 API。
+
 ## 测试矩阵
 
 按照仓库约定，较大变更交付前要跑：
@@ -85,6 +87,7 @@ docker compose ps
 - Docker 沙箱：`tests/test_sandbox_executor.py`
 - Function mode 包装：`tests/test_function_mode.py`
 - AI hidden-test safety：`tests/test_ai_service.py`
+- Problem authoring/import：`tests/test_problem_authoring_agent.py`
 - WebSocket 鉴权：`tests/test_websocket_auth.py`
 
 前端 tests 重点覆盖：
@@ -95,6 +98,7 @@ docker compose ps
 - problemModes。
 - AI panel 和 run result panel。
 - TrainingGraph。
+- Admin 导入题目表单和导入 API payload。
 
 ## 部署流程
 

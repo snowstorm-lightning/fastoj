@@ -1,6 +1,6 @@
 # 03. 数据模型与题目模式
 
-FastOJ 的数据模型围绕一个问题展开：如何既支持传统 ACM stdin/stdout，又支持 LeetCode 风格的 Function mode，同时还要保存提交、用例结果、官方解法和 AI 出题草稿。
+FastOJ 的数据模型围绕一个问题展开：如何既支持传统 ACM stdin/stdout，又支持 LeetCode 风格的 Function mode，同时还要保存提交、用例结果、官方解法、AI 出题草稿和导入题目草稿。
 
 ## 核心数据关系
 
@@ -16,7 +16,7 @@ FastOJ 的数据模型围绕一个问题展开：如何既支持传统 ACM stdin
 - `Submission`：[backend/models/__init__.py:113](../../backend/models/__init__.py#L113)，保存用户代码、语言、状态、结果和资源使用。
 - `TestCaseResult`：[backend/models/__init__.py:141](../../backend/models/__init__.py#L141)，保存每个 testcase 的执行结果。
 - `Solution`：[backend/models/__init__.py:159](../../backend/models/__init__.py#L159)，保存官方解法和复杂度。
-- `ProblemDraft`、`AgentRun`、`AgentStep`：[backend/models/__init__.py:180](../../backend/models/__init__.py#L180)，保存 AI 出题草稿、运行轨迹和步骤。
+- `ProblemDraft`、`AgentRun`、`AgentStep`：[backend/models/__init__.py:199](../../backend/models/__init__.py#L199)，保存 AI 出题/导入草稿、运行轨迹和步骤。导入草稿的 `source_metadata_json` 保存管理员可见的来源信息和原始材料。
 
 ## 状态和值域
 
@@ -62,6 +62,15 @@ Function mode 更像 LeetCode：
 
 对于 `both`，当前设计倾向于维护一套 canonical function-style 官方解法，再通过输入输出合同复用到 ACM 练习。这减少出题和校验时的重复逻辑。
 
+## 草稿来源元数据
+
+`ProblemDraft.source_metadata_json` 用来区分草稿来源：
+
+- `kind: "generated"`：原创出题 Agent 生成的草稿。
+- `kind: "imported"`：导入题目 Agent 从管理员粘贴的外部材料生成的草稿。
+
+导入草稿会保存 `source_url`、`raw_material`、`raw_material_length`、`import_notes` 和 `rewrite_policy`。这些字段只通过管理员草稿接口展示，用于追溯和返工；批准发布后的普通 `Problem` 响应不包含导入原文或 source metadata。对应模型字段在 [backend/models/__init__.py:229](../../backend/models/__init__.py#L229)，管理员响应转换在 [backend/api/admin_agent.py:338](../../backend/api/admin_agent.py#L338)。
+
 ## 用例输入格式
 
 Function mode 当前使用 JSON-line 风格输入。例如 Two Sum 可以是：
@@ -98,6 +107,7 @@ JudgeTask 写 `TestCaseResult` 时对隐藏用例做了空值处理：[backend/w
 - SQLAlchemy 模型：[backend/models/__init__.py:46](../../backend/models/__init__.py#L46)
 - Problem 模型：[backend/models/__init__.py:63](../../backend/models/__init__.py#L63)
 - Submission 模型：[backend/models/__init__.py:113](../../backend/models/__init__.py#L113)
+- ProblemDraft source metadata：[backend/models/__init__.py:229](../../backend/models/__init__.py#L229)
 - Function mode 包装入口：[backend/services/function_mode.py:2468](../../backend/services/function_mode.py#L2468)
 - 前端题目模式判断：[frontend/src/lib/problemModes.ts:680](../../frontend/src/lib/problemModes.ts#L680)
 - 前端 starter 生成：[frontend/src/lib/problemModes.ts:712](../../frontend/src/lib/problemModes.ts#L712)

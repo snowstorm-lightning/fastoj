@@ -7,6 +7,7 @@ from backend.core.database import Base, SessionLocal, engine
 from backend.core.time import utc_now
 from backend.models import Difficulty, Problem, Solution, TestCase
 from backend.scripts.hot100_data import HOT100_LEGACY_SLUG_ALIASES, HOT100_PROBLEMS_DATA
+from backend.scripts.problem_statement_details import enrich_problem_descriptions
 from backend.services.problem_modes import FUNCTION_SIGNATURES
 
 PROBLEMS_DATA = [
@@ -111,7 +112,7 @@ PROBLEMS_DATA = [
         "problem": {
             "title": "Group Anagrams",
             "slug": "group-anagrams",
-            "description": "Group strings that are anagrams. Print groups in deterministic sorted order for judging.",
+            "description": "Group strings that are anagrams. Return groups in deterministic sorted order.",
             "difficulty": Difficulty.MEDIUM,
             "time_limit": 2000,
             "memory_limit": 256,
@@ -297,6 +298,8 @@ for item in PROBLEMS_DATA:
     if signature:
         item["problem"]["mode"] = "function"
         item["problem"]["function_signature"] = signature
+
+enrich_problem_descriptions(PROBLEMS_DATA)
 
 
 DEFAULT_SOLUTIONS = {

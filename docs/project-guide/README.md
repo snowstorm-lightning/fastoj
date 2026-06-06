@@ -11,8 +11,8 @@
 1. 先读 [01-architecture.md](01-architecture.md)：知道 FastOJ 是什么，服务如何部署，FastAPI、PostgreSQL、Redis、Worker、Docker 和 React 如何配合。
 2. 再读 [02-judge-pipeline.md](02-judge-pipeline.md)：这是项目的核心链路，重点理解提交从前端到 Docker 沙箱再回到 WebSocket 的全过程。
 3. 接着读 [03-data-and-problem-modes.md](03-data-and-problem-modes.md)：把表结构、题目模式、测试用例和提交结果串起来。
-4. 然后读 [04-ai-and-safety.md](04-ai-and-safety.md)：讲清楚 AI 如何接入、为什么不会泄露隐藏用例。
-5. 再读 [05-frontend-tour.md](05-frontend-tour.md)：理解单页 React 应用、工作台状态、API client、WebSocket 和 polling fallback。
+4. 然后读 [04-ai-and-safety.md](04-ai-and-safety.md)：讲清楚 AI 如何接入、出题/导入 Agent 如何工作、为什么不会泄露隐藏用例或导入原文。
+5. 再读 [05-frontend-tour.md](05-frontend-tour.md)：理解单页 React 应用、工作台状态、Admin 导入表单、API client、WebSocket 和 polling fallback。
 6. 再读 [06-ops-and-testing.md](06-ops-and-testing.md)：知道如何启动、验证、部署、排障。
 7. 最后读 [07-project-explainer.md](07-project-explainer.md)：把前面的内容整理成一条可以对外讲清楚的项目主线。
 
@@ -23,8 +23,8 @@
 | [01-architecture.md](01-architecture.md) | “这个项目整体架构是什么？” |
 | [02-judge-pipeline.md](02-judge-pipeline.md) | “一次提交到底发生了什么？” |
 | [03-data-and-problem-modes.md](03-data-and-problem-modes.md) | “数据库怎么建模？Function mode 和 ACM mode 怎么兼容？” |
-| [04-ai-and-safety.md](04-ai-and-safety.md) | “AI 接入在哪里？隐藏用例怎么保护？” |
-| [05-frontend-tour.md](05-frontend-tour.md) | “前端页面和状态怎么组织？” |
+| [04-ai-and-safety.md](04-ai-and-safety.md) | “AI 接入在哪里？出题/导入 Agent 怎么避免泄露？” |
+| [05-frontend-tour.md](05-frontend-tour.md) | “前端页面、工作台和 Admin 导入表单怎么组织？” |
 | [06-ops-and-testing.md](06-ops-and-testing.md) | “怎么启动、测试、部署和排障？” |
 | [07-project-explainer.md](07-project-explainer.md) | “如何用一条清晰主线讲 FastOJ？” |
 
@@ -67,5 +67,6 @@
 - 为什么 Redis Streams 比简单队列更适合这个场景。
 - Function mode 如何把“用户写函数”转换成“沙箱里可执行的 stdin/stdout 程序”。
 - 隐藏用例在 API、WebSocket、AI prompt 中如何被隔离。
+- 导入题目 Agent 如何保存原文、重写题目并只把原文留在管理员草稿元数据里。
 - Worker 不在线时，开发 fallback 和生产 503 边界如何保护 API 服务。
 - 如果继续迭代，你会如何做自动化浏览器验收、队列可观测性、Worker 横向扩展和更彻底的前端页面级拆分。

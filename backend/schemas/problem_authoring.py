@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -62,6 +62,78 @@ class ProblemAuthoringRequest(BaseModel):
 
     @model_validator(mode="after")
     def fill_target_languages(self) -> "ProblemAuthoringRequest":
+        languages = list(self.target_languages or [])
+        if self.target_language not in languages:
+            languages.insert(0, self.target_language)
+        if len(languages) > 7:
+            raise ValueError("At most 7 target languages are supported")
+        self.target_language = languages[0]
+        self.target_languages = languages
+        return self
+
+    def requested_languages(self) -> list[str]:
+        return list(self.target_languages or [self.target_language])
+
+
+class ProblemImportRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    raw_material: str = Field(min_length=20, max_length=30000)
+    source_url: str | None = Field(default=None, max_length=500)
+    topic: str | None = Field(default=None, max_length=200)
+    difficulty: Literal["easy", "medium", "hard"]
+    tags: list[str] = Field(default_factory=list, max_length=10)
+    mode: ProblemMode
+    target_language: str = "python"
+    target_languages: list[str] | None = Field(default=None, max_length=7)
+    locale: AILocale = DEFAULT_LOCALE
+    model_profile: AIModelProfile = "default"
+    import_notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("raw_material")
+    @classmethod
+    def clean_raw_material(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("source_url", "topic", "import_notes")
+    @classmethod
+    def clean_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text or None
+
+    @field_validator("tags")
+    @classmethod
+    def clean_tags(cls, value: list[str]) -> list[str]:
+        return [tag.strip() for tag in value if tag.strip()]
+
+    @field_validator("target_language")
+    @classmethod
+    def clean_target_language(cls, value: str) -> str:
+        language = value.strip().lower() or "python"
+        if not Language.is_supported(language):
+            raise ValueError(f"Unsupported language: {language}")
+        return language
+
+    @field_validator("target_languages")
+    @classmethod
+    def clean_target_languages(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned: list[str] = []
+        for item in value:
+            language = item.strip().lower()
+            if not language:
+                continue
+            if not Language.is_supported(language):
+                raise ValueError(f"Unsupported language: {language}")
+            if language not in cleaned:
+                cleaned.append(language)
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def fill_target_languages(self) -> "ProblemImportRequest":
         languages = list(self.target_languages or [])
         if self.target_language not in languages:
             languages.insert(0, self.target_language)
@@ -310,6 +382,7 @@ class ProblemDraftResponse(BaseModel):
     space_complexity: str | None = None
     testcases: list[dict]
     validation_report: dict
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
     status: str
     created_by: str
     approved_problem_id: str | None = None
@@ -329,6 +402,7 @@ class ProblemDraftListItem(BaseModel):
     target_languages: list[str] = Field(default_factory=list)
     status: str
     validation_summary: dict
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
     approved_problem_id: str | None = None
     created_at: str
     updated_at: str

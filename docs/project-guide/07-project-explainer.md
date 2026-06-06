@@ -15,11 +15,11 @@
 
 ## 60 秒英文项目介绍
 
-FastOJ is an AI-assisted online judge for algorithm practice. It provides a LeetCode-like workflow with a React and TypeScript frontend, a FastAPI backend, PostgreSQL persistence, Redis Streams for asynchronous judging, and Docker-based sandbox execution for untrusted user code. The core flow is that a user submits code from the workbench, the API creates a submission, pushes a judge task to Redis, a worker consumes it, runs the code in a restricted Docker container, stores testcase results, and streams progress back through WebSocket with polling as a fallback. The project also includes AI features for hints, explanations, code review, and problem authoring, with a strong safety boundary: hidden testcase inputs, expected outputs, and actual outputs are never sent to users or AI providers.
+FastOJ is an AI-assisted online judge for algorithm practice. It provides a LeetCode-like workflow with a React and TypeScript frontend, a FastAPI backend, PostgreSQL persistence, Redis Streams for asynchronous judging, and Docker-based sandbox execution for untrusted user code. The core flow is that a user submits code from the workbench, the API creates a submission, pushes a judge task to Redis, a worker consumes it, runs the code in a restricted Docker container, stores testcase results, and streams progress back through WebSocket with polling as a fallback. The project also includes AI features for hints, explanations, code review, original problem authoring, and imported-problem drafting. The safety boundary is explicit: hidden testcase inputs, expected outputs, actual outputs, and imported raw source material are not exposed to normal users or learner-side AI prompts.
 
 ## 中文版本
 
-FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。前端用 React 和 TypeScript，后端用 FastAPI，数据存在 PostgreSQL，判题任务通过 Redis Streams 异步分发，Worker 用 Docker 沙箱执行不可信用户代码。用户在工作台提交代码后，API 创建提交记录并入队，Worker 消费任务、运行测试用例、写入结果，再通过 Redis Pub/Sub 和 WebSocket 把进度推回前端，同时前端保留 polling fallback。AI 部分支持提示、解释、代码审查和管理员出题，但隐藏用例内容不会进入 UI、日志或 AI prompt。
+FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。前端用 React 和 TypeScript，后端用 FastAPI，数据存在 PostgreSQL，判题任务通过 Redis Streams 异步分发，Worker 用 Docker 沙箱执行不可信用户代码。用户在工作台提交代码后，API 创建提交记录并入队，Worker 消费任务、运行测试用例、写入结果，再通过 Redis Pub/Sub 和 WebSocket 把进度推回前端，同时前端保留 polling fallback。AI 部分支持提示、解释、代码审查、管理员原创出题和导入题目草稿；隐藏用例内容和导入原文不会进入普通用户 UI、日志或学习者侧 AI prompt。
 
 ## 架构关键词
 
@@ -33,7 +33,7 @@ FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。前端用 Re
 - Function mode harness generation
 - Hidden testcase isolation
 - OpenAI-compatible AI provider profiles
-- Admin-only problem authoring workflow
+- Admin-only problem authoring and import workflow
 
 ## 常见技术问题和回答要点
 
@@ -79,13 +79,19 @@ The project uses backend unit tests for queue semantics, submission fallback, wo
 
 参考：[tests](../../tests)、[acceptance harness](../ACCEPTANCE_HARNESS.md)。
 
+### 8. How does the admin problem import workflow work?
+
+Admins paste external problem material into a separate import tab, optionally with a source URL and adaptation notes. The backend creates a `problem_import` run, sends the raw material only to the import-specific prompt, asks the model to extract and rewrite the task into the existing `AuthoredProblemDraft` JSON schema, and then reuses the normal validation, repair, persistence, and approval flow. The raw material is stored as admin-only draft source metadata, not in published problem responses.
+
+代码锚点：[import API](../../backend/api/admin_agent.py#L49)、[import request schema](../../backend/schemas/problem_authoring.py#L78)、[import service](../../backend/services/problem_authoring_agent.py#L373)、[import prompt](../../backend/ai/prompts/problem_authoring.py#L19)、[frontend import form](../../frontend/src/main.tsx#L2456)。
+
 ## 可强调的项目亮点
 
 - **Real judge pipeline**：不是浏览器模拟，不是直接 host subprocess。
 - **Reliability-aware queue**：Redis Streams、ack、retry、dead-letter、pending reclaim。
 - **Security boundary**：隐藏用例不进入普通 API、WebSocket、AI prompt。
 - **Mode abstraction**：Function mode 和 ACM mode 共用同一条判题管线。
-- **AI with constraints**：AI 辅助解释和出题，但 prompt 上下文被明确限制。
+- **AI with constraints**：AI 辅助解释、出题和导入，但 prompt 上下文和原始材料可见范围被明确限制。
 - **Extensible i18n**：前端 locale registry 和后端 dynamic locale validator 支持长期扩展，不把语言逻辑写成 `zh/en` 二分。
 - **Deployment-ready shape**：Docker Compose、本地/生产配置、GitHub Actions、部署文档。
 
@@ -123,5 +129,5 @@ The product goal is training, not answer dumping. AI is constrained to hints, ex
 
 - Judge queue：Redis Streams、ack、retry、dead-letter、pending reclaim。
 - Docker sandbox：容器限制、非 root、网络隔离、输出截断和后续 seccomp 加固。
-- AI safety：隐藏用例隔离、prompt 输入边界、管理员出题工作流。
+- AI safety：隐藏用例隔离、prompt 输入边界、管理员出题/导入工作流。
 - Frontend architecture：工作台状态、WebSocket + polling、重组件懒加载。

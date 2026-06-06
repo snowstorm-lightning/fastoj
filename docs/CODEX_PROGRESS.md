@@ -1,5 +1,35 @@
 # Codex Progress
 
+## 2026-06-06 Problem Import Agent
+
+- [x] Added an admin-only problem import flow for pasted external material, with imported source metadata stored on drafts only.
+- [x] Added `source_metadata_json` through Alembic revision `20260606_0008` and included safe source summaries in admin draft responses while keeping public problem APIs free of raw material.
+- [x] Added an import-specific prompt, schema, service path, and `POST /api/v1/admin/agent/problem-imports`; runs use `problem_import` and record `extract_rewrite`, validation, and persistence steps.
+- [x] Reused the existing authoring validation, repair, slug, persistence, and official-solution checks so imported material still becomes a normal `ProblemDraft` requiring administrator approval.
+- [x] Added the admin UI `导入题目` tab with source URL, large raw-material textarea, adaptation notes, existing model/language controls, imported draft chips, and admin-only source preview.
+- [x] Updated README, README.zh-CN, acceptance harness, and project-guide docs for the import workflow, source metadata boundary, frontend admin tab, and migration note.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (183 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 32 tests, existing jsdom canvas notices); `cd frontend && npm run build` (existing large chunk warnings).
+
+## 2026-06-06 Workbench Editor Control Polish
+
+- [x] Moved custom run-case deletion from the input body to each case tab's top-right close control, matching the expected case-tab interaction and removing the old standalone delete button.
+- [x] Changed the case-tab close control to stay hidden until the tab is hovered or focused, keeping the run-case tabs visually quieter while preserving keyboard access.
+- [x] Replaced text-only `R` reset controls with a reset-arrow SVG for both the code template reset and run-case reset actions.
+- [x] Added a persisted workbench autocomplete toggle that updates Monaco quick suggestions, trigger-character suggestions, parameter hints, and word-based suggestions without adding a new icon dependency.
+- [x] Expanded the admin Problem Agent constraints field from a single-line input into a 2000-character textarea with prompt guidance for richer problem requirements.
+- [x] Added frontend regression coverage for deleting cases from the tab control.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (179 passed, existing FastAPI `regex` deprecation warnings); `cd frontend && npm test` (9 files / 29 tests, existing jsdom canvas notices); `cd frontend && npm run build` (existing large chunk warnings); local browser DOM check against the Vite dev server confirmed SVG reset buttons, autocomplete toggle persistence, hover-revealed tab deletion, and tab-level case deletion.
+
+## 2026-06-06 Problem Statement Detail Pass
+
+- [x] Reworked seed-description enrichment for all 106 bundled problems to focus on the problem meaning itself: core rules, domain representation, tie-breaking, and ordering where those are part of the task.
+- [x] Removed the previous function-contract style wording from generated statements. Problem text no longer repeats function signatures, JSON-line mechanics, hidden-test language, stdin/stdout guidance, or generic edge-case advice already covered elsewhere in the UI.
+- [x] Updated Hot 100 seed descriptions that still said "print" to use function-mode "return" wording, and changed binary-tree wording from JSON protocol language to level-order array representation.
+- [x] Added Chinese problem-detail expansion in the frontend so localized detail pages add the same kind of concise semantic clarification instead of replacing the backend statement with a short summary.
+- [x] Kept `print-test` and `print-qiu-qiu` out of the seed catalog, added regression coverage for that, and removed those two extra local database problems so the current problem count is back to 106.
+- [x] Fixed the Monaco editor remount cleanup path so React StrictMode does not leave the function-mode code editor blank after effect cleanup.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (179 passed, existing FastAPI `regex` deprecation warnings); local seed normalized 106 existing problems and left no extra print slugs; `cd frontend && npm test` (9 files / 28 tests, existing jsdom canvas notices); `cd frontend && npm run build` (existing large chunk warnings).
+
 ## 2026-06-06 Shared Discussions And Workbench History Polish
 
 - [x] Added persisted problem discussions with a new `problem_discussions` table, Alembic migration, Pydantic schemas, and `GET/POST /api/v1/problems/{problem_id}/discussions`.

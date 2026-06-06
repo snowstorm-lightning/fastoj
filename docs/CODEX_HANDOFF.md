@@ -6,6 +6,36 @@ Updated: 2026-06-06
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
 
+## 2026-06-06 Problem Import Agent
+
+- Admin now has a separate `导入题目` tab beside original authoring. It accepts an optional source URL, pasted raw material up to 30000 characters, adaptation notes, difficulty/tags/mode/model, and target-language selections.
+- Backend API `POST /api/v1/admin/agent/problem-imports` creates `problem_import` runs and returns the existing draft creation response shape. The model step is recorded as `extract_rewrite`, then the existing validation, repair, slug, persistence, and official-solution checks run as before.
+- Imported drafts persist admin-only source metadata in `problem_drafts.source_metadata_json` through Alembic revision `20260606_0008`: kind, source URL, raw material, raw length, import notes, and rewrite policy.
+- The import prompt requires extraction, FastOJ adaptation, and rewritten statements, sample explanations, and official solutions instead of copying the pasted material. Public problem APIs and normal AI assistance contexts do not return imported raw material.
+- Admin draft list/detail responses include source metadata, so the UI can show an `导入` chip, source summary, raw length, notes, and a collapsible raw-material preview for administrators.
+- README, README.zh-CN, acceptance harness, and project-guide docs now describe the import workflow, source metadata boundary, frontend admin tab, and migration note.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (183 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 32 tests, existing jsdom canvas notices); `cd frontend && npm run build` (existing large chunk warnings).
+
+## 2026-06-06 Workbench Editor Control Polish
+
+- Custom run-case deletion now lives on each case tab as a top-right close control; the previous standalone delete button below the input/expected-output column was removed.
+- The case-tab close control is hidden until hover or keyboard focus within the tab, reducing visual noise while keeping deletion accessible.
+- Code-template reset and run-case reset use a reset-arrow SVG instead of a text-only `R` glyph. No new icon package was added; the project still uses local lightweight icons.
+- The workbench toolbar now has a persisted autocomplete toggle. It writes `fastoj.completionEnabled` to local storage and updates Monaco quick suggestions, trigger-character suggestions, parameter hints, and word-based suggestions at runtime.
+- The admin Problem Agent `constraints` field is now a wider multiline textarea, matching the backend's 2000-character request field and giving admins room to describe desired problem requirements.
+- `frontend/src/components/RunResultPanel.test.tsx` now covers tab-level case deletion.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (179 passed, existing FastAPI `regex` deprecation warnings); `cd frontend && npm test` (9 files / 29 tests, existing jsdom canvas notices); `cd frontend && npm run build` (existing large chunk warnings). A local browser DOM check against `http://127.0.0.1:5173` confirmed the SVG reset buttons, autocomplete toggle persistence, hover-revealed case close buttons, and tab-level delete controls.
+
+## 2026-06-06 Problem Statement Detail Pass
+
+- The bundled seed catalog remains 106 problems: 100 canonical Hot 100 entries plus 6 AI/ML exercises. The temporary local `print-test` and `print-qiu-qiu` problems are intentionally not part of seed data; the local database was cleaned back to 106 problems with those extra slugs removed.
+- Seed descriptions are now expanded through `backend/scripts/problem_statement_details.py`. The expansion uses public catalog metadata and slug-specific rules to clarify the problem meaning, not the platform contract.
+- Generated statements intentionally do not repeat function signatures, JSON-line mechanics, hidden-test language, stdin/stdout guidance, or generic edge-case advice. They focus on task rules, domain representation, tie-breaking, and ordering where those are part of the problem.
+- Chinese localized problem details now use `frontend/src/lib/problemStatementZh.ts` to add the same concise semantic clarification, so Chinese mode no longer collapses detail pages into one-line summaries.
+- Several Hot 100 descriptions that still said "print" now say "return" to match function-mode behavior; binary-tree wording now says level-order array instead of JSON protocol language.
+- Monaco editor cleanup in `frontend/src/components/CodeEditor.tsx` now clears the editor ref after disposal, preventing the blank editor seen under React StrictMode effect remounting.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (179 passed, existing FastAPI `regex` deprecation warnings); local seed normalized 106 existing problems and no extra print slugs remained; `cd frontend && npm test` (9 files / 28 tests, existing jsdom canvas notices); `cd frontend && npm run build` (existing large chunk warnings).
+
 ## 2026-06-06 Shared Discussions And Workbench History Polish
 
 - Problem discussions are now persisted server-side through the new `problem_discussions` table and Alembic revision `20260606_0007`. `GET /api/v1/problems/{problem_id}/discussions` returns recent public-problem posts; `POST /api/v1/problems/{problem_id}/discussions` requires authentication.

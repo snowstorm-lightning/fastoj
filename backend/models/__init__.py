@@ -226,6 +226,7 @@ class ProblemDraft(Base):
     space_complexity = Column(String(50), nullable=True)
     testcases_json = Column(Text, nullable=False, default="[]")
     validation_report_json = Column(Text, nullable=False, default="{}")
+    source_metadata_json = Column(Text, nullable=False, default="{}")
     status = Column(String(30), nullable=False, default="draft")
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     approved_problem_id = Column(UUID(as_uuid=True), ForeignKey("problems.id"), nullable=True)

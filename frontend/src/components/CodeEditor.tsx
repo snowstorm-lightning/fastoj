@@ -33,11 +33,13 @@ export function CodeEditor({
   value,
   onChange,
   theme = "dark",
+  completionEnabled = true,
 }: {
   language: string;
   value: string;
   onChange: (value: string) => void;
   theme?: "light" | "dark";
+  completionEnabled?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -57,10 +59,18 @@ export function CodeEditor({
       fontSize: 14,
       automaticLayout: true,
       scrollBeyondLastLine: false,
+      quickSuggestions: completionEnabled,
+      suggestOnTriggerCharacters: completionEnabled,
+      wordBasedSuggestions: completionEnabled ? "matchingDocuments" : "off",
+      parameterHints: { enabled: completionEnabled },
     });
-    editor.onDidChangeModelContent(() => onChangeRef.current(editor.getValue()));
+    const contentChangeSubscription = editor.onDidChangeModelContent(() => onChangeRef.current(editor.getValue()));
     editorRef.current = editor;
-    return () => editor.dispose();
+    return () => {
+      contentChangeSubscription.dispose();
+      editor.dispose();
+      editorRef.current = null;
+    };
     // Monaco must be created exactly once for this DOM node.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -80,6 +90,15 @@ export function CodeEditor({
     const model = editorRef.current?.getModel();
     if (model) monaco.editor.setModelLanguage(model, LANGUAGE_MAP[language] ?? "plaintext");
   }, [language]);
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({
+      quickSuggestions: completionEnabled,
+      suggestOnTriggerCharacters: completionEnabled,
+      wordBasedSuggestions: completionEnabled ? "matchingDocuments" : "off",
+      parameterHints: { enabled: completionEnabled },
+    });
+  }, [completionEnabled]);
 
   return <div className="code-editor" ref={containerRef} />;
 }

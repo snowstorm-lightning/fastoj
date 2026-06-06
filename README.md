@@ -60,6 +60,9 @@ for that.
    content is saved as a draft until an administrator approves it; validation
    failures can trigger bounded AI repair attempts before the final draft is
    saved, and admins can manually edit failed drafts, save, and revalidate them.
+   Admins can also import pasted external problem material through a separate
+   workflow; the source text stays admin-only while AI rewrites and adapts the
+   draft before validation.
    User management covers roles and account status; problem management covers
    statements, slug, mode, function signature, ACM formats, limits, visibility,
    official solutions, full testcase sets, revalidation, and deleting retired
@@ -91,7 +94,7 @@ is saved to the user profile after sign-in.
 
 | Admin Console |
 | --- |
-| Admins get a single workspace for the problem-authoring Agent, user management, problem/content management, formal testcase management, and draft approval. Hidden testcase content is visible only through admin UI/API and is not exposed to regular problem views, AI explanations, or submission logs. |
+| Admins get a single workspace for original problem authoring, imported-problem drafting, user management, problem/content management, formal testcase management, and draft approval. Hidden testcase content and imported raw source material are visible only through admin UI/API and are not exposed to regular problem views, AI explanations, or submission logs. |
 
 ## Quick Start
 

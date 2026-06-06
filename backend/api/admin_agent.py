@@ -16,6 +16,7 @@ from backend.schemas.problem_authoring import (
     ProblemDraftResponse,
     ProblemDraftSolutionGenerateRequest,
     ProblemDraftUpdate,
+    ProblemImportRequest,
 )
 from backend.services.problem_authoring_agent import ProblemAuthoringAgentService, load_json
 
@@ -30,6 +31,29 @@ def create_problem_draft(
 ):
     try:
         draft, run = ProblemAuthoringAgentService(db).create_draft(payload, current_user)
+    except AIProviderUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    validation_report = load_json(draft.validation_report_json, {})
+    return ProblemAuthoringCreateResponse(
+        draft_id=str(draft.id),
+        run_id=str(run.id),
+        status=draft.status,
+        validation_summary=_validation_summary(validation_report),
+        steps=[_step_response(step) for step in _run_steps(db, run)],
+    )
+
+
+@router.post("/agent/problem-imports", response_model=ProblemAuthoringCreateResponse)
+def create_problem_import(
+    payload: ProblemImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    try:
+        draft, run = ProblemAuthoringAgentService(db).create_import_draft(payload, current_user)
     except AIProviderUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except ValueError as exc:
@@ -250,6 +274,7 @@ def _draft_response(db: Session, draft: ProblemDraft) -> ProblemDraftResponse:
         space_complexity=draft.space_complexity,
         testcases=load_json(draft.testcases_json, []),
         validation_report=load_json(draft.validation_report_json, {}),
+        source_metadata=_draft_source_metadata(draft),
         status=draft.status,
         created_by=str(draft.created_by),
         approved_problem_id=str(draft.approved_problem_id) if draft.approved_problem_id else None,
@@ -272,6 +297,7 @@ def _draft_list_item(draft: ProblemDraft) -> ProblemDraftListItem:
         target_languages=_draft_target_languages(draft),
         status=draft.status,
         validation_summary=_validation_summary(report),
+        source_metadata=_draft_source_metadata(draft),
         approved_problem_id=str(draft.approved_problem_id) if draft.approved_problem_id else None,
         created_at=draft.created_at.isoformat(),
         updated_at=draft.updated_at.isoformat(),
@@ -306,6 +332,11 @@ def _draft_target_languages(draft: ProblemDraft) -> list[str]:
         if languages:
             return list(dict.fromkeys(languages))
     return list(dict.fromkeys(solution["language"] for solution in _draft_solutions(draft)))
+
+
+def _draft_source_metadata(draft: ProblemDraft) -> dict:
+    metadata = load_json(getattr(draft, "source_metadata_json", None), {})
+    return metadata if isinstance(metadata, dict) else {}
 
 
 def _validation_summary(report: dict) -> dict:

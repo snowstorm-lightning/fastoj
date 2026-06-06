@@ -52,6 +52,19 @@ export type ProblemAgentRequest = {
   model_profile: AIModelProfile;
   constraints?: string | null;
 };
+export type ProblemImportRequest = {
+  raw_material: string;
+  source_url?: string | null;
+  topic?: string | null;
+  difficulty: "easy" | "medium" | "hard";
+  tags: string[];
+  mode: "function" | "acm" | "both";
+  target_language: string;
+  target_languages?: string[];
+  locale: Locale;
+  model_profile: AIModelProfile;
+  import_notes?: string | null;
+};
 export type AgentStep = {
   id: string;
   run_id?: string;
@@ -101,6 +114,7 @@ export type ProblemDraft = {
   space_complexity?: string | null;
   validation_summary?: Record<string, unknown>;
   validation_report?: Record<string, any>;
+  source_metadata?: Record<string, unknown>;
   testcases?: Array<Record<string, any>>;
   steps?: AgentStep[];
   runs?: AgentRun[];
@@ -429,6 +443,12 @@ export const api = {
   },
   async adminCreateProblemDraft(payload: ProblemAgentRequest) {
     return request("/api/v1/admin/agent/problem-drafts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, (data: any) => data);
+  },
+  async adminCreateProblemImport(payload: ProblemImportRequest) {
+    return request("/api/v1/admin/agent/problem-imports", {
       method: "POST",
       body: JSON.stringify(payload),
     }, (data: any) => data);

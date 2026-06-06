@@ -99,6 +99,7 @@ type AuthMode = "login" | "register";
 type LibraryLayout = "card" | "list";
 type AppTheme = "light" | "dark";
 type ProblemAuthoringMode = "function" | "acm" | "both";
+type AgentTab = "authoring" | "import";
 type AIChatLine = { id: string; role: "user" | "assistant"; message: string; suggestions?: string[] };
 type DraftEditCase = {
   input: string;
@@ -220,6 +221,15 @@ function ensureRunCases(cases: EditableRunCase[]): EditableRunCase[] {
 
 function IconGlyph({ children }: { children: React.ReactNode }) {
   return <span className="icon-glyph" aria-hidden="true">{children}</span>;
+}
+
+function ResetTemplateIcon() {
+  return (
+    <svg className="reset-template-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5.4 9.2a7.2 7.2 0 1 1 1.2 6.9" />
+      <path d="M5.4 9.2H2.2V6" />
+    </svg>
+  );
 }
 
 function PanelToggleIcon({ open, side }: { open: boolean; side: "left" | "right" }) {
@@ -694,6 +704,18 @@ function recordValue(value: unknown): Record<string, unknown> {
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function draftSourceMetadata(draft: Pick<ProblemDraft, "source_metadata"> | null | undefined): Record<string, unknown> {
+  return recordValue(draft?.source_metadata);
+}
+
+function isImportedDraft(draft: Pick<ProblemDraft, "source_metadata"> | null | undefined): boolean {
+  return draftSourceMetadata(draft).kind === "imported";
+}
+
+function sourceText(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 function validationLabel(name: string, locale: Locale): string {
@@ -1234,6 +1256,7 @@ function Workspace({
   const [leftWidth, setLeftWidth] = useState(() => Number(localStorage.getItem("fastoj.leftWidth") ?? DEFAULT_LEFT_PANEL_WIDTH));
   const [rightWidth, setRightWidth] = useState(() => Number(localStorage.getItem("fastoj.rightWidth") ?? DEFAULT_RIGHT_PANEL_WIDTH));
   const [editorHeight, setEditorHeight] = useState(() => clamp(Number(localStorage.getItem("fastoj.editorHeight") ?? DEFAULT_EDITOR_HEIGHT), EDITOR_MIN_HEIGHT, EDITOR_MAX_HEIGHT));
+  const [completionEnabled, setCompletionEnabled] = useState(() => localStorage.getItem("fastoj.completionEnabled") !== "false");
   const [resizing, setResizing] = useState<"left" | "right" | "editor" | null>(null);
   const [submission, setSubmission] = useState<SubmissionDetail | null>(null);
   const [events, setEvents] = useState<JudgeEvent[]>([]);
@@ -1282,6 +1305,7 @@ function Workspace({
   useEffect(() => { localStorage.setItem("fastoj.leftWidth", String(leftWidth)); }, [leftWidth]);
   useEffect(() => { localStorage.setItem("fastoj.rightWidth", String(rightWidth)); }, [rightWidth]);
   useEffect(() => { localStorage.setItem("fastoj.editorHeight", String(editorHeight)); }, [editorHeight]);
+  useEffect(() => { localStorage.setItem("fastoj.completionEnabled", String(completionEnabled)); }, [completionEnabled]);
   useEffect(() => { localStorage.setItem("fastoj.aiModel", aiModel); }, [aiModel]);
   useEffect(() => { if (problemId) setRecentProblemId(problemId); }, [problemId, setRecentProblemId]);
   useEffect(() => { clearCopilotState(); }, [locale]);
@@ -1738,13 +1762,28 @@ function Workspace({
               {LANGUAGES.map((item) => <option key={item}>{item}</option>)}
             </select>
             <AIModelDropdown value={aiModel} locale={locale} profiles={aiProfiles} disabledReason={aiDisabledReason} onChange={setAiModel} />
-            <button className="icon-button tip" data-tip={text.resetTemplate} onClick={resetEditorTemplate}><IconGlyph>R</IconGlyph></button>
+            <label
+              className={completionEnabled ? "completion-toggle active tip" : "completion-toggle tip"}
+              data-tip={completionEnabled ? text.codeCompletionOn : text.codeCompletionOff}
+            >
+              <input
+                type="checkbox"
+                checked={completionEnabled}
+                aria-label={text.codeCompletion}
+                onChange={(event) => setCompletionEnabled(event.target.checked)}
+              />
+              <span className="completion-switch" aria-hidden="true" />
+              <span>{text.codeCompletion}</span>
+            </label>
+            <button type="button" className="icon-button reset-template-button tip" data-tip={text.resetTemplate} aria-label={text.resetTemplate} onClick={resetEditorTemplate}>
+              <ResetTemplateIcon />
+            </button>
             <button className="icon-button run-action tip" data-tip={text.runTitle} onClick={() => judge(true)}><IconGlyph>▶</IconGlyph></button>
             <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)}><IconGlyph>↑</IconGlyph></button>
           </div>
           <FunctionFrame problem={problem} mode={judgeMode} language={language} locale={locale} />
           <Suspense fallback={<LazySurface className="code-editor" label={localeText(locale, { zh: "正在加载编辑器...", en: "Loading editor..." })} />}>
-            <CodeEditor language={language} value={code} onChange={updateCode} theme={theme} />
+            <CodeEditor language={language} value={code} onChange={updateCode} theme={theme} completionEnabled={completionEnabled} />
           </Suspense>
           <div
             className="editor-result-resizer"
@@ -2118,7 +2157,20 @@ const ADMIN_TEXT_BY_LOCALE = {
     private: "隐藏",
     problemAgent: "出题 Agent",
     agentNotice: "AI 生成内容只保存为草稿，管理员审批前不会发布。",
+    authoringTab: "原创出题",
+    importTab: "导入题目",
     generateDraft: "生成草稿",
+    importDraft: "导入为草稿",
+    sourceUrlLabel: "来源链接（可选）",
+    rawMaterialLabel: "原始材料",
+    rawMaterialPlaceholder: "粘贴网上看到的题面、示例、解释、代码或笔记。原文只在管理员草稿中可见，不会发布给普通用户。",
+    importNotesLabel: "适配要求",
+    importNotesPlaceholder: "补充希望如何改写和适配，例如函数签名偏好、输入规模、必须保留的样例、需要规避的解法或输出顺序。",
+    importedDraft: "导入",
+    importSource: "导入来源",
+    rawMaterialLength: "原始材料长度",
+    rawMaterialPreview: "原始材料预览",
+    rawMaterialRequired: "请粘贴至少 20 个字符的原始材料。",
     approveDraft: "批准发布",
     rejectDraft: "拒绝草稿",
     draftPreview: "草稿预览",
@@ -2200,7 +2252,20 @@ const ADMIN_TEXT_BY_LOCALE = {
     private: "Private",
     problemAgent: "Problem Agent",
     agentNotice: "AI-generated content is saved as a draft and is never published before admin approval.",
+    authoringTab: "Original",
+    importTab: "Import",
     generateDraft: "Generate draft",
+    importDraft: "Import draft",
+    sourceUrlLabel: "Source URL (optional)",
+    rawMaterialLabel: "Raw material",
+    rawMaterialPlaceholder: "Paste the statement, examples, explanations, code, or notes you found. Raw source text stays admin-only and is not published to users.",
+    importNotesLabel: "Adaptation notes",
+    importNotesPlaceholder: "Add rewrite and adaptation requirements, such as signature preference, input scale, samples to preserve, algorithms to avoid, or output ordering.",
+    importedDraft: "Imported",
+    importSource: "Import source",
+    rawMaterialLength: "Raw material length",
+    rawMaterialPreview: "Raw material preview",
+    rawMaterialRequired: "Paste at least 20 characters of raw material.",
     approveDraft: "Approve",
     rejectDraft: "Reject",
     draftPreview: "Draft preview",
@@ -2269,8 +2334,199 @@ const ADMIN_TEXT_BY_LOCALE = {
 type AdminText = Record<keyof (typeof ADMIN_TEXT_BY_LOCALE)["zh"], string>;
 const ADMIN_TEXT_LOOKUP: Partial<Record<Locale, AdminText>> & Record<"zh", AdminText> = ADMIN_TEXT_BY_LOCALE;
 
-function getAdminText(locale: Locale): AdminText {
+export function getAdminText(locale: Locale): AdminText {
   return ADMIN_TEXT_LOOKUP[locale] ?? ADMIN_TEXT_LOOKUP.zh;
+}
+
+function AgentDifficultyField({
+  value,
+  locale,
+  onChange,
+}: {
+  value: "easy" | "medium" | "hard";
+  locale: Locale;
+  onChange: (value: "easy" | "medium" | "hard") => void;
+}) {
+  return (
+    <label>{localeText(locale, { zh: "难度", en: "Difficulty" })}
+      <select value={value} onChange={(event) => onChange(event.target.value as "easy" | "medium" | "hard")}>
+        <option value="easy">easy</option>
+        <option value="medium">medium</option>
+        <option value="hard">hard</option>
+      </select>
+    </label>
+  );
+}
+
+function AgentModeField({
+  value,
+  locale,
+  onChange,
+}: {
+  value: ProblemAuthoringMode;
+  locale: Locale;
+  onChange: (value: ProblemAuthoringMode) => void;
+}) {
+  return (
+    <label>{localeText(locale, { zh: "模式", en: "Mode" })}
+      <select value={value} onChange={(event) => onChange(event.target.value as ProblemAuthoringMode)}>
+        <option value="both">{authoringModeLabel("both", locale)}</option>
+        <option value="function">{authoringModeLabel("function", locale)}</option>
+        <option value="acm">{authoringModeLabel("acm", locale)}</option>
+      </select>
+    </label>
+  );
+}
+
+function AgentLanguageField({
+  languages,
+  text,
+  onToggle,
+}: {
+  languages: string[];
+  text: AdminText;
+  onToggle: (language: string) => void;
+}) {
+  return (
+    <div className="agent-field language-checklist-label"><span>{text.targetLanguagesLabel}</span>
+      <div className="language-checklist">
+        {LANGUAGES.map((item) => (
+          <label className="checkbox-label language-chip" key={item}>
+            <input
+              type="checkbox"
+              checked={languages.includes(item)}
+              onChange={() => onToggle(item)}
+            />
+            {languageLabel(item)}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AgentModelField({
+  profiles,
+  value,
+  locale,
+  onChange,
+}: {
+  profiles: AIProfile[];
+  value: AIModelProfile;
+  locale: Locale;
+  onChange: (value: AIModelProfile) => void;
+}) {
+  return (
+    <label>{localeText(locale, { zh: "模型", en: "Model" })}
+      <select value={value} onChange={(event) => onChange(event.target.value as AIModelProfile)}>
+        {(profiles.length ? profiles : [AI_PROFILE_FALLBACKS.default]).map((profile) => (
+          <option key={profile.value} value={profile.value} disabled={!profile.available}>
+            {aiProfileLabel(profile, locale)}{profile.available ? "" : ` (${localeText(locale, { zh: "不可用", en: "unavailable" })})`}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+export function DraftSourceSummary({ draft, locale, text }: { draft: ProblemDraft; locale: Locale; text: AdminText }) {
+  const metadata = draftSourceMetadata(draft);
+  const sourceUrl = sourceText(metadata.source_url);
+  const rawMaterial = sourceText(metadata.raw_material);
+  const rawLength = Number(metadata.raw_material_length ?? rawMaterial.length);
+  const importNotes = sourceText(metadata.import_notes);
+  return (
+    <div className="draft-source-summary">
+      <div className="draft-status-line">
+        <span className="draft-status-chip imported">{text.importedDraft}</span>
+        <span>{text.importSource}: {sourceUrl || localeText(locale, { zh: "未填写", en: "not provided" })}</span>
+        <span>{text.rawMaterialLength}: {Number.isFinite(rawLength) ? rawLength : rawMaterial.length}</span>
+      </div>
+      {importNotes ? <p className="muted">{text.importNotesLabel}: {importNotes}</p> : null}
+      {rawMaterial ? (
+        <details>
+          <summary>{text.rawMaterialPreview}</summary>
+          <pre>{rawMaterial}</pre>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+export function ProblemImportForm({
+  locale,
+  text,
+  sourceUrl,
+  rawMaterial,
+  importNotes,
+  difficulty,
+  tags,
+  mode,
+  model,
+  languages,
+  profiles,
+  canImport,
+  onSourceUrlChange,
+  onRawMaterialChange,
+  onImportNotesChange,
+  onDifficultyChange,
+  onTagsChange,
+  onModeChange,
+  onModelChange,
+  onToggleLanguage,
+  onSubmit,
+}: {
+  locale: Locale;
+  text: AdminText;
+  sourceUrl: string;
+  rawMaterial: string;
+  importNotes: string;
+  difficulty: "easy" | "medium" | "hard";
+  tags: string;
+  mode: ProblemAuthoringMode;
+  model: AIModelProfile;
+  languages: string[];
+  profiles: AIProfile[];
+  canImport: boolean;
+  onSourceUrlChange: (value: string) => void;
+  onRawMaterialChange: (value: string) => void;
+  onImportNotesChange: (value: string) => void;
+  onDifficultyChange: (value: "easy" | "medium" | "hard") => void;
+  onTagsChange: (value: string) => void;
+  onModeChange: (value: ProblemAuthoringMode) => void;
+  onModelChange: (value: AIModelProfile) => void;
+  onToggleLanguage: (language: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="agent-form import-agent-form">
+      <label className="import-source-field">{text.sourceUrlLabel}<input value={sourceUrl} onChange={(event) => onSourceUrlChange(event.target.value)} /></label>
+      <AgentDifficultyField value={difficulty} locale={locale} onChange={onDifficultyChange} />
+      <label>{localeText(locale, { zh: "标签", en: "Tags" })}<input value={tags} onChange={(event) => onTagsChange(event.target.value)} /></label>
+      <AgentModeField value={mode} locale={locale} onChange={onModeChange} />
+      <AgentModelField profiles={profiles} value={model} locale={locale} onChange={onModelChange} />
+      <AgentLanguageField languages={languages} text={text} onToggle={onToggleLanguage} />
+      <label className="agent-raw-material-field">
+        {text.rawMaterialLabel}
+        <textarea
+          value={rawMaterial}
+          maxLength={30000}
+          placeholder={text.rawMaterialPlaceholder}
+          onChange={(event) => onRawMaterialChange(event.target.value)}
+        />
+      </label>
+      <label className="agent-constraints-field">
+        {text.importNotesLabel}
+        <textarea
+          value={importNotes}
+          maxLength={2000}
+          placeholder={text.importNotesPlaceholder}
+          onChange={(event) => onImportNotesChange(event.target.value)}
+        />
+      </label>
+      <button className="primary agent-generate-button" onClick={onSubmit} disabled={!canImport}>{text.importDraft}</button>
+    </div>
+  );
 }
 
 function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUser: CurrentUser | null; onBack: () => void }) {
@@ -2299,6 +2555,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     score: "10",
     order: "",
   });
+  const [agentTab, setAgentTab] = useState<AgentTab>("authoring");
   const [agentTopic, setAgentTopic] = useState("");
   const [agentTags, setAgentTags] = useState("");
   const [agentDifficulty, setAgentDifficulty] = useState<"easy" | "medium" | "hard">("medium");
@@ -2306,6 +2563,9 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const [agentLanguages, setAgentLanguages] = useState<string[]>(["python", "cpp", "java"]);
   const [agentModel, setAgentModel] = useState<AIModelProfile>("default");
   const [agentConstraints, setAgentConstraints] = useState("");
+  const [importSourceUrl, setImportSourceUrl] = useState("");
+  const [importRawMaterial, setImportRawMaterial] = useState("");
+  const [importNotes, setImportNotes] = useState("");
   const [agentMessage, setAgentMessage] = useState("");
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
@@ -2375,6 +2635,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         ? aiUnavailableText(locale)
         : null;
   const agentCanGenerate = Boolean(agentPreferredProfile && agentModelAvailable && agentTopic.trim());
+  const importCanGenerate = Boolean(agentPreferredProfile && agentModelAvailable && importRawMaterial.trim().length >= 20);
 
   useEffect(() => {
     const next: Record<string, AdminTestCase> = {};
@@ -2481,6 +2742,43 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       await draftsQuery.refetch();
     } catch (error) {
       setAgentMessage(error instanceof Error ? error.message : localeText(locale, { zh: "生成失败。", en: "Generation failed." }));
+    }
+  }
+
+  async function createImportDraft() {
+    if (importRawMaterial.trim().length < 20) {
+      setAgentMessage(text.rawMaterialRequired);
+      return;
+    }
+    if (!importCanGenerate) {
+      setAgentMessage(agentModelUnavailableReason ?? aiUnavailableText(locale));
+      return;
+    }
+    setAgentMessage(localeText(locale, { zh: "正在导入、改写并验证草稿...", en: "Importing, rewriting, and validating draft..." }));
+    try {
+      const result = await api.adminCreateProblemImport({
+        raw_material: importRawMaterial.trim(),
+        source_url: importSourceUrl.trim() || null,
+        difficulty: agentDifficulty,
+        tags: agentTags.split(",").map((tag) => tag.trim()).filter(Boolean),
+        mode: agentMode,
+        target_language: agentLanguages[0] ?? "python",
+        target_languages: agentLanguages,
+        locale,
+        model_profile: agentModel,
+        import_notes: importNotes.trim() || null,
+      });
+      const run = await api.adminAgentRun(result.run_id);
+      const draft = await api.adminProblemDraft(result.draft_id);
+      setAgentSteps(draft.steps?.length ? draft.steps : run.steps ?? []);
+      setAgentRuns(draft.runs?.length ? draft.runs : [run]);
+      setSelectedDraft(draft);
+      setDraftEdit(draftEditFromDraft(draft));
+      setDraftSaveMessage("");
+      setAgentMessage(validationStatusMessage(result.status, result.validation_summary, locale));
+      await draftsQuery.refetch();
+    } catch (error) {
+      setAgentMessage(error instanceof Error ? error.message : localeText(locale, { zh: "导入失败。", en: "Import failed." }));
     }
   }
 
@@ -2920,50 +3218,59 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
             <h2>{text.problemAgent}</h2>
             <p className="muted">{text.agentNotice}</p>
           </div>
-          <div className="agent-form">
-            <label>{localeText(locale, { zh: "主题", en: "Topic" })}<input value={agentTopic} onChange={(event) => setAgentTopic(event.target.value)} /></label>
-            <label>{localeText(locale, { zh: "难度", en: "Difficulty" })}
-              <select value={agentDifficulty} onChange={(event) => setAgentDifficulty(event.target.value as "easy" | "medium" | "hard")}>
-                <option value="easy">easy</option>
-                <option value="medium">medium</option>
-                <option value="hard">hard</option>
-              </select>
-            </label>
-            <label>{localeText(locale, { zh: "标签", en: "Tags" })}<input value={agentTags} onChange={(event) => setAgentTags(event.target.value)} /></label>
-            <label>{localeText(locale, { zh: "模式", en: "Mode" })}
-              <select value={agentMode} onChange={(event) => setAgentMode(event.target.value as ProblemAuthoringMode)}>
-                <option value="both">{authoringModeLabel("both", locale)}</option>
-                <option value="function">{authoringModeLabel("function", locale)}</option>
-                <option value="acm">{authoringModeLabel("acm", locale)}</option>
-              </select>
-            </label>
-            <div className="agent-field language-checklist-label"><span>{text.targetLanguagesLabel}</span>
-              <div className="language-checklist">
-                {LANGUAGES.map((item) => (
-                  <label className="checkbox-label language-chip" key={item}>
-                    <input
-                      type="checkbox"
-                      checked={agentLanguages.includes(item)}
-                      onChange={() => toggleAgentLanguage(item)}
-                    />
-                    {languageLabel(item)}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <label>{localeText(locale, { zh: "模型", en: "Model" })}
-              <select value={agentModel} onChange={(event) => setAgentModel(event.target.value as AIModelProfile)}>
-                {(adminAiProfiles.length ? adminAiProfiles : [AI_PROFILE_FALLBACKS.default]).map((profile) => (
-                  <option key={profile.value} value={profile.value} disabled={!profile.available}>
-                    {aiProfileLabel(profile, locale)}{profile.available ? "" : ` (${localeText(locale, { zh: "不可用", en: "unavailable" })})`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>{localeText(locale, { zh: "额外约束", en: "Constraints" })}<input value={agentConstraints} onChange={(event) => setAgentConstraints(event.target.value)} /></label>
-            <button className="primary" onClick={createAgentDraft} disabled={!agentCanGenerate}>{text.generateDraft}</button>
+          <div className="agent-tabs segmented" role="tablist" aria-label={text.problemAgent}>
+            <button type="button" className={agentTab === "authoring" ? "active" : ""} aria-selected={agentTab === "authoring"} onClick={() => setAgentTab("authoring")}>{text.authoringTab}</button>
+            <button type="button" className={agentTab === "import" ? "active" : ""} aria-selected={agentTab === "import"} onClick={() => setAgentTab("import")}>{text.importTab}</button>
           </div>
-          {!agentTopic.trim() ? <p className="muted model-unavailable-note">{localeText(locale, { zh: "填写主题后才能生成草稿。", en: "Enter a topic to generate a draft." })}</p> : null}
+          {agentTab === "authoring" ? (
+            <div className="agent-form">
+              <label>{localeText(locale, { zh: "主题", en: "Topic" })}<input value={agentTopic} onChange={(event) => setAgentTopic(event.target.value)} /></label>
+              <AgentDifficultyField value={agentDifficulty} locale={locale} onChange={setAgentDifficulty} />
+              <label>{localeText(locale, { zh: "标签", en: "Tags" })}<input value={agentTags} onChange={(event) => setAgentTags(event.target.value)} /></label>
+              <AgentModeField value={agentMode} locale={locale} onChange={setAgentMode} />
+              <AgentLanguageField languages={agentLanguages} text={text} onToggle={toggleAgentLanguage} />
+              <AgentModelField profiles={adminAiProfiles} value={agentModel} locale={locale} onChange={setAgentModel} />
+              <label className="agent-constraints-field">
+                {localeText(locale, { zh: "额外约束", en: "Constraints" })}
+                <textarea
+                  value={agentConstraints}
+                  maxLength={2000}
+                  placeholder={localeText(locale, {
+                    zh: "补充题目要求，例如：业务背景、输入规模、必须覆盖的边界、期望考察的算法、不要出现的套路或样例风格。",
+                    en: "Add requirements such as story context, input scale, required boundaries, target algorithm, patterns to avoid, or sample style.",
+                  })}
+                  onChange={(event) => setAgentConstraints(event.target.value)}
+                />
+              </label>
+              <button className="primary agent-generate-button" onClick={createAgentDraft} disabled={!agentCanGenerate}>{text.generateDraft}</button>
+            </div>
+          ) : (
+            <ProblemImportForm
+              locale={locale}
+              text={text}
+              sourceUrl={importSourceUrl}
+              rawMaterial={importRawMaterial}
+              importNotes={importNotes}
+              difficulty={agentDifficulty}
+              tags={agentTags}
+              mode={agentMode}
+              model={agentModel}
+              languages={agentLanguages}
+              profiles={adminAiProfiles}
+              canImport={importCanGenerate}
+              onSourceUrlChange={setImportSourceUrl}
+              onRawMaterialChange={setImportRawMaterial}
+              onImportNotesChange={setImportNotes}
+              onDifficultyChange={setAgentDifficulty}
+              onTagsChange={setAgentTags}
+              onModeChange={setAgentMode}
+              onModelChange={setAgentModel}
+              onToggleLanguage={toggleAgentLanguage}
+              onSubmit={createImportDraft}
+            />
+          )}
+          {agentTab === "authoring" && !agentTopic.trim() ? <p className="muted model-unavailable-note">{localeText(locale, { zh: "填写主题后才能生成草稿。", en: "Enter a topic to generate a draft." })}</p> : null}
+          {agentTab === "import" && importRawMaterial.trim().length < 20 ? <p className="muted model-unavailable-note">{text.rawMaterialRequired}</p> : null}
           {agentModelUnavailableReason ? <p className="muted model-unavailable-note">{agentModelUnavailableReason}</p> : null}
           {agentMessage ? <p className="muted">{agentMessage}</p> : null}
           <div className="agent-workspace">
@@ -2977,11 +3284,12 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                     onClick={() => loadDraft(draft.id)}
                   >
                     <strong>{draft.title}</strong>
-                    <span className="draft-status-line">
-                      <span className={`draft-status-chip ${statusClass}`}>{draftStatusLabel(draft.status, locale)}</span>
-                      <span>{authoringModeLabel(draft.mode, locale)}</span>
-                    </span>
-                  </button>
+                      <span className="draft-status-line">
+                        <span className={`draft-status-chip ${statusClass}`}>{draftStatusLabel(draft.status, locale)}</span>
+                        {isImportedDraft(draft) ? <span className="draft-status-chip imported">{text.importedDraft}</span> : null}
+                        <span>{authoringModeLabel(draft.mode, locale)}</span>
+                      </span>
+                    </button>
                 );
               })}
             </div>
@@ -3015,6 +3323,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                     </div>
                     <span className={`draft-status-chip ${draftStatusClass(selectedDraft.status)}`}>{draftStatusLabel(selectedDraft.status, locale)}</span>
                   </div>
+                  {isImportedDraft(selectedDraft) ? <DraftSourceSummary draft={selectedDraft} locale={locale} text={text} /> : null}
                   {draftSaveMessage ? <p className="muted">{draftSaveMessage}</p> : null}
                   {draftEdit ? (
                     <div className="draft-edit-panel">
@@ -3584,10 +3893,14 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </React.StrictMode>,
-);
+const rootElement = document.getElementById("root");
+
+if (rootElement) {
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </React.StrictMode>,
+  );
+}
