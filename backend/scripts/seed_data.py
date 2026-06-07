@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Seed sample data for FastOJ."""
 
+import json
 import uuid
 
 from backend.core.database import Base, SessionLocal, engine
@@ -416,6 +417,15 @@ def _expanded_testcases(item: dict) -> list[dict]:
     return augmented_testcases(item)
 
 
+def _case_with_io_metadata(case_data: dict) -> dict:
+    """Translate io_metadata into the TestCase model column name."""
+
+    normalized = dict(case_data)
+    io_metadata = normalized.pop("io_metadata", None)
+    normalized["io_metadata_json"] = json.dumps(io_metadata, separators=(",", ":")) if isinstance(io_metadata, dict) else None
+    return normalized
+
+
 def seed_problems():
     """Seed or normalize sample problems by slug."""
     db = SessionLocal()
@@ -456,7 +466,7 @@ def seed_problems():
             )
             testcases = _expanded_testcases(item)
             for order, tc_data in enumerate(testcases):
-                tc_data = dict(tc_data)
+                tc_data = _case_with_io_metadata(tc_data)
                 tc_data.pop("order", None)
                 if order < len(existing_cases):
                     testcase = existing_cases[order]

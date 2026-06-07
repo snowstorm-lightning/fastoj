@@ -1489,7 +1489,8 @@ function Workspace({
   }
 
   function toggleJudgeMode() {
-    if (!modeInfo.supportsFunction) return;
+    if (judgeMode === "function" && !modeInfo.supportsAcm) return;
+    if (judgeMode === "acm" && !modeInfo.supportsFunction) return;
     setJudgeMode(judgeMode === "function" ? "acm" : "function");
   }
 
@@ -1865,7 +1866,20 @@ function Workspace({
 
         <section className="coding-panel feature-frame code-frame" style={codingStyle}>
           <div className="editor-toolbar">
-            <button className={`mode-toggle ${judgeMode === "function" ? "active function-mode" : "active acm-mode"}`} title={!modeInfo.supportsFunction ? text.modeAcmOnlyTitle : judgeMode === "function" ? text.modeFunctionTitle : text.modeAcmTitle} disabled={!modeInfo.supportsFunction} onClick={toggleJudgeMode}>
+            <button
+              className={`mode-toggle ${judgeMode === "function" ? "active function-mode" : "active acm-mode"}`}
+              title={
+                judgeMode === "function"
+                  ? modeInfo.supportsAcm
+                    ? text.modeAcmTitle
+                    : text.modeFunctionOnlyTitle
+                  : modeInfo.supportsFunction
+                    ? text.modeFunctionTitle
+                    : text.modeAcmOnlyTitle
+              }
+              disabled={judgeMode === "function" ? !modeInfo.supportsAcm : !modeInfo.supportsFunction}
+              onClick={toggleJudgeMode}
+            >
               <span className="mode-dot" />
               {judgeMode === "function" ? text.functionMode : text.acmMode}
             </button>

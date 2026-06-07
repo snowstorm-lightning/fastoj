@@ -707,10 +707,19 @@ export function getProblemMode(problem?: AnyProblem | null) {
   const functionSpec = getFunctionSpec(problem);
   const tags = problem?.tags ?? [];
   const isAiPractice = tags.some((tag) => ["AI", "ML", "Deep Learning"].includes(tag));
+  const supportsFunction = Boolean(functionSpec);
+  const sampleSupportsAcm = Boolean(
+    problem?.sample_testcases?.some((testcase) => {
+      if (testcase.display_mode === "acm") return true;
+      return Boolean(testcase.acm_input);
+    }),
+  );
+  const isAcmPrimary = problem?.mode === "acm";
+  const supportsAcm = isAcmPrimary || ((problem?.mode === "function" || problem?.mode === "both") && sampleSupportsAcm);
   return {
     defaultMode: functionSpec ? "function" as JudgeMode : "acm" as JudgeMode,
-    supportsFunction: Boolean(functionSpec),
-    supportsAcm: true,
+    supportsFunction,
+    supportsAcm,
     isAiPractice,
     functionSpec,
   };

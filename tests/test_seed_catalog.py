@@ -19,6 +19,7 @@ from backend.scripts.seed_testcase_augmentation import (
     public_minimum_for_slug,
 )
 from backend.services.function_mode import wrap_function_submission
+from backend.services.problem_modes import FUNCTION_SIGNATURES
 from backend.worker.tasks.judge_task import _outputs_match
 
 
@@ -153,6 +154,25 @@ def test_seed_testcase_counts_follow_policy():
 
         assert public_count >= public_minimum_for_slug(slug), slug
         assert hidden_count >= hidden_minimum_for_slug(slug), slug
+
+
+def test_seed_function_testcases_have_acm_and_function_views():
+    for item in PROBLEMS_DATA:
+        if item["problem"]["slug"] not in FUNCTION_SIGNATURES:
+            continue
+        for index, testcase in enumerate(_expanded_testcases(item)):
+            metadata = testcase.get("io_metadata")
+            assert isinstance(metadata, dict), item["problem"]["slug"]
+            assert "function" in metadata, (item["problem"]["slug"], index)
+            assert "acm" in metadata, (item["problem"]["slug"], index)
+            function_view = metadata["function"]
+            acm_view = metadata["acm"]
+            assert isinstance(function_view, dict), (item["problem"]["slug"], index)
+            assert isinstance(acm_view, dict), (item["problem"]["slug"], index)
+            assert function_view.get("input") is not None, (item["problem"]["slug"], index)
+            assert function_view.get("output") is not None, (item["problem"]["slug"], index)
+            assert acm_view.get("input") is not None, (item["problem"]["slug"], index)
+            assert acm_view.get("output") is not None, (item["problem"]["slug"], index)
 
 
 def test_seed_python_official_solutions_pass_all_seed_cases():

@@ -21,6 +21,8 @@ const validParentheses = {
   title: "Valid Parentheses",
   slug: "valid-parentheses",
   tags: ["Stack", "String"],
+  mode: "both",
+  sample_testcases: [{ input: "[]", output: "true", acm_input: "[]\n", acm_output: "true" }],
 };
 
 const canonicalLongestSubstring = {
@@ -90,6 +92,7 @@ describe("problem mode metadata", () => {
       slug: "agent-dual-echo",
       mode: "both",
       function_signature: "def echo_value(value: int) -> int",
+      sample_testcases: [{ input: "1", output: "1", acm_input: "1", acm_output: "1" }],
     };
     const mode = getProblemMode(generated);
 

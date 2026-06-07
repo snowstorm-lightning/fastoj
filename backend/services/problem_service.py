@@ -34,6 +34,78 @@ class ProblemService:
     def _function_signature(problem: Problem) -> str | None:
         return problem.function_signature or FUNCTION_SIGNATURES.get(str(problem.slug))
 
+    @staticmethod
+    def _has_io_view(metadata: dict[str, Any], mode: str) -> bool:
+        view = metadata.get(mode) if isinstance(metadata, dict) else None
+        if not isinstance(view, dict):
+            return False
+        return "input" in view and "output" in view and view["input"] is not None and view["output"] is not None
+
+    @classmethod
+    def _normalize_judge_mode(cls, mode: str | None) -> str | None:
+        return mode if mode in {"acm", "function"} else None
+
+    @classmethod
+    def _supported_modes(cls, problem: Problem | None, testcase: TestCase | None = None) -> set[str]:
+        metadata = cls._io_metadata(testcase) if testcase is not None else {}
+        supports_function = bool(cls._function_signature(problem)) if problem else False
+        supports_acm = False
+        if problem is not None:
+            normalized_mode = str(problem.mode or "").lower()
+            if normalized_mode in {"acm", "both"}:
+                supports_acm = cls._has_io_view(metadata, "acm") or normalized_mode == "acm"
+            elif normalized_mode == "function":
+                supports_acm = cls._has_io_view(metadata, "acm")
+            elif supports_function:
+                supports_acm = cls._has_io_view(metadata, "acm")
+        return {
+            mode
+            for mode in {"acm", "function"}
+            if (
+                mode == "acm" and supports_acm
+            ) or (
+                mode == "function" and supports_function and (
+                    testcase is None or cls._has_io_view(metadata, "function") or not bool(metadata)
+                )
+            )
+        }
+
+    @classmethod
+    def _resolve_judge_mode(
+        cls,
+        problem: Problem | None,
+        testcase: TestCase,
+        requested_mode: str | None,
+    ) -> str | None:
+        normalized = cls._normalize_judge_mode(requested_mode)
+        supported = cls._supported_modes(problem, testcase)
+        normalized_problem_mode = str(problem.mode or "").lower() if problem is not None else ""
+        if normalized in supported:
+            return normalized
+
+        if normalized is None:
+            if normalized_problem_mode in {"acm", "both"} and "acm" in supported:
+                return "acm"
+            if normalized_problem_mode == "function" and "function" in supported:
+                return "function"
+            if "function" in supported:
+                return "function"
+            if "acm" in supported:
+                return "acm"
+            return None
+
+        if normalized == "acm":
+            if "acm" in supported:
+                return "acm"
+            if "function" in supported:
+                return "function"
+            return None
+        if normalized == "function" and "acm" in supported:
+            return "acm"
+        if normalized == "function" and "function" in supported:
+            return "function"
+        return None
+
     @classmethod
     def _mode(cls, problem: Problem) -> str:
         if str(problem.mode or "") == "both":
@@ -180,15 +252,19 @@ class ProblemService:
     @classmethod
     def testcase_io_view(cls, testcase: TestCase, judge_mode: str | None) -> tuple[str, str, str | None]:
         metadata = cls._io_metadata(testcase)
-        normalized_mode = judge_mode if judge_mode in {"acm", "function"} else None
+        problem = getattr(testcase, "problem", None)
+        selected_mode = cls._resolve_judge_mode(problem, testcase, judge_mode)
+        normalized_mode = selected_mode
+        input_value = None
+        output_value = None
         if normalized_mode:
             view = metadata.get(normalized_mode)
             if isinstance(view, dict):
                 input_value = view.get("input")
                 output_value = view.get("output")
-                if input_value is not None and output_value is not None:
-                    return str(input_value), str(output_value), normalized_mode
-        return str(testcase.input), str(testcase.output), normalized_mode
+            if input_value is not None and output_value is not None:
+                return str(input_value), str(output_value), normalized_mode
+        return str(testcase.input), str(testcase.output), selected_mode
 
     def _sample_testcase_response(
         self,
@@ -202,6 +278,14 @@ class ProblemService:
         metadata = self._io_metadata(testcase)
         acm_view = metadata.get("acm") if isinstance(metadata.get("acm"), dict) else {}
         function_view = metadata.get("function") if isinstance(metadata.get("function"), dict) else {}
+        selected_display = display_mode or "acm"
+        display_supports_acm = selected_display == "acm"
+        supports_function = bool(self._function_signature(problem))
+        selected_function_view = (
+            function_view if function_view else {"input": str(testcase.input), "output": str(testcase.output)}
+            if supports_function
+            else {}
+        )
         return SampleTestCase(
             input=input_value,
             output=output_value,
@@ -212,10 +296,14 @@ class ProblemService:
                 output_value,
                 locale,
             ),
-            acm_input=str(acm_view.get("input")) if acm_view.get("input") is not None else None,
+            acm_input=str(acm_view.get("input")) if display_supports_acm and acm_view.get("input") is not None else None,
             acm_output=str(acm_view.get("output")) if acm_view.get("output") is not None else None,
-            function_input=str(function_view.get("input")) if function_view.get("input") is not None else None,
-            function_output=str(function_view.get("output")) if function_view.get("output") is not None else None,
+            function_input=str(selected_function_view.get("input"))
+            if display_supports_acm is False and selected_function_view.get("input") is not None
+            else None,
+            function_output=str(selected_function_view.get("output"))
+            if display_supports_acm is False and selected_function_view.get("output") is not None
+            else None,
             display_mode=display_mode,
         )
 

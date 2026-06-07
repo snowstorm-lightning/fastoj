@@ -182,6 +182,53 @@ def _expected_output(slug: str, input_data: str) -> str:
     return _format_value(result, _return_annotation(signature))
 
 
+def _io_views_for_function_case(slug: str, input_data: str, output_value: str | None) -> dict[str, dict[str, str]]:
+    signature = FUNCTION_SIGNATURES.get(slug)
+    if not signature:
+        return {}
+    params = _params_from_signature(signature)
+    args = _load_args(input_data, params)
+    acm_input = _input_from_args(args)
+    io_views: dict[str, dict[str, str]] = {
+        "function": {
+            "input": input_data,
+            "output": output_value if output_value is not None else _expected_output(slug, input_data),
+        },
+        "acm": {
+            "input": acm_input,
+            "output": output_value if output_value is not None else _expected_output(slug, input_data),
+        },
+    }
+    return io_views
+
+
+def function_case_io_metadata(
+    slug: str,
+    input_data: str,
+    output_value: str | None = None,
+) -> dict[str, dict[str, str]] | None:
+    """Return function/acm io_metadata for a single testcase, or None if invalid."""
+    try:
+        return _io_views_for_function_case(slug, input_data, output_value)
+    except Exception:
+        return None
+
+
+def _enriched_function_case(slug: str, case: dict) -> dict:
+    """Attach function/acm views to a testcase if possible."""
+    input_data = str(case.get("input", ""))
+    output_data = case.get("output")
+    metadata = function_case_io_metadata(slug, input_data, None if output_data is None else str(output_data))
+    if metadata is None:
+        return dict(case)
+
+    normalized = dict(case)
+    if output_data is not None:
+        normalized["output"] = str(output_data)
+    normalized["io_metadata"] = metadata
+    return normalized
+
+
 def _candidate_inputs(slug: str, base_inputs: list[str]) -> list[str]:
     candidates = list(base_inputs)
     candidates.extend(_SPECIAL_INPUTS.get(slug, []))
@@ -191,11 +238,13 @@ def _candidate_inputs(slug: str, base_inputs: list[str]) -> list[str]:
 def _validated_case(slug: str, input_data: str) -> dict | None:
     try:
         output = _expected_output(slug, input_data)
+        io_metadata = _io_views_for_function_case(slug, input_data, output)
     except Exception:
         return None
     return {
         "input": input_data,
         "output": output,
+        "io_metadata": io_metadata,
         "is_sample": False,
         "is_hidden": True,
         "score": 0,
@@ -209,6 +258,8 @@ def augmented_testcases(item: dict) -> list[dict]:
     required_hidden = hidden_minimum_for_slug(slug)
     target_total = required_public + required_hidden
     base_cases = [dict(testcase) for testcase in item["testcases"]]
+    if item["problem"]["slug"] in FUNCTION_SIGNATURES:
+        base_cases = [_enriched_function_case(item["problem"]["slug"], case) for case in base_cases]
     base_inputs = [case["input"] for case in base_cases]
 
     cases: list[dict] = []
