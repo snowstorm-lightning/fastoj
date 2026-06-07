@@ -151,12 +151,15 @@ class AuthoredTestCase(BaseModel):
     input: str
     output: str
     explanation: str | None = None
+    io_metadata: dict[str, Any] | None = None
 
 
 class AuthoredOfficialSolution(BaseModel):
     language: str = Field(max_length=20)
     code: str = Field(min_length=1)
     explanation: str = Field(min_length=1)
+    acm_code: str | None = None
+    function_code: str | None = None
 
     @field_validator("language")
     @classmethod
@@ -170,6 +173,14 @@ class AuthoredOfficialSolution(BaseModel):
     @classmethod
     def clean_code(cls, value: str) -> str:
         return normalize_source_code(value)
+
+    @field_validator("acm_code", "function_code")
+    @classmethod
+    def clean_optional_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        code = normalize_source_code(value)
+        return code if code.strip() else None
 
 
 class AuthoredProblemDraft(BaseModel):
@@ -287,10 +298,37 @@ class AgentRunResponse(BaseModel):
     steps: list[AgentStepResponse] = Field(default_factory=list)
 
 
+class AgentRunMessageRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    message: str = Field(min_length=1, max_length=2000)
+    locale: AILocale = DEFAULT_LOCALE
+    model_profile: AIModelProfile = "default"
+    draft_id: str | None = None
+
+
+class AgentRunMessageResponse(BaseModel):
+    run_id: str
+    message: str
+    suggested_actions: list[str] = Field(default_factory=list)
+    step: AgentStepResponse
+
+
+class AgentRunRetryRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    guidance: str | None = Field(default=None, max_length=2000)
+    message: str | None = Field(default=None, max_length=2000)
+    draft_id: str | None = None
+    locale: AILocale | None = None
+    model_profile: AIModelProfile | None = None
+
+
 class ProblemDraftTestCaseUpdate(BaseModel):
     input: str = ""
     output: str = ""
     explanation: str | None = None
+    io_metadata: dict[str, Any] | None = None
     is_hidden: bool = False
     is_sample: bool = False
     order: int | None = Field(default=None, ge=1)
@@ -408,9 +446,36 @@ class ProblemDraftListItem(BaseModel):
     updated_at: str
 
 
-class ProblemAuthoringCreateResponse(BaseModel):
-    draft_id: str
-    run_id: str
+class AgentSessionMessageResponse(BaseModel):
+    id: str
+    role: Literal["user", "assistant", "system"]
+    message: str
+    run_id: str | None = None
+    created_at: str
+
+
+class AgentSessionResponse(BaseModel):
+    id: str
+    title: str
+    run_type: str
     status: str
-    validation_summary: dict
-    steps: list[AgentStepResponse]
+    mode: str | None = None
+    source_kind: str | None = None
+    draft_count: int
+    run_count: int
+    latest_draft: ProblemDraftListItem | None = None
+    latest_run: AgentRunResponse | None = None
+    drafts: list[ProblemDraftListItem] = Field(default_factory=list)
+    runs: list[AgentRunResponse] = Field(default_factory=list)
+    messages: list[AgentSessionMessageResponse] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class ProblemAuthoringCreateResponse(BaseModel):
+    draft_id: str | None = None
+    run_id: str
+    session_id: str | None = None
+    status: str
+    validation_summary: dict = Field(default_factory=dict)
+    steps: list[AgentStepResponse] = Field(default_factory=list)

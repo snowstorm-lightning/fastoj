@@ -132,6 +132,7 @@ class JudgeTask:
         language: str,
         use_hidden: bool,
         db: Session,
+        judge_mode: str = "acm",
         run_testcases: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Execute the judge task."""
@@ -172,11 +173,11 @@ class JudgeTask:
             # supplied and never participate in full hidden judging.
             if run_testcases and not use_hidden:
                 public_testcases = problem_service.get_public_testcases(problem_id)
-                testcases = self._custom_run_testcases(problem, db, run_testcases, public_testcases)
+                testcases = self._custom_run_testcases(problem, db, run_testcases, public_testcases, judge_mode)
             elif use_hidden:
-                testcases = problem_service.get_all_testcases(problem_id)
+                testcases = self._runtime_testcases_for_mode(problem_service.get_all_testcases(problem_id), judge_mode)
             else:
-                testcases = problem_service.get_public_testcases(problem_id)
+                testcases = self._runtime_testcases_for_mode(problem_service.get_public_testcases(problem_id), judge_mode)
 
             if not testcases:
                 return {
@@ -363,8 +364,12 @@ class JudgeTask:
         db: Session,
         run_testcases: list[dict[str, Any]],
         public_testcases: list[TestCase],
+        judge_mode: str = "acm",
     ) -> list[RuntimeTestCase]:
-        public_outputs = {str(testcase.input): str(testcase.output) for testcase in public_testcases}
+        public_outputs = dict(
+            ProblemService.testcase_io_view(testcase, judge_mode)[:2]
+            for testcase in public_testcases
+        )
         return [
             RuntimeTestCase(
                 input=str(item.get("input") or ""),
@@ -372,6 +377,25 @@ class JudgeTask:
             )
             for item in run_testcases[:8]
         ]
+
+    def _runtime_testcases_for_mode(
+        self,
+        testcases: list[TestCase],
+        judge_mode: str = "acm",
+    ) -> list[RuntimeTestCase]:
+        runtime: list[RuntimeTestCase] = []
+        for testcase in testcases:
+            input_value, output_value, _display_mode = ProblemService.testcase_io_view(testcase, judge_mode)
+            runtime.append(
+                RuntimeTestCase(
+                    input=input_value,
+                    output=output_value,
+                    is_hidden=bool(testcase.is_hidden),
+                    score=int(testcase.score or 0),
+                    id=testcase.id,
+                )
+            )
+        return runtime
 
     def _expected_output_for_input(
         self,

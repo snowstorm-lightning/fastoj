@@ -2,14 +2,16 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastapi import HTTPException
 
 from backend.ai.config import AIConfig
 from backend.ai.profiles import list_ai_profiles, refresh_ai_profiles, resolve_ai_config
-from backend.ai.providers.base import AIProviderUnavailableError
+from backend.ai.providers.base import AIProviderEmptyResponseError, AIProviderUnavailableError
 from backend.ai.providers.disabled import DisabledAIProvider
 from backend.ai.providers.openai_compatible import OpenAICompatibleProvider
 from backend.ai.schemas import AIHintResponse
 from backend.ai.service import AIService
+from backend.api.ai import hint_problem
 from backend.api.ai import profiles as ai_profiles_endpoint
 from backend.core.config import settings
 from backend.models import Difficulty, SubmissionResult, SubmissionStatus
@@ -26,8 +28,8 @@ def _problem():
     )
 
 
-def _user(role: str = "user"):
-    return SimpleNamespace(role=role)
+def _user(role: str = "user", permissions: list[str] | None = None):
+    return SimpleNamespace(role=role, content_admin_permissions=permissions or [])
 
 
 def _configure_openai(monkeypatch):
@@ -38,6 +40,11 @@ def _configure_openai(monkeypatch):
     monkeypatch.setattr(settings, "AI_DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     monkeypatch.setattr(settings, "AI_DEEPSEEK_API_KEY", "sk-deepseek")
     monkeypatch.setattr(settings, "AI_DEEPSEEK_MODEL", "deepseek-model")
+    monkeypatch.setattr(settings, "AI_DEEPSEEK_PRO_BASE_URL", "https://api.deepseek.com")
+    monkeypatch.setattr(settings, "AI_DEEPSEEK_PRO_API_KEY", "sk-deepseek")
+    monkeypatch.setattr(settings, "AI_DEEPSEEK_PRO_MODEL", "deepseek-pro-model")
+    monkeypatch.setattr(settings, "AI_DEEPSEEK_PRO_TIMEOUT_SECONDS", 120)
+    monkeypatch.setattr(settings, "AI_DEEPSEEK_PRO_MAX_OUTPUT_TOKENS", 4000)
     monkeypatch.setattr(settings, "AI_QWEN_BASE_URL", "http://qwen.local/v1")
     monkeypatch.setattr(settings, "AI_QWEN_API_KEY", "sk-no-key-required")
     monkeypatch.setattr(settings, "AI_QWEN_MODEL", "qwen-model")
@@ -93,14 +100,58 @@ def test_openai_provider_rejects_unconfigured_deepseek_key():
         provider.complete_json("system", "user")
 
 
+def test_openai_provider_rejects_empty_length_response_with_metadata(monkeypatch):
+    def fake_post(url: str, *args, **kwargs):
+        return httpx.Response(
+            200,
+            json={
+                "model": "deepseek-v4-pro",
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "reasoning_content": "thinking",
+                        },
+                    }
+                ],
+                "usage": {
+                    "completion_tokens": 4000,
+                    "completion_tokens_details": {"reasoning_tokens": 4000},
+                },
+            },
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAICompatibleProvider(
+        AIConfig(
+            provider="openai_compatible",
+            base_url="http://provider.local/v1",
+            api_key="sk-test",
+            model="deepseek-v4-pro",
+            timeout_seconds=1,
+            max_output_tokens=4000,
+        )
+    )
+
+    with pytest.raises(AIProviderEmptyResponseError, match="exhausted the output budget") as exc_info:
+        provider.complete_json("system", "user")
+
+    assert exc_info.value.metadata["finish_reason"] == "length"
+    assert exc_info.value.metadata["content_len"] == 0
+    assert exc_info.value.metadata["reasoning_tokens"] == 4000
+
+
 def test_ai_profiles_disabled_provider_returns_no_user_options(monkeypatch):
     monkeypatch.setattr(settings, "AI_PROVIDER", "disabled")
 
     user_profiles = list_ai_profiles(include_unavailable=False)
-    admin_profiles = list_ai_profiles(include_unavailable=True)
+    admin_profiles = list_ai_profiles(include_unavailable=True, include_admin_only=True)
 
     assert user_profiles == []
-    assert len(admin_profiles) == 3
+    assert len(admin_profiles) == 4
     assert all(not profile.available for profile in admin_profiles)
     with pytest.raises(AIProviderUnavailableError, match="AI provider is unavailable"):
         resolve_ai_config("default")
@@ -109,6 +160,7 @@ def test_ai_profiles_disabled_provider_returns_no_user_options(monkeypatch):
 def test_deepseek_missing_key_is_configuration_failure_without_network(monkeypatch):
     _configure_openai(monkeypatch)
     monkeypatch.setattr(settings, "AI_DEEPSEEK_API_KEY", "")
+    monkeypatch.setattr(settings, "AI_DEEPSEEK_PRO_API_KEY", "")
     monkeypatch.setattr(settings, "AI_API_KEY", "sk-no-key-required")
 
     def fake_get(url: str, *args, **kwargs):
@@ -123,6 +175,8 @@ def test_deepseek_missing_key_is_configuration_failure_without_network(monkeypat
     assert statuses["deepseek"].configured is False
     assert statuses["deepseek"].available is False
     assert statuses["deepseek"].reason == "DeepSeek API key is not configured."
+    assert statuses["deepseek-pro"].configured is False
+    assert statuses["deepseek-pro"].available is False
 
 
 def test_ai_profile_models_endpoint_controls_availability(monkeypatch):
@@ -132,13 +186,14 @@ def test_ai_profile_models_endpoint_controls_availability(monkeypatch):
         if "default.local" in url:
             return _models_response(url, ["default-model"])
         if "deepseek" in url:
-            return _models_response(url, ["deepseek-model"])
+            return _models_response(url, ["deepseek-model", "deepseek-pro-model"])
         return _models_response(url, ["other-qwen-model"])
 
     monkeypatch.setattr(httpx, "get", fake_get)
     statuses = refresh_ai_profiles(force=True)
 
     assert statuses["default"].available is True
+    assert statuses["deepseek-pro"].available is True
     assert statuses["deepseek"].available is True
     assert statuses["qwen-local"].available is False
     assert statuses["qwen-local"].reason == "Configured model is not available."
@@ -151,8 +206,45 @@ def test_ai_profiles_endpoint_filters_by_role(monkeypatch):
     assert ai_profiles_endpoint(_user("user")) == []
     admin_profiles = ai_profiles_endpoint(_user("admin"))
 
-    assert len(admin_profiles) == 3
+    assert len(admin_profiles) == 4
     assert all(profile.reason for profile in admin_profiles)
+
+
+def test_regular_users_do_not_receive_admin_only_profiles(monkeypatch):
+    _configure_openai(monkeypatch)
+
+    def fake_get(url: str, *args, **kwargs):
+        if "default.local" in url:
+            return _models_response(url, ["default-model"])
+        if "deepseek" in url:
+            return _models_response(url, ["deepseek-model", "deepseek-pro-model"])
+        return _models_response(url, ["qwen-model"])
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    refresh_ai_profiles(force=True)
+
+    user_values = {profile.value for profile in ai_profiles_endpoint(_user("user"))}
+    admin_values = {profile.value for profile in ai_profiles_endpoint(_user("admin"))}
+    content_admin_values = {
+        profile.value
+        for profile in ai_profiles_endpoint(_user("content_admin", ["problem:create_own"]))
+    }
+
+    assert "deepseek-pro" not in user_values
+    assert "deepseek-pro" in admin_values
+    assert "deepseek-pro" in content_admin_values
+
+
+def test_admin_only_model_profile_is_rejected_for_regular_users():
+    with pytest.raises(HTTPException) as exc_info:
+        hint_problem(
+            "problem-1",
+            SimpleNamespace(level=1, language=None, current_code=None, model_profile="deepseek-pro", locale="zh"),
+            db=None,
+            current_user=_user("user"),
+        )
+
+    assert getattr(exc_info.value, "status_code", None) == 403
 
 
 def test_default_profile_routes_to_first_available_candidate(monkeypatch):
@@ -162,7 +254,7 @@ def test_default_profile_routes_to_first_available_candidate(monkeypatch):
         if "default.local" in url:
             return _models_response(url, ["different-model"])
         if "deepseek" in url:
-            return _models_response(url, ["deepseek-model"])
+            return _models_response(url, ["deepseek-model", "deepseek-pro-model"])
         raise httpx.ConnectError("refused", request=httpx.Request("GET", url))
 
     monkeypatch.setattr(httpx, "get", fake_get)
@@ -172,6 +264,16 @@ def test_default_profile_routes_to_first_available_candidate(monkeypatch):
 
     assert config.profile == "deepseek"
     assert config.model == "deepseek-model"
+
+
+def test_deepseek_pro_profile_resolves_explicitly(monkeypatch):
+    _configure_openai(monkeypatch)
+
+    config = resolve_ai_config("deepseek-pro")
+
+    assert config.profile == "deepseek-pro"
+    assert config.model == "deepseek-pro-model"
+    assert config.max_output_tokens == 4000
 
 
 def test_explain_context_does_not_include_hidden_case_details():

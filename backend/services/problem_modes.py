@@ -6,6 +6,8 @@ FUNCTION_SIGNATURES: dict[str, str] = {
     "longest-substring-without-repeating": "def length_of_longest_substring(s: str) -> int",
     "longest-substring-without-repeating-characters": "def length_of_longest_substring(s: str) -> int",
     "valid-parentheses": "def is_valid_parentheses(s: str) -> bool",
+    "alien-dictionary": "def alienOrder(words: list[str]) -> str",
+    "two-car-parking-lot": "def can_reach(grid: list[list[str]]) -> bool",
     "maximum-subarray": "def max_sub_array(nums: list[int]) -> int",
     "group-anagrams": "def group_anagrams(strs: list[str]) -> list[list[str]]",
     "merge-intervals": "def merge_intervals(intervals: list[list[int]]) -> list[list[int]]",

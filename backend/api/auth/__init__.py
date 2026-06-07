@@ -37,6 +37,7 @@ class UserResponse(BaseModel):
     avatar_url: str | None = None
     locale: str = DEFAULT_LOCALE
     role: str = "user"
+    content_admin_permissions: list[str] = []
     is_active: bool = True
     created_at: str
 
@@ -97,6 +98,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         avatar_url=user.avatar_url,  # type: ignore[arg-type]
         locale=_normalize_locale(user.locale),  # type: ignore[arg-type]
         role=user.role or "user",  # type: ignore[arg-type]
+        content_admin_permissions=list(user.content_admin_permissions or []),  # type: ignore[arg-type]
         is_active=True if user.is_active is None else bool(user.is_active),
         created_at=user.created_at.isoformat(),
     )
@@ -194,6 +196,7 @@ def _user_response(user: User) -> UserResponse:
         avatar_url=user.avatar_url,  # type: ignore[arg-type]
         locale=_normalize_locale(user.locale),  # type: ignore[arg-type]
         role=user.role or "user",  # type: ignore[arg-type]
+        content_admin_permissions=list(user.content_admin_permissions or []),  # type: ignore[arg-type]
         is_active=True if user.is_active is None else bool(user.is_active),
         created_at=user.created_at.isoformat(),
     )

@@ -1,6 +1,6 @@
 # fastoj Development Guidelines
 
-Last updated: 2026-05-29
+Last updated: 2026-06-07
 
 ## Current Stack
 
@@ -48,6 +48,14 @@ When Docker behavior changes, also run:
 ```bash
 docker compose up --build -d api
 ```
+
+For ad hoc Python commands, one-off scripts, and local verification snippets, default to:
+
+```bash
+uv run python
+```
+
+Do not probe or rely on bare `python` first unless the task is specifically about interpreter discovery or PATH debugging.
 
 ## Product Constraints
 

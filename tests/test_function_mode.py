@@ -298,6 +298,50 @@ def echo_value(value):
     assert "result = func(*args)" in wrapped
 
 
+def test_alien_dictionary_accepts_leetcode_style_solution_class():
+    wrapped = wrap_function_submission(
+        """
+class Solution:
+    def alienOrder(self, words):
+        from collections import defaultdict, deque
+        graph = defaultdict(set)
+        indegree = {ch: 0 for word in words for ch in word}
+        for first, second in zip(words, words[1:]):
+            if len(first) > len(second) and first.startswith(second):
+                return ""
+            for left, right in zip(first, second):
+                if left != right:
+                    if right not in graph[left]:
+                        graph[left].add(right)
+                        indegree[right] += 1
+                    break
+        queue = deque(ch for ch in indegree if indegree[ch] == 0)
+        order = []
+        while queue:
+            ch = queue.popleft()
+            order.append(ch)
+            for nxt in sorted(graph[ch]):
+                indegree[nxt] -= 1
+                if indegree[nxt] == 0:
+                    queue.append(nxt)
+        return "" if len(order) != len(indegree) else "".join(order)
+""",
+        "python",
+        "alien-dictionary",
+    )
+
+    old_stdin = sys.stdin
+    try:
+        sys.stdin = io.StringIO('["wrt","wrf","er","ett","rftt"]')
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exec(wrapped, {"__name__": "__main__"})
+    finally:
+        sys.stdin = old_stdin
+
+    assert output.getvalue().strip() == "wertf"
+
+
 def test_dynamic_python_function_mode_accepts_object_arguments():
     wrapped = wrap_function_submission(
         """

@@ -10,7 +10,9 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.ai.profiles import refresh_ai_profiles_async
 from backend.core.config import settings
-from backend.core.database import Base, engine
+from backend.core.database import Base, SessionLocal, engine
+from backend.core.time import utc_now
+from backend.models import AgentRun
 
 # Configure logging
 logging.basicConfig(
@@ -112,11 +114,30 @@ async def startup_event():
     if settings.DEBUG:
         Base.metadata.create_all(bind=engine)
         logger.info("Development database tables initialized")
+    mark_interrupted_agent_runs()
     app.state.judge_status_stop = asyncio.Event()
     app.state.judge_status_task = asyncio.create_task(
         relay_judge_status_events(app.state.judge_status_stop)
     )
     app.state.ai_profile_health_task = asyncio.create_task(refresh_ai_profiles_async(force=True))
+
+
+def mark_interrupted_agent_runs() -> None:
+    db = SessionLocal()
+    try:
+        runs = db.query(AgentRun).filter(AgentRun.status == "running").all()
+        for run in runs:
+            run.status = "failed"
+            run.finished_at = utc_now()
+            run.error_message = run.error_message or "Agent run was interrupted by an API restart before it could finish."
+        if runs:
+            db.commit()
+            logger.warning("Marked %s interrupted agent run(s) as failed", len(runs))
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to mark interrupted agent runs")
+    finally:
+        db.close()
 
 
 @app.on_event("shutdown")

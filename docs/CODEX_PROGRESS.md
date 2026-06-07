@@ -1,5 +1,55 @@
 # Codex Progress
 
+## 2026-06-07 Two-Car Parking Lot Seed Problem
+
+- [x] Added `two-car-parking-lot` to the bundled seed data, bringing the current catalog to 108 problems: 100 canonical Hot 100 problems, 6 AI/ML exercises, and 2 extra interview graph/search problems.
+- [x] Added function-mode metadata with `def can_reach(grid: list[list[str]]) -> bool`, deterministic public/hidden grid cases, special hidden inputs, bilingual explanations, and an official Python BFS over both car positions.
+
+## 2026-06-07 Admin DeepSeek Pro Profile And Repair Budget
+
+- [x] Added an admin-only `deepseek-pro` AI profile using normal OpenAI-compatible model id `deepseek-v4-pro` without the Claude Code `[1m]` suffix.
+- [x] Kept regular user AI controls on the existing `default`/Flash path: `deepseek-pro` is hidden from normal `/ai/profiles` responses and rejected server-side for non-admin AI actions.
+- [x] Changed the admin Problem Agent default model selection to prefer `deepseek-pro` when available, while still allowing admins to choose Auto, DeepSeek Flash, or Qwen from the page.
+- [x] Added Pro-specific configuration knobs: `AI_DEEPSEEK_PRO_*`, `AI_DEEPSEEK_PRO_MAX_OUTPUT_TOKENS`, `AI_DEEPSEEK_PRO_TIMEOUT_SECONDS`, and `AI_AUTHORING_REPAIR_ATTEMPTS`.
+- [x] Increased authoring repair budget from 2 to configurable 4 repair attempts by default, with a hard cap of 8 to avoid unbounded model calls.
+- [x] Historical failure analysis: recent import failures were model/schema failures (`AI provider returned JSON without a problem draft object`) after short or empty model returns, not sandbox/testcase failures. The current raw import size is far below 1M context, so Pro model quality and higher output budget are more relevant than context alone.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (200 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 38 tests); `cd frontend && npm run build` (existing large chunk warnings); `docker compose up --build -d api`; health check at `http://127.0.0.1:8010/api/v1/health`.
+- [x] Container config check confirmed: `default/deepseek -> deepseek-v4-flash`, `deepseek-pro -> deepseek-v4-pro`, Pro timeout 120s, Pro max output 4000, authoring repair attempts 4.
+
+## 2026-06-07 Admin Agent Runs Trace Viewer
+
+- [x] Added admin-only `GET /api/v1/admin/agent/runs` with `run_type`, `status`, and pagination filters, returning recent `AgentRun` records even when a failed import never produced a draft.
+- [x] Added structured Agent failure details for draft generation, problem import, and AI solution generation: failures with an existing run now return `{ message, run_id }`, while preserving the existing HTTP status semantics.
+- [x] Upgraded the admin Problem Agent execution panel into a Codex-like trace viewer: recent runs are summarized first, a selected run shows step summaries, and each step reveals sanitized input/output/error JSON only when expanded.
+- [x] Frontend API errors now keep `ApiError.run_id`; import/generation failures automatically fetch and select the failed run instead of showing only `HTTP 400`.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (196 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 38 tests); `cd frontend && npm run build` (existing large chunk warnings); `docker compose up --build -d api`; health check at `http://127.0.0.1:8010/api/v1/health`.
+
+## 2026-06-07 Seed Explanations Localization
+
+- [x] Added `backend/scripts/seed_explanations.py` with bilingual sample and official-solution explanations for all 107 seed slugs.
+- [x] Extended problem detail responses with localized `sample_testcases[].explanation`; non-seed problems return `null` instead of a fabricated template.
+- [x] Replaced generated seed official-solution explanation text with real English registry content at seed time, and made `/solutions` return zh/en seed explanations by locale while preserving Python fallback behavior.
+- [x] Removed frontend sample-explanation and no-solution pseudo-explanation templates; the workbench now renders API-provided sample explanations only.
+- [x] Seeded the running API container database again: `created 0 missing problems and normalized 107 existing problems`.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (194 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 36 tests); `cd frontend && npm run build` (existing large chunk warnings).
+
+## 2026-06-07 Seed Official Solutions And Hidden Case Expansion
+
+- [x] Moved seed official solutions into `backend/scripts/seed_official_solutions.py` and covered all 107 seed slugs with executable Python function-mode implementations, explanations, and time/space complexity metadata.
+- [x] Changed `seed_data.py` to source Python official solutions from that registry and overwrite existing placeholder/default rows, including the previous `find-the-duplicate-number` TODO-style solution.
+- [x] Added `backend/scripts/seed_testcase_augmentation.py` to deterministically expand seed cases, with policy checks for two public cases and hidden-count lower bounds by ordinary, design, high-output, and AI/ML categories.
+- [x] Added seed-wide tests that assert all seed slugs have Python official solutions, reject placeholder code, verify testcase-count policy, and execute every official solution against the expanded seed cases through the normal function-mode wrapper and output matcher.
+- [x] Added public solution language fallback: requesting a missing language now returns the Python official solution while preserving `language: "python"` in the API/frontend response.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (190 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 34 tests); `cd frontend && npm run build` (existing large chunk warnings).
+
+## 2026-06-07 Alien Dictionary Seed Problem
+
+- [x] Added `alien-dictionary` to bundled seed data, bringing the catalog to 107 problems: 100 canonical Hot 100 problems, 6 AI/ML exercises, and this additional graph/topological-sort interview problem.
+- [x] Added function-mode metadata using the LeetCode-style `alienOrder` entrypoint, deterministic sample/hidden cases covering valid order, cycle detection, and invalid prefix ordering, plus an official Python Kahn topological-sort solution.
+- [x] Added English/Chinese statement detail enrichment, Chinese title/hint localization, official-solution Chinese explanation, frontend starter metadata, and a visual solving-flow panel.
+- [x] Added regression coverage for the 107-problem catalog count, Alien Dictionary slug presence, frontend starter generation, and accepting `class Solution.alienOrder(...)` submissions.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (184 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 33 tests); `cd frontend && npm run build` (existing large chunk warnings).
+
 ## 2026-06-06 Problem Import Agent
 
 - [x] Added an admin-only problem import flow for pasted external material, with imported source metadata stored on drafts only.
@@ -411,7 +461,20 @@
 - [x] `cd frontend && npm test` passed after latest frontend edits, 6 test files and 8 tests passed.
 - [x] `docker compose up --build -d api` passed and rebuilt/recreated API with the latest frontend bundle.
 - [x] `docker compose ps` reports API and worker healthy; PostgreSQL and Redis healthy; judge runtime running.
+- [x] Admin Agent now groups repeated retries into authoring sessions, shows a message/run/draft timeline, and avoids auto-selecting stale historical runs on page entry.
+- [x] Structured import now records `agent_session_id`; retries inherit the same session; failed runs without drafts remain visible through the run/session trace.
+- [x] “智能物流定价引擎（在线学习）” structured import now emits Python/C++/Java official solutions for ACM, function, and both mode; function mode uses `list[str]` operations for stable multi-language wrapping.
+- [x] Structured import now falls back to available reliable official-solution languages instead of failing solely because a requested non-Python language is missing, and records language warnings in draft metadata.
+- [x] Real Docker-backed structured import validation passed for “智能物流定价引擎（在线学习）” in ACM, function, and both mode with target languages `python/cpp/java`.
+- [x] `uv run ruff check .`, `uv run pytest` (217 tests), `cd frontend && npm test` (42 tests), and `cd frontend && npm run build` passed after the Agent session/import fixes.
+- [x] `docker compose up --build -d api` passed after the Agent session/import fixes; API reports healthy.
 - [x] HTTP health and rebuilt frontend checks passed at `http://127.0.0.1:8000`; `localhost` may time out in the current PowerShell session.
+- [x] Admin Agent create/import/retry now enqueue background runs and expose DB-backed SSE at `/api/v1/admin/agent/runs/{run_id}/events`; the frontend reads the stream with `fetch` so Authorization stays in headers.
+- [x] Added shared Markdown rendering for problem statements, hints, sample explanations, official solutions, discussions, Agent messages, and admin draft preview.
+- [x] Added `testcases.io_metadata_json` and mode-specific problem detail responses so ACM samples can show stdin/stdout while Function samples show JSON argument/return contracts.
+- [x] Repaired the published “智能物流定价引擎（在线学习）” problem and 4 related drafts with structured Markdown, Python/C++/Java official solutions, and ACM/Function dual sample views.
+- [x] `uv run ruff check .`, `uv run pytest` (219 tests), `cd frontend && npm test` (42 tests), and `cd frontend && npm run build` passed after the SSE/Markdown/dual-sample work.
+- [x] `docker compose up --build -d api worker`, `docker compose exec -T api uv run alembic -c backend/alembic.ini upgrade head`, and `docker compose exec -T api uv run python -m backend.scripts.repair_online_least_squares_problem` passed; API and worker are healthy.
 - [ ] Browser manual acceptance path.
 
 ## Checkpoint

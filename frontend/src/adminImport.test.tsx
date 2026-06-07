@@ -56,7 +56,7 @@ describe("problem import admin UI", () => {
     render(<ImportFormHarness onSubmit={onSubmit} />);
 
     fireEvent.change(screen.getByLabelText("来源链接（可选）"), { target: { value: "https://example.com/problem" } });
-    fireEvent.change(screen.getByLabelText("标签"), { target: { value: "数组,双指针" } });
+    fireEvent.change(screen.getByLabelText("题目标签（Tag）"), { target: { value: "数组,双指针" } });
     fireEvent.change(screen.getByLabelText("原始材料"), {
       target: { value: "给定一个整数数组，要求返回满足条件的下标对，并说明样例。" },
     });

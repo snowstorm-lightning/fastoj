@@ -229,6 +229,11 @@ export const PROBLEM_ZH_EXTRA: Record<string, { title: string; description?: str
     description: "判断给定先修关系下是否可以完成所有课程。",
     hint: "检测有向图是否存在环，可用拓扑排序或 DFS 状态标记。",
   },
+  "alien-dictionary": {
+    title: "外星文字典",
+    description: "给定按外星字典序排序的单词列表，推断一种合法字母顺序；若存在矛盾则返回空字符串。",
+    hint: "比较相邻单词的首个不同字符得到有向边，再做拓扑排序。",
+  },
   "implement-trie-prefix-tree": {
     title: "实现 Trie 前缀树",
     description: "模拟 insert、search 和 startsWith 操作，插入输出 null，查询输出布尔值。",

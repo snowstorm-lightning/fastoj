@@ -16,7 +16,8 @@ Monaco 编程工作台、双语界面、实时提交状态和安全的 AI 解释
 - **是真正的 OJ，不是玩具运行器。** 提交通过 Redis 队列进入 Judge Worker，
   再由 Docker 沙箱执行；生产代码不会回退到宿主机 `subprocess`。
 - **函数模式和 ACM 模式同等重要。** 函数模式给学习者提供对应语言的 starter
-  frame；ACM 模式保留传统 stdin/stdout 训练方式。
+  frame；ACM 模式保留传统 stdin/stdout 训练方式。内置 108 道 seed 题现在每题
+  都带可展示、可执行的 Python 官方题解，并有更强的确定性隐藏用例覆盖。
 - **AI 能帮忙，但不泄露隐藏用例。** 提示、解释、代码审查和对话只使用判题
   结果、用户代码、公开样例和安全的聚合摘要。隐藏用例输入、期望输出、实际
   输出不会返回给用户，也不会发送给 AI 服务商。
@@ -47,11 +48,15 @@ Monaco 编程工作台、双语界面、实时提交状态和安全的 AI 解释
    Agent 会在保存最终草稿前做有上限的自动修复尝试，管理员也可以手动编辑失败
    草稿并保存后重新校验。管理员也可以通过单独的导入流程粘贴外部题目材料；
    原始材料只在管理员草稿中可见，AI 会先重写并适配为平台草稿后再校验。
+   Agent 运行改为后台任务，并通过 SSE 实时推送进度到管理员页面；执行路径无需
+   刷新即可更新。管理员可以在执行路径面板里按摘要查看最近 Agent 运行，包括没有
+   生成草稿的失败导入；每个步骤点开后才显示经过截断/隐藏处理的输入、输出和错误
+   详情。
    用户管理可以调整角色和账号状态；题目管理可以编辑题面、
    slug、模式、函数签名、ACM 输入输出格式、时间/内存限制、可见性、官方题解
    和完整用例，也可以重新校验或删除不再使用的题目。草稿支持同时发布为函数模式
-   和 ACM 模式；双模式每种语言只维护一份函数式规范解法，ACM 练习复用同一套
-   JSON 参数输入和期望输出合同。出题 Agent 可以在同一个草稿中请求、校验、编辑并
+   和 ACM 模式；双模式可以为同一个逻辑样例保存 ACM stdin/stdout 与函数 JSON
+   两种展示/判题视图，并按可用的模式专用官方解法合同校验。出题 Agent 可以在同一个草稿中请求、校验、编辑并
    发布多种编程语言的官方解法。草稿或正式题目审核时如果临时新增某个语言，也可以
    让 AI 单独补全该语言的官方解法，再保存并重新校验。简单题可以使用更少用例，避免
    为了数量重复堆隐藏用例。
@@ -73,7 +78,7 @@ Monaco 编程工作台、双语界面、实时提交状态和安全的 AI 解释
 
 | 管理后台 |
 | --- |
-| 管理员视图集中提供原创出题 Agent、导入题目草稿、用户管理、题目与内容管理、正式用例管理和草稿审核。隐藏用例和导入原文只在管理员界面和管理员 API 中展示，不会进入普通用户题面、AI 解释或提交日志。 |
+| 管理员视图集中提供原创出题 Agent、导入题目草稿、执行路径查看、用户管理、题目与内容管理、正式用例管理和草稿审核。隐藏用例和导入原文只在管理员界面和管理员 API 中展示，不会进入普通用户题面、AI 解释或提交日志。 |
 
 ## 快速启动
 
@@ -191,17 +196,29 @@ AI_DEEPSEEK_BASE_URL=https://api.deepseek.com
 AI_DEEPSEEK_API_KEY=your-provider-key
 AI_DEEPSEEK_MODEL=deepseek-v4-flash
 
+AI_DEEPSEEK_PRO_BASE_URL=https://api.deepseek.com
+AI_DEEPSEEK_PRO_API_KEY=your-provider-key
+AI_DEEPSEEK_PRO_MODEL=deepseek-v4-pro
+AI_DEEPSEEK_PRO_TIMEOUT_SECONDS=120
+AI_DEEPSEEK_PRO_MAX_OUTPUT_TOKENS=4000
+AI_AUTHORING_REPAIR_ATTEMPTS=4
+
 AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
 AI_QWEN_API_KEY=sk-no-key-required
 AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
 
+直接调用 DeepSeek 官方 OpenAI-compatible API 时使用 `deepseek-v4-pro` 或
+`deepseek-v4-flash`，不要加 `[1m]` 后缀；`[1m]` 是 Anthropic/Claude Code
+兼容集成场景里的模型名写法。
+
 FastOJ 通过 `GET /api/v1/ai/profiles` 给前端模型选择器提供动态 profile
 列表。后端启动后会用短超时在后台检查 profile 可用性，并缓存 60 秒；普通用户
 只看到当前可用模型，管理员可以看到不可用模型和安全摘要原因。选择 `default`
-时会自动按“默认配置、DeepSeek、本地 Qwen”的顺序路由到第一个健康 profile。
-真正调用 AI 时仍会再次兜底校验，因此模型临时离线只会返回正常 503，不会影响
-API 启动。
+时会自动按“默认配置、DeepSeek Pro、DeepSeek、本地 Qwen”的顺序路由到第一个
+健康 profile。管理员出题 Agent 在 Pro 可用时默认选择 DeepSeek Pro，普通用户
+AI 控件仍优先使用 `default`。真正调用 AI 时仍会再次兜底校验，因此模型临时
+离线只会返回正常 503，不会影响 API 启动。
 
 ### 本地 Qwen 部署与启动
 
@@ -536,9 +553,9 @@ FastOJ 已包含 GitHub Actions：
   数据库调用卡住时 parent 也失去调度能力；真正的不可信代码隔离仍由 Docker
   sandbox 提供。
 - 在 Docker Compose 中，API 服务也会挂载 Docker socket，这样管理员专用的
-  出题 Agent 可以在发布前或手动编辑后同步用沙箱校验官方草稿解法；多语言草稿
-  会按每种官方解法语言分别校验。双模式校验只运行函数式规范解法，这份可信实现
-  同时定义函数模式和 ACM 模式的期望输出。
+  出题 Agent 可以在发布前或手动编辑后用沙箱校验官方草稿解法；多语言草稿
+  会按每种官方解法语言分别校验。双模式草稿可以基于同一逻辑 testcase metadata
+  同时校验 ACM stdin/stdout 与函数 JSON 视图。
 - 沙箱容器默认禁用网络，带内存限制、pid 限制、capability drop、
   `no-new-privileges`、非 root 用户、输出截断、超时终止；正常 executor 路径会
   清理容器。如果 worker parent hard-kill 卡住的 judge child，child 可能来不及
@@ -551,15 +568,22 @@ FastOJ 已包含 GitHub Actions：
 - **Hot 100 面试题：** 覆盖 100 道 canonical Hot 100 题，链表、二叉树、设计题和
   多答案题都使用 FastOJ 自写题面与确定性的 ACM 输入输出。
 - **经典函数题：** Two Sum、Add Two Numbers、Longest Substring Without
-  Repeating Characters、Valid Parentheses 带 starter frame 和 Python 官方参考。
+  Repeating Characters、Valid Parentheses、Alien Dictionary、Two-Car Parking Lot
+  带 starter frame；现在所有 seed 题都有可展示、可执行的 Python 官方题解。
+- **确定性增强用例：** seed 导入时每题至少包含两个公开用例，并按题型扩展隐藏
+  覆盖：普通数组/字符串/DP/图/树/链表题至少 30 个隐藏用例，设计类和 AI/ML 题至少
+  20 个，高输出组合题至少 15 个。
+- **本地化解释：** seed 题目详情会返回中英文公开示例解释，Python 官方题解也会按
+  页面语言显示真实解法说明，不再显示生成式占位模板。
 - **AI/ML 算法题：** Logistic Regression Sigmoid、KNN Majority Vote、
   KMeans One Iteration、Scaled Dot-Product Attention、Softmax Cross
   Entropy、Attention Mask Apply。
 
 函数模式支持 Python、C++、Java、JavaScript、TypeScript、Go，以及部分简单 C
-wrapper。所有题目仍然可以使用 ACM 模式。Judge runtime 内置 Python
-`numpy==2.2.6` 和 CPU `torch==2.7.1+cpu`，AI 算法题可以使用标准 Python、
-NumPy 或 PyTorch。
+wrapper。所有题目仍然可以使用 ACM 模式。公开题解 API 仍可按当前编辑器语言查询；
+如果该语言没有官方题解，会回退返回 Python 官方题解，并保留真实的
+`language: "python"`。Judge runtime 内置 Python `numpy==2.2.6` 和 CPU
+`torch==2.7.1+cpu`，AI 算法题可以使用标准 Python、NumPy 或 PyTorch。
 
 ## 架构
 
@@ -618,7 +642,7 @@ cd frontend && npm run build
 cd frontend && npm test
 ```
 
-如果改动涉及 judge、worker、WebSocket、沙箱或真实提交链路，还需要运行：
+如果改动涉及 judge、worker、WebSocket/SSE、沙箱或真实提交链路，还需要运行：
 
 ```bash
 docker compose up --build -d api worker

@@ -12,7 +12,7 @@ FastOJ 的数据模型围绕一个问题展开：如何既支持传统 ACM stdin
 
 - `User`：[backend/models/__init__.py:46](../../backend/models/__init__.py#L46)，保存账号、角色、状态、语言偏好。
 - `Problem`：[backend/models/__init__.py:63](../../backend/models/__init__.py#L63)，保存题目正文、难度、标签、模式、时间/内存限制、是否公开。
-- `TestCase`：[backend/models/__init__.py:97](../../backend/models/__init__.py#L97)，保存输入、输出、隐藏/样例标记、分数、顺序。
+- `TestCase`：[backend/models/__init__.py:97](../../backend/models/__init__.py#L97)，保存输入、输出、隐藏/样例标记、分数、顺序；`io_metadata_json` 可为同一逻辑用例保存 ACM 和 Function 两种展示/判题视图。
 - `Submission`：[backend/models/__init__.py:113](../../backend/models/__init__.py#L113)，保存用户代码、语言、状态、结果和资源使用。
 - `TestCaseResult`：[backend/models/__init__.py:141](../../backend/models/__init__.py#L141)，保存每个 testcase 的执行结果。
 - `Solution`：[backend/models/__init__.py:159](../../backend/models/__init__.py#L159)，保存官方解法和复杂度。
@@ -60,7 +60,33 @@ Function mode 更像 LeetCode：
 - `function`：只提供函数式练习。
 - `both`：同时支持两种练习方式。
 
-对于 `both`，当前设计倾向于维护一套 canonical function-style 官方解法，再通过输入输出合同复用到 ACM 练习。这减少出题和校验时的重复逻辑。
+对于 `both`，题目可以保存同一逻辑用例的两种视图：
+
+- `acm`：传统 stdin/stdout 文本，例如第一行 `Q`，后续每行一条操作。
+- `function`：函数调用合同需要的 JSON-line 或 JSON 值，例如参数数组和返回值数组。
+
+旧数据没有 `io_metadata_json` 时仍回退使用 `TestCase.input/output`。新导入题和需要双模式精确展示的题应写入 `io_metadata_json`，问题详情 API 会根据 `judge_mode=acm|function` 返回当前视图，同时保留可选的 `acm_input/acm_output/function_input/function_output` 供前端调试和展示。
+
+## Seed 官方题解与用例
+
+内置 seed catalog 当前有 108 道题。所有 seed 题的 Python 官方题解都集中在
+[backend/scripts/seed_official_solutions.py](../../backend/scripts/seed_official_solutions.py)，
+`seed_data.py` 会从这个 registry 写入或覆盖 `Solution` 行，避免数据库继续保留 starter
+placeholder 或 `TODO` 题解。
+
+seed 用例增强在
+[backend/scripts/seed_testcase_augmentation.py](../../backend/scripts/seed_testcase_augmentation.py)。
+它用确定性输入生成每题至少两个公开用例，并按题型保证隐藏用例下限：普通题 30+，设计类
+和 AI/ML 题 20+，高输出组合题 15+。生成期望输出时会调用同一 slug 的官方函数，并对多答案
+题保持 canonical 输出顺序，减少“合法顺序不同”带来的误判。
+
+seed 展示文案在
+[backend/scripts/seed_explanations.py](../../backend/scripts/seed_explanations.py)。问题详情 API
+按 `locale` 返回公开示例解释，题解 API 也从同一 registry 返回中英文真实解法说明；非 seed 题没有
+registry 文案时返回空解释，不由前端生成模板。
+
+公开题解接口仍支持按当前语言查询；如果指定语言没有官方题解，会回退返回 Python 官方题解，
+响应中的 `language` 字段仍保留真实值 `python`。
 
 ## 草稿来源元数据
 
@@ -83,6 +109,10 @@ Function mode 当前使用 JSON-line 风格输入。例如 Two Sum 可以是：
 包装器按函数参数逐行读取并解析。AI 出题校验中也接受一些常见 AI 生成形状，比如 JSON array 或按参数名的 object，入口在 [backend/services/problem_authoring_agent.py:58](../../backend/services/problem_authoring_agent.py#L58)。
 
 ACM mode 则由题目的 `input_format` 和 `output_format` 约定，用户程序自己解析 stdin。
+
+## Markdown 展示
+
+题目描述、提示、样例解释、官方题解、讨论正文和管理员草稿预览都按 Markdown 文本存储并在前端统一渲染。前端使用 `MarkdownBlock` 组件做 Markdown 到 HTML 的转换和 sanitize；编辑侧仍然是普通 textarea，不引入富文本存储。
 
 ## Public run 的自定义输入
 
@@ -108,6 +138,9 @@ JudgeTask 写 `TestCaseResult` 时对隐藏用例做了空值处理：[backend/w
 - Problem 模型：[backend/models/__init__.py:63](../../backend/models/__init__.py#L63)
 - Submission 模型：[backend/models/__init__.py:113](../../backend/models/__init__.py#L113)
 - ProblemDraft source metadata：[backend/models/__init__.py:229](../../backend/models/__init__.py#L229)
+- Seed 官方题解：[backend/scripts/seed_official_solutions.py](../../backend/scripts/seed_official_solutions.py)
+- Seed 用例增强：[backend/scripts/seed_testcase_augmentation.py](../../backend/scripts/seed_testcase_augmentation.py)
+- Seed 展示解释：[backend/scripts/seed_explanations.py](../../backend/scripts/seed_explanations.py)
 - Function mode 包装入口：[backend/services/function_mode.py:2468](../../backend/services/function_mode.py#L2468)
 - 前端题目模式判断：[frontend/src/lib/problemModes.ts:680](../../frontend/src/lib/problemModes.ts#L680)
 - 前端 starter 生成：[frontend/src/lib/problemModes.ts:712](../../frontend/src/lib/problemModes.ts#L712)

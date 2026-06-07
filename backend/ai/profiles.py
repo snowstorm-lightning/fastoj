@@ -11,7 +11,8 @@ from backend.ai.providers.base import AIProviderUnavailableError
 
 AI_PROFILE_TTL_SECONDS = 60
 AI_PROFILE_HEALTH_TIMEOUT_SECONDS = 2.0
-PROFILE_IDS = ("default", "deepseek", "qwen-local")
+PROFILE_IDS = ("default", "deepseek-pro", "deepseek", "qwen-local")
+ADMIN_ONLY_PROFILE_IDS = {"deepseek-pro"}
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,13 @@ _DEFINITIONS = {
         detail_zh="调用 DeepSeek 兼容接口",
         detail_en="Use the DeepSeek-compatible API",
     ),
+    "deepseek-pro": AIProfileDefinition(
+        value="deepseek-pro",
+        label_zh="DeepSeek Pro",
+        label_en="DeepSeek Pro",
+        detail_zh="调用 DeepSeek Pro 长上下文/强模型配置，适合管理员出题和导入题目",
+        detail_en="Use the DeepSeek Pro long-context strong-model profile for admin authoring and imports",
+    ),
     "qwen-local": AIProfileDefinition(
         value="qwen-local",
         label_zh="Qwen 本地",
@@ -80,17 +88,21 @@ def resolve_ai_config(model_profile: str | None) -> AIConfig:
 
     refresh_ai_profiles(force=False)
     for candidate in PROFILE_IDS:
+        if candidate in ADMIN_ONLY_PROFILE_IDS:
+            continue
         status = _cached_status(candidate)
         if status and status.available:
             return AIConfig.from_settings(candidate)
     raise AIProviderUnavailableError("AI provider is unavailable. Configure at least one usable AI profile.")
 
 
-def list_ai_profiles(include_unavailable: bool) -> list[AIProfileView]:
+def list_ai_profiles(include_unavailable: bool, include_admin_only: bool = False) -> list[AIProfileView]:
     statuses = refresh_ai_profiles(force=False)
     views: list[AIProfileView] = []
-    default_status = _default_route_status(statuses)
+    default_status = _default_route_status(statuses, include_admin_only=include_admin_only)
     for profile_id in PROFILE_IDS:
+        if profile_id in ADMIN_ONLY_PROFILE_IDS and not include_admin_only:
+            continue
         definition = _DEFINITIONS[profile_id]
         status = default_status if profile_id == "default" else statuses.get(profile_id)
         if status is None:
@@ -255,12 +267,16 @@ def _model_ids(data: object) -> set[str]:
     return ids
 
 
-def _default_route_status(statuses: dict[str, AIProfileStatus]) -> AIProfileStatus:
-    checked_values = [status.checked_at for status in statuses.values() if status.checked_at]
+def _default_route_status(statuses: dict[str, AIProfileStatus], include_admin_only: bool) -> AIProfileStatus:
+    route_statuses = [
+        status for profile_id, status in statuses.items()
+        if include_admin_only or profile_id not in ADMIN_ONLY_PROFILE_IDS
+    ]
+    checked_values = [status.checked_at for status in route_statuses if status.checked_at]
     checked_at = max(checked_values) if checked_values else None
-    configured = any(status.configured for status in statuses.values())
-    available = any(status.available for status in statuses.values())
-    reason = None if available else _first_reason(statuses.values()) or "No available AI profile."
+    configured = any(status.configured for status in route_statuses)
+    available = any(status.available for status in route_statuses)
+    reason = None if available else _first_reason(route_statuses) or "No available AI profile."
     return AIProfileStatus("default", configured, available, reason, checked_at or _now_iso())
 
 

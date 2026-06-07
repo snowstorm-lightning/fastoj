@@ -29,6 +29,14 @@ _DETAILS: dict[str, list[str]] = {
     "valid-parentheses": [
         "A string is valid only when every opening bracket is closed by the same type of bracket and brackets close in the reverse order in which they were opened.",
     ],
+    "alien-dictionary": [
+        "Only the relative order implied by adjacent words is known. For each neighboring pair, the first different characters determine one precedence rule; later characters in that pair do not add more information.",
+        "If a longer word appears before its exact prefix, the list cannot be sorted by any alphabet. A cycle in the precedence graph is also impossible, because it would require one letter to come before itself.",
+    ],
+    "two-car-parking-lot": [
+        "The grid contains uppercase A and B for the two cars, lowercase a and b for their matching parking spots, # for walls, and . for empty pavement. Cars are distinguishable: A must finish on a, and B must finish on b.",
+        "Each move chooses one car and moves it one orthogonal cell. A car cannot leave the grid, enter a wall, or move into the other car's current cell; the question is whether some sequence reaches the two final positions at the same time.",
+    ],
     "maximum-subarray": [
         "The subarray must contain at least one element and must use consecutive positions. Negative numbers may appear, so the best answer can be a single element.",
     ],

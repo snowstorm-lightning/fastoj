@@ -4,7 +4,16 @@ import { DEFAULT_LOCALE, localeText, localeValue, SUPPORTED_LOCALES, type Locale
 export type JudgeMode = "function" | "acm";
 
 type AnyProblem = Pick<ProblemDetail | ProblemListItem, "slug" | "title" | "tags"> & {
-  sample_testcases?: Array<{ input: string; output: string }>;
+  sample_testcases?: Array<{
+    input: string;
+    output: string;
+    explanation?: string | null;
+    acm_input?: string | null;
+    acm_output?: string | null;
+    function_input?: string | null;
+    function_output?: string | null;
+    display_mode?: string | null;
+  }>;
   mode?: string;
   function_signature?: string | null;
 };
@@ -66,6 +75,16 @@ ${TODO}    return 0
     },
     starter: `def is_valid_parentheses(s: str) -> bool:
 ${TODO}    return False
+`,
+  },
+  "alien-dictionary": {
+    signature: "def alienOrder(words: list[str]) -> str",
+    description: {
+      zh: "根据已排序单词推断外星字母顺序；矛盾时返回空字符串。",
+      en: "Infer the alien letter order from sorted words; return an empty string on contradiction.",
+    },
+    starter: `def alienOrder(words: list[str]) -> str:
+${TODO}    return ""
 `,
   },
   "logistic-regression-sigmoid": {
@@ -609,6 +628,13 @@ const VISUALS: Record<string, VisualSpec> = {
     steps: {
       zh: ["右指针扩张窗口", "遇到重复字符时移动左边界", "每一步更新最长长度"],
       en: ["Expand with the right pointer", "Move the left boundary on duplicate characters", "Update the best length at each step"],
+    },
+  },
+  "alien-dictionary": {
+    title: { zh: "拓扑排序", en: "Topological Sort" },
+    steps: {
+      zh: ["比较相邻单词首个不同字符", "把字母先后关系建成有向图", "入度为 0 的字母依次出队生成顺序"],
+      en: ["Compare the first differing character in adjacent words", "Build directed precedence edges", "Pop zero-indegree letters to produce the order"],
     },
   },
   "logistic-regression-sigmoid": {

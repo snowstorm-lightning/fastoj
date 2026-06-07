@@ -8,6 +8,8 @@ from backend.core.time import utc_now
 from backend.models import Difficulty, Problem, Solution, TestCase
 from backend.scripts.hot100_data import HOT100_LEGACY_SLUG_ALIASES, HOT100_PROBLEMS_DATA
 from backend.scripts.problem_statement_details import enrich_problem_descriptions
+from backend.scripts.seed_official_solutions import official_solution_for_slug
+from backend.scripts.seed_testcase_augmentation import augmented_testcases
 from backend.services.problem_modes import FUNCTION_SIGNATURES
 
 PROBLEMS_DATA = [
@@ -88,6 +90,55 @@ PROBLEMS_DATA = [
             {"input": "()[]{}", "output": "true", "is_sample": True, "is_hidden": False, "score": 10},
             {"input": "(]", "output": "false", "is_sample": False, "is_hidden": True, "score": 30},
             {"input": "([{}])", "output": "true", "is_sample": False, "is_hidden": True, "score": 60},
+        ],
+    },
+    {
+        "problem": {
+            "title": "Alien Dictionary",
+            "slug": "alien-dictionary",
+            "description": "Given words sorted by an unknown alien alphabet, infer one valid ordering of the letters or return an empty string when no valid alphabet order exists.",
+            "difficulty": Difficulty.HARD,
+            "time_limit": 2000,
+            "memory_limit": 256,
+            "tags": ["Interview", "Graph", "Topological Sort", "Breadth-First Search", "Function"],
+            "hint": "Compare adjacent words, add the first differing character as a directed edge, then run topological sort.",
+            "source": "FastOJ interview practice",
+        },
+        "testcases": [
+            {"input": "[\"wrt\",\"wrf\",\"er\",\"ett\",\"rftt\"]", "output": "wertf", "is_sample": True, "is_hidden": False, "score": 10},
+            {"input": "[\"z\",\"x\"]", "output": "zx", "is_sample": False, "is_hidden": True, "score": 15},
+            {"input": "[\"z\",\"x\",\"z\"]", "output": "", "is_sample": False, "is_hidden": True, "score": 15},
+            {"input": "[\"abc\",\"ab\"]", "output": "", "is_sample": False, "is_hidden": True, "score": 15},
+            {"input": "[\"ab\",\"ac\",\"bc\",\"bd\",\"cd\"]", "output": "abcd", "is_sample": False, "is_hidden": True, "score": 15},
+            {"input": "[\"a\",\"b\",\"c\",\"d\"]", "output": "abcd", "is_sample": False, "is_hidden": True, "score": 15},
+            {"input": "[\"abc\",\"abd\",\"acd\",\"bcd\"]", "output": "abcd", "is_sample": False, "is_hidden": True, "score": 15},
+        ],
+        "solution": {
+            "language": "python",
+            "code": "from collections import defaultdict, deque\n\n\ndef alienOrder(words):\n    graph = defaultdict(set)\n    indegree = {}\n\n    for word in words:\n        for ch in word:\n            indegree.setdefault(ch, 0)\n\n    for first, second in zip(words, words[1:]):\n        if len(first) > len(second) and first.startswith(second):\n            return \"\"\n\n        for left, right in zip(first, second):\n            if left != right:\n                if right not in graph[left]:\n                    graph[left].add(right)\n                    indegree[right] += 1\n                break\n\n    queue = deque(ch for ch in indegree if indegree[ch] == 0)\n    order = []\n\n    while queue:\n        ch = queue.popleft()\n        order.append(ch)\n        for nxt in sorted(graph[ch]):\n            indegree[nxt] -= 1\n            if indegree[nxt] == 0:\n                queue.append(nxt)\n\n    if len(order) != len(indegree):\n        return \"\"\n    return \"\".join(order)\n",
+            "explanation": "Build precedence edges from the first differing character in each adjacent word pair. Kahn's topological sort returns an ordering when all characters can be processed; a prefix conflict or remaining cycle means no valid order exists.",
+            "time_complexity": "O(total characters + edges)",
+            "space_complexity": "O(unique letters + edges)",
+        },
+    },
+    {
+        "problem": {
+            "title": "Two-Car Parking Lot",
+            "slug": "two-car-parking-lot",
+            "description": "Given a parking-lot grid with two cars and two matching parking spots, decide whether both cars can be parked in their own spots.",
+            "difficulty": Difficulty.MEDIUM,
+            "time_limit": 2000,
+            "memory_limit": 256,
+            "tags": ["Interview", "Graph", "Breadth-First Search", "Grid", "Function"],
+            "hint": "Search states containing both car positions, not each car independently.",
+            "source": "FastOJ interview practice",
+        },
+        "testcases": [
+            {"input": '[["A",".","a"],["#","#","."],["B",".","b"]]', "output": "true", "is_sample": True, "is_hidden": False, "score": 10},
+            {"input": '[["A","#","a"],["#","#","."],["B",".","b"]]', "output": "false", "is_sample": False, "is_hidden": True, "score": 15},
+            {"input": '[["A","B","b","a"]]', "output": "false", "is_sample": False, "is_hidden": True, "score": 15},
+            {"input": '[["A","B","b","a"],[".",".",".","."]]', "output": "true", "is_sample": False, "is_hidden": True, "score": 15},
+            {"input": '[["A",".","b"],[".","#","."],["a",".","B"]]', "output": "true", "is_sample": False, "is_hidden": True, "score": 15},
         ],
     },
     {
@@ -344,6 +395,9 @@ DEFAULT_SOLUTIONS = {
 
 def _default_solution(item: dict) -> dict | None:
     slug = item["problem"]["slug"]
+    official = official_solution_for_slug(slug)
+    if official:
+        return official.as_seed_solution()
     if item.get("solution"):
         return item["solution"]
     data = DEFAULT_SOLUTIONS.get(slug)
@@ -358,28 +412,8 @@ def _default_solution(item: dict) -> dict | None:
 
 
 def _expanded_testcases(item: dict) -> list[dict]:
-    """Return at least ten normalized cases; first two are public samples."""
-    base_cases = [dict(testcase) for testcase in item["testcases"]]
-    if not base_cases:
-        return []
-
-    for index, testcase in enumerate(base_cases):
-        testcase["order"] = index
-        testcase["score"] = int(testcase.get("score", 10))
-        if index < 2:
-            testcase["is_sample"] = True
-            testcase["is_hidden"] = False
-
-    next_index = 0
-    while len(base_cases) < 10:
-        template = dict(base_cases[next_index % len(item["testcases"])])
-        template["is_sample"] = False
-        template["is_hidden"] = True
-        template["score"] = 0
-        template["order"] = len(base_cases)
-        base_cases.append(template)
-        next_index += 1
-    return base_cases
+    """Return policy-normalized augmented testcases."""
+    return augmented_testcases(item)
 
 
 def seed_problems():

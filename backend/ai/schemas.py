@@ -14,7 +14,7 @@ Verdict = Literal[
     "system_error",
     "unknown",
 ]
-AIModelProfile = Literal["default", "deepseek", "qwen-local"]
+AIModelProfile = Literal["default", "deepseek", "deepseek-pro", "qwen-local"]
 AILocale = Annotated[str, BeforeValidator(validate_locale)]
 
 

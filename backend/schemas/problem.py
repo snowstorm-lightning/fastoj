@@ -5,6 +5,12 @@ from pydantic import BaseModel, ConfigDict
 class SampleTestCase(BaseModel):
     input: str
     output: str
+    explanation: str | None = None
+    acm_input: str | None = None
+    acm_output: str | None = None
+    function_input: str | None = None
+    function_output: str | None = None
+    display_mode: str | None = None
 
 
 class ProblemListItem(BaseModel):

@@ -29,7 +29,7 @@ export type ProblemFilters = {
   page_size?: number;
 };
 
-export type AIModelProfile = "default" | "deepseek" | "qwen-local";
+export type AIModelProfile = "default" | "deepseek" | "deepseek-pro" | "qwen-local";
 export type AIProfile = {
   value: AIModelProfile;
   label_zh: string;
@@ -65,6 +65,18 @@ export type ProblemImportRequest = {
   model_profile: AIModelProfile;
   import_notes?: string | null;
 };
+export type AdminAgentFollowUpPayload = {
+  message: string;
+  locale: Locale;
+  model_profile: AIModelProfile;
+  draft_id?: string | null;
+};
+export type AdminAgentRetryPayload = {
+  locale: Locale;
+  model_profile: AIModelProfile;
+  draft_id?: string | null;
+  message?: string | null;
+};
 export type AgentStep = {
   id: string;
   run_id?: string;
@@ -73,7 +85,13 @@ export type AgentStep = {
   tool_name?: string | null;
   status: string;
   error_message?: string | null;
+  input: Record<string, unknown>;
   output: Record<string, unknown>;
+};
+export type AdminAgentStreamEvent = {
+  event: string;
+  id?: string;
+  data: Record<string, any>;
 };
 export type AgentRun = {
   id: string;
@@ -89,6 +107,17 @@ export type AgentRun = {
   created_at: string;
   finished_at?: string | null;
   steps: AgentStep[];
+};
+export type AdminAgentActionResponse = {
+  message?: string | null;
+  run_id?: string | null;
+  session_id?: string | null;
+  draft_id?: string | null;
+  status?: string | null;
+  validation_summary?: Record<string, unknown>;
+  run?: AgentRun | null;
+  draft?: ProblemDraft | null;
+  steps?: AgentStep[];
 };
 export type ProblemDraft = {
   id: string;
@@ -109,7 +138,13 @@ export type ProblemDraft = {
   official_solution_language?: string;
   official_solution_code?: string;
   official_solution_explanation?: string;
-  official_solutions?: Array<{ language: string; code: string; explanation: string }>;
+  official_solutions?: Array<{
+    language: string;
+    code: string;
+    explanation: string;
+    acm_code?: string | null;
+    function_code?: string | null;
+  }>;
   time_complexity?: string | null;
   space_complexity?: string | null;
   validation_summary?: Record<string, unknown>;
@@ -119,6 +154,33 @@ export type ProblemDraft = {
   steps?: AgentStep[];
   runs?: AgentRun[];
   approved_problem_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+export type ProblemDraftListItem = ProblemDraft;
+export type AgentSessionMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  message: string;
+  run_id?: string | null;
+  created_at: string;
+};
+export type AgentSession = {
+  id: string;
+  title: string;
+  run_type: string;
+  status: string;
+  mode?: string | null;
+  source_kind?: string | null;
+  draft_count: number;
+  run_count: number;
+  latest_draft?: ProblemDraftListItem | null;
+  latest_run?: AgentRun | null;
+  drafts: ProblemDraftListItem[];
+  runs: AgentRun[];
+  messages: AgentSessionMessage[];
+  created_at: string;
+  updated_at: string;
 };
 export type ProblemDraftUpdatePayload = {
   title?: string;
@@ -137,7 +199,13 @@ export type ProblemDraftUpdatePayload = {
   official_solution_language?: string;
   official_solution_code?: string;
   official_solution_explanation?: string;
-  official_solutions?: Array<{ language: string; code: string; explanation: string }>;
+  official_solutions?: Array<{
+    language: string;
+    code: string;
+    explanation: string;
+    acm_code?: string | null;
+    function_code?: string | null;
+  }>;
   time_complexity?: string | null;
   space_complexity?: string | null;
   testcases?: Array<Record<string, unknown>>;
@@ -160,6 +228,7 @@ export type AdminTestCase = {
   problem_id: string;
   input: string;
   output: string;
+  io_metadata?: Record<string, any> | null;
   is_hidden: boolean;
   is_sample: boolean;
   score: number;
@@ -169,6 +238,7 @@ export type AdminTestCase = {
 export type AdminTestCasePayload = {
   input: string;
   output: string;
+  io_metadata?: Record<string, any> | null;
   is_hidden: boolean;
   is_sample: boolean;
   score: number;
@@ -200,6 +270,7 @@ export type CurrentUser = {
   avatar_url?: string | null;
   locale: Locale;
   role: string;
+  content_admin_permissions?: string[];
   is_active: boolean;
 };
 export type UpdateMePayload = {
@@ -228,14 +299,28 @@ export type ProblemDraftFilters = {
   page?: number;
   pageSize?: number;
 };
+export type AgentRunFilters = {
+  runType?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+};
+export type AgentSessionFilters = {
+  runType?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+};
 
 export class ApiError extends Error {
   status: number;
+  run_id?: string | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, runId?: string | null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.run_id = runId ?? null;
   }
 }
 
@@ -249,12 +334,13 @@ const SAFE_BACKEND_ERROR_TEXT = [
   /^AI provider returned HTTP \d{3} for model [A-Za-z0-9._:-]+\.$/,
   /^AI provider returned HTTP \d{3}\.$/,
   /^AI provider did not return a JSON object for the problem draft\.$/,
-  /^AI provider returned JSON without a problem draft object\. Top-level keys: [A-Za-z0-9_, -]+\.$/,
+  /^AI provider returned JSON without a problem draft object\. Top-level keys: [A-Za-z0-9_, -]+\.?$/,
   /^AI problem draft JSON is missing required fields: [A-Za-z0-9_., -]+\.?$/,
   /^AI problem draft JSON does not match the required schema: [A-Za-z0-9_()., -]+$/,
   /^AI provider did not return a JSON object for the official solution\.$/,
-  /^AI provider returned JSON without an official solution object\. Top-level keys: [A-Za-z0-9_, -]+\.$/,
+  /^AI provider returned JSON without an official solution object\. Top-level keys: [A-Za-z0-9_, -]+\.?$/,
   /^AI official solution JSON does not match the required schema: [A-Za-z0-9_()., -]+$/,
+  /^AI provider returned an empty response body\b.*$/,
   /^AI provider is unreachable at https?:\/\/[A-Za-z0-9.:/_-]+\/?[A-Za-z0-9./_-]*\./,
   /^AI provider is unreachable\./,
   /^AI provider is unavailable\./,
@@ -318,6 +404,13 @@ export function formatApiErrorResponse(data: unknown, fallback = "Request failed
   return fallback;
 }
 
+function apiErrorRunId(data: unknown): string | null {
+  if (!isRecord(data) || !isRecord(data.detail)) return null;
+  return typeof data.detail.run_id === "string" && data.detail.run_id.trim()
+    ? data.detail.run_id.trim()
+    : null;
+}
+
 function token() {
   return localStorage.getItem("fastoj.jwt") ?? "";
 }
@@ -333,7 +426,7 @@ async function request<T>(path: string, options: RequestInit, parse: (data: unkn
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new ApiError(formatApiErrorResponse(data, `HTTP ${response.status}`), response.status);
+    throw new ApiError(formatApiErrorResponse(data, `HTTP ${response.status}`), response.status, apiErrorRunId(data));
   }
   return parse(data);
 }
@@ -441,17 +534,17 @@ export const api = {
   async adminDeleteTestcase(testcaseId: string) {
     return request(`/api/v1/admin/testcases/${testcaseId}`, { method: "DELETE" }, (data: any) => data);
   },
-  async adminCreateProblemDraft(payload: ProblemAgentRequest) {
+  async adminCreateProblemDraft(payload: ProblemAgentRequest): Promise<AdminAgentActionResponse> {
     return request("/api/v1/admin/agent/problem-drafts", {
       method: "POST",
       body: JSON.stringify(payload),
-    }, (data: any) => data);
+    }, (data: any) => data.data ?? data);
   },
-  async adminCreateProblemImport(payload: ProblemImportRequest) {
+  async adminCreateProblemImport(payload: ProblemImportRequest): Promise<AdminAgentActionResponse> {
     return request("/api/v1/admin/agent/problem-imports", {
       method: "POST",
       body: JSON.stringify(payload),
-    }, (data: any) => data);
+    }, (data: any) => data.data ?? data);
   },
   async adminProblemDrafts(filters: ProblemDraftFilters = {}): Promise<ProblemDraft[]> {
     const params = new URLSearchParams();
@@ -484,6 +577,37 @@ export const api = {
   async adminAgentRun(runId: string) {
     return request(`/api/v1/admin/agent/runs/${runId}`, { method: "GET" }, (data: any) => data);
   },
+  async adminAgentRuns(filters: AgentRunFilters = {}): Promise<AgentRun[]> {
+    const params = new URLSearchParams();
+    if (filters.runType) params.set("run_type", filters.runType);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.page) params.set("page", String(filters.page));
+    if (filters.pageSize) params.set("page_size", String(filters.pageSize));
+    return request(`/api/v1/admin/agent/runs?${params}`, { method: "GET" }, (data: any) => data ?? []);
+  },
+  async adminAgentSessions(filters: AgentSessionFilters = {}): Promise<AgentSession[]> {
+    const params = new URLSearchParams();
+    if (filters.runType) params.set("run_type", filters.runType);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.page) params.set("page", String(filters.page));
+    if (filters.pageSize) params.set("page_size", String(filters.pageSize));
+    return request(`/api/v1/admin/agent/sessions?${params}`, { method: "GET" }, (data: any) => data ?? []);
+  },
+  async adminAgentSession(sessionId: string): Promise<AgentSession> {
+    return request(`/api/v1/admin/agent/sessions/${sessionId}`, { method: "GET" }, (data: any) => data);
+  },
+  async adminAgentFollowUp(runId: string, payload: AdminAgentFollowUpPayload): Promise<AdminAgentActionResponse> {
+    return request(`/api/v1/admin/agent/runs/${runId}/follow-ups`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, (data: any) => data.data ?? data);
+  },
+  async adminRetryAgentRun(runId: string, payload: AdminAgentRetryPayload): Promise<AdminAgentActionResponse> {
+    return request(`/api/v1/admin/agent/runs/${runId}/retry`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, (data: any) => data.data ?? data);
+  },
   async adminApproveProblemDraft(draftId: string): Promise<ProblemDraft> {
     return request(`/api/v1/admin/problem-drafts/${draftId}/approve`, { method: "POST" }, (data: any) => data);
   },
@@ -501,8 +625,10 @@ export const api = {
       problemListItemSchema.array().parse(data.data ?? []),
     );
   },
-  async problem(id: string): Promise<ProblemDetail> {
-    return request(`/api/v1/problems/${id}`, { method: "GET" }, (data: any) =>
+  async problem(id: string, locale = "zh", judgeMode?: JudgeMode): Promise<ProblemDetail> {
+    const params = new URLSearchParams({ locale });
+    if (judgeMode) params.set("judge_mode", judgeMode);
+    return request(`/api/v1/problems/${id}?${params}`, { method: "GET" }, (data: any) =>
       problemDetailSchema.parse(data.data),
     );
   },
@@ -511,11 +637,26 @@ export const api = {
       problemDiscussionSchema.array().parse(data.data ?? []),
     );
   },
-  async createDiscussion(problemId: string, body: string): Promise<ProblemDiscussion> {
+  async createDiscussion(problemId: string, body: string, parentId?: string | null): Promise<ProblemDiscussion> {
     return request(`/api/v1/problems/${problemId}/discussions`, {
       method: "POST",
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, ...(parentId ? { parent_id: parentId } : {}) }),
     }, (data: any) => problemDiscussionSchema.parse(data.data));
+  },
+  async likeDiscussion(problemId: string, discussionId: string): Promise<ProblemDiscussion> {
+    return request(`/api/v1/problems/${problemId}/discussions/${discussionId}/like`, {
+      method: "POST",
+    }, (data: any) => problemDiscussionSchema.parse(data.data ?? data));
+  },
+  async unlikeDiscussion(problemId: string, discussionId: string): Promise<ProblemDiscussion> {
+    return request(`/api/v1/problems/${problemId}/discussions/${discussionId}/like`, {
+      method: "DELETE",
+    }, (data: any) => problemDiscussionSchema.parse(data.data ?? data));
+  },
+  async deleteDiscussion(problemId: string, discussionId: string) {
+    return request(`/api/v1/problems/${problemId}/discussions/${discussionId}`, {
+      method: "DELETE",
+    }, (data: any) => data);
   },
   async submit(
     problem_id: string,
@@ -593,6 +734,70 @@ export const api = {
     }, (data) => aiHintSchema.parse(data));
   },
 };
+
+export async function streamAdminAgentRun(
+  runId: string,
+  onEvent: (event: AdminAgentStreamEvent) => void,
+  options: { signal?: AbortSignal; lastEventId?: string | null } = {},
+): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (token()) headers.Authorization = `Bearer ${token()}`;
+  if (options.lastEventId) headers["Last-Event-ID"] = options.lastEventId;
+  const response = await fetch(`${API_BASE}/api/v1/admin/agent/runs/${runId}/events`, {
+    method: "GET",
+    headers,
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new ApiError(formatApiErrorResponse(data, `HTTP ${response.status}`), response.status, apiErrorRunId(data));
+  }
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const parsed = parseSseEvent(rawEvent);
+      if (parsed) onEvent(parsed);
+      boundary = buffer.indexOf("\n\n");
+    }
+  }
+  const tail = buffer.trim();
+  if (tail) {
+    const parsed = parseSseEvent(tail);
+    if (parsed) onEvent(parsed);
+  }
+}
+
+function parseSseEvent(rawEvent: string): AdminAgentStreamEvent | null {
+  const lines = rawEvent.split(/\r?\n/);
+  let event = "message";
+  let id: string | undefined;
+  const dataLines: string[] = [];
+  for (const line of lines) {
+    if (!line || line.startsWith(":")) continue;
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim() || event;
+    } else if (line.startsWith("id:")) {
+      id = line.slice("id:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+  }
+  if (!dataLines.length) return null;
+  try {
+    return { event, id, data: JSON.parse(dataLines.join("\n")) };
+  } catch {
+    return { event, id, data: { raw: dataLines.join("\n") } };
+  }
+}
 
 export function makeJudgeSocket(submissionId: string): WebSocket | null {
   const jwt = token();

@@ -61,11 +61,17 @@ class Settings(BaseSettings):
     AI_DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     AI_DEEPSEEK_API_KEY: str = ""
     AI_DEEPSEEK_MODEL: str = "deepseek-v4-flash"
+    AI_DEEPSEEK_PRO_BASE_URL: str = "https://api.deepseek.com"
+    AI_DEEPSEEK_PRO_API_KEY: str = ""
+    AI_DEEPSEEK_PRO_MODEL: str = "deepseek-v4-pro"
+    AI_DEEPSEEK_PRO_TIMEOUT_SECONDS: int = 180
+    AI_DEEPSEEK_PRO_MAX_OUTPUT_TOKENS: int = 16000
     AI_QWEN_BASE_URL: str = "http://host.docker.internal:8080/v1"
     AI_QWEN_API_KEY: str = "sk-no-key-required"
     AI_QWEN_MODEL: str = "qwen2.5-coder-7b-instruct-q4_k_m"
     AI_TIMEOUT_SECONDS: int = 60
     AI_MAX_OUTPUT_TOKENS: int = 1200
+    AI_AUTHORING_REPAIR_ATTEMPTS: int = 6
 
     model_config = SettingsConfigDict(
         env_file=".env",

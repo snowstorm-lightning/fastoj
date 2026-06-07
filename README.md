@@ -20,7 +20,9 @@ for that.
   `subprocess` execution.
 - **Function mode and ACM mode are both first-class.** Function mode gives
   learners a language-specific starter frame; ACM mode keeps classic stdin/stdout
-  practice available for every problem.
+  practice available for every problem. The bundled 108-problem seed catalog now
+  ships executable Python official solutions and stronger deterministic hidden
+  coverage for every seeded problem.
 - **AI help is useful without leaking hidden cases.** Hints, explanations,
   reviews, and chat use verdicts, user code, public samples, and safe aggregate
   summaries. Hidden testcase input, expected output, and actual output are not
@@ -62,14 +64,19 @@ for that.
    saved, and admins can manually edit failed drafts, save, and revalidate them.
    Admins can also import pasted external problem material through a separate
    workflow; the source text stays admin-only while AI rewrites and adapts the
-   draft before validation.
+   draft before validation. Agent runs execute in the background and stream
+   progress to the admin console over SSE, so the execution trace updates
+   without refreshing. Runs are shown as a summary-first trace, including failed
+   imports that never created a draft; step input/output/error details expand on
+   demand with long or code-like fields safely abbreviated.
    User management covers roles and account status; problem management covers
    statements, slug, mode, function signature, ACM formats, limits, visibility,
    official solutions, full testcase sets, revalidation, and deleting retired
    problems. Drafts can publish dual-mode problems that support both function
-   and ACM practice; dual mode stores one canonical function-style official
-   solution per language, and ACM practice uses the same JSON-argument
-   input/output contract. The authoring Agent can request, validate, edit, and
+   and ACM practice; dual mode can store separate ACM stdin/stdout and function
+   JSON views for the same logical sample, and validation runs the available
+   mode-specific official solution contracts. The authoring Agent can request,
+   validate, edit, and
    publish official solutions for multiple programming languages from the same
    draft. When an extra language is added during draft or formal-problem review,
    admins can ask AI to fill that single official solution before saving and
@@ -94,7 +101,7 @@ is saved to the user profile after sign-in.
 
 | Admin Console |
 | --- |
-| Admins get a single workspace for original problem authoring, imported-problem drafting, user management, problem/content management, formal testcase management, and draft approval. Hidden testcase content and imported raw source material are visible only through admin UI/API and are not exposed to regular problem views, AI explanations, or submission logs. |
+| Admins get a single workspace for original problem authoring, imported-problem drafting, execution-trace review, user management, problem/content management, formal testcase management, and draft approval. Hidden testcase content and imported raw source material are visible only through admin UI/API and are not exposed to regular problem views, AI explanations, or submission logs. |
 
 ## Quick Start
 
@@ -216,19 +223,32 @@ AI_DEEPSEEK_BASE_URL=https://api.deepseek.com
 AI_DEEPSEEK_API_KEY=your-provider-key
 AI_DEEPSEEK_MODEL=deepseek-v4-flash
 
+AI_DEEPSEEK_PRO_BASE_URL=https://api.deepseek.com
+AI_DEEPSEEK_PRO_API_KEY=your-provider-key
+AI_DEEPSEEK_PRO_MODEL=deepseek-v4-pro
+AI_DEEPSEEK_PRO_TIMEOUT_SECONDS=120
+AI_DEEPSEEK_PRO_MAX_OUTPUT_TOKENS=4000
+AI_AUTHORING_REPAIR_ATTEMPTS=4
+
 AI_QWEN_BASE_URL=http://host.docker.internal:8080/v1
 AI_QWEN_API_KEY=sk-no-key-required
 AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
+
+For normal OpenAI-compatible DeepSeek API calls, use `deepseek-v4-pro` or
+`deepseek-v4-flash` directly. Do not add the `[1m]` suffix unless you are using
+DeepSeek through its Anthropic/Claude Code compatibility integration.
 
 FastOJ exposes `GET /api/v1/ai/profiles` for the frontend model selector. The
 API checks the configured profiles in the background with a short timeout and
 caches availability for 60 seconds. Regular users only see currently available
 profiles; administrators can also see unavailable profiles and a safe failure
 reason. Selecting `default` auto-routes to the first healthy profile in this
-order: default config, DeepSeek, then local Qwen. AI calls still validate the
-provider at request time, so a model going offline returns a normal 503 instead
-of breaking API startup.
+order: default config, DeepSeek Pro, DeepSeek, then local Qwen. The admin
+Problem Agent defaults to DeepSeek Pro when available, while normal user AI
+controls continue to prefer `default`. AI calls still validate the provider at
+request time, so a model going offline returns a normal 503 instead of breaking
+API startup.
 
 ### Local Qwen Deployment
 
@@ -572,12 +592,11 @@ Full deployment steps are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
   the worker parent from Docker API or database call hangs, while Docker remains
   the actual sandbox boundary for untrusted user code.
 - In Docker Compose, the API service also mounts the Docker socket so the
-  admin-only Problem Authoring Agent can synchronously sandbox-check official
-  draft solutions before approval or after an admin edit/revalidation pass.
-  Multi-language drafts are checked per official solution language before they
-  can be approved. Dual-mode validation checks the canonical function solution
-  only, so the same trusted implementation is used to define both function-mode
-  and ACM-mode expected outputs.
+  admin-only Problem Authoring Agent can sandbox-check official draft solutions
+  before approval or after an admin edit/revalidation pass. Multi-language
+  drafts are checked per official solution language before they can be approved.
+  Dual-mode drafts can validate ACM stdin/stdout and function JSON views from
+  the same logical testcase metadata.
 - Sandbox containers run with network disabled, memory limits, pid limits,
   dropped capabilities, `no-new-privileges`, non-root execution, output
   truncation, timeout kill, and cleanup on the normal executor path. If the
@@ -593,16 +612,27 @@ The bundled seed data is now large enough for sustained interview practice:
   original FastOJ statements and deterministic ACM input/output for linked-list,
   tree, design, and multi-answer tasks.
 - **Function-mode classics:** Two Sum, Add Two Numbers, Longest Substring
-  Without Repeating Characters, and Valid Parentheses include starter frames and
-  official Python references.
+  Without Repeating Characters, Valid Parentheses, Alien Dictionary, and
+  Two-Car Parking Lot include starter frames, and every seeded problem now has a
+  displayable, executable Python official solution.
+- **Expanded deterministic cases:** seed import gives each problem at least two
+  public cases plus category-sensitive hidden coverage: 30+ hidden cases for
+  ordinary array/string/DP/graph/tree/list problems, 20+ for design and AI/ML
+  tasks, and 15+ for high-output combination problems.
+- **Localized explanations:** seed problem details include bilingual public
+  sample explanations, and seeded Python official solutions expose real
+  bilingual approach notes instead of generated placeholder text.
 - **AI/ML algorithm exercises:** Logistic Regression Sigmoid, KNN Majority Vote,
   KMeans One Iteration, Scaled Dot-Product Attention, Softmax Cross Entropy, and
   Attention Mask Apply.
 
 Function mode supports Python, C++, Java, JavaScript, TypeScript, Go, and selected
 C wrappers for seeded function tasks. ACM mode remains available for every
-problem and language. The judge runtime includes Python `numpy==2.2.6` and CPU
-`torch==2.7.1+cpu` for AI algorithm exercises.
+problem and language. The public solution API can still be queried by the active
+editor language; when that language has no official solution, it falls back to
+the Python official solution and returns `language: "python"`. The judge runtime
+includes Python `numpy==2.2.6` and CPU `torch==2.7.1+cpu` for AI algorithm
+exercises.
 
 ## Architecture
 
@@ -662,7 +692,7 @@ cd frontend && npm run build
 cd frontend && npm test
 ```
 
-When judge, worker, WebSocket, sandbox, or real submission behavior changes, also
+When judge, worker, WebSocket/SSE, sandbox, or real submission behavior changes, also
 run:
 
 ```bash

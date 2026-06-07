@@ -66,7 +66,12 @@ class SubmissionService:
         self.db.refresh(submission)
 
         try:
-            self._queue_or_judge_now(submission, use_hidden=True, judge_code=judge_code)
+            self._queue_or_judge_now(
+                submission,
+                use_hidden=True,
+                judge_code=judge_code,
+                judge_mode=submission_data.judge_mode,
+            )
         except JudgeServiceUnavailableError:
             self._mark_submission_judge_unavailable(submission)
             raise
@@ -115,6 +120,7 @@ class SubmissionService:
                 submission,
                 use_hidden=False,
                 judge_code=judge_code,
+                judge_mode=submission_data.judge_mode,
                 run_testcases=[{"input": item.input} for item in (submission_data.run_testcases or [])] or None,
             )
         except JudgeServiceUnavailableError:
@@ -138,6 +144,7 @@ class SubmissionService:
         submission: Submission,
         use_hidden: bool,
         judge_code: str | None = None,
+        judge_mode: str = "acm",
         run_testcases: list[dict[str, str]] | None = None,
     ) -> None:
         """Queue a judge task, or execute it inline when policy allows fallback."""
@@ -147,6 +154,7 @@ class SubmissionService:
             "code": judge_code or submission.code,
             "language": submission.language,
             "use_hidden": use_hidden,
+            "judge_mode": judge_mode,
         }
         if run_testcases and not use_hidden:
             task["run_testcases"] = run_testcases
@@ -164,7 +172,7 @@ class SubmissionService:
             logger.error("Inline judging is disabled outside debug/development mode")
             raise JudgeServiceUnavailableError(JUDGE_SERVICE_UNAVAILABLE_MESSAGE)
 
-        self._run_inline_judge(submission, use_hidden, judge_code, run_testcases)
+        self._run_inline_judge(submission, use_hidden, judge_code, judge_mode, run_testcases)
 
     def _allow_inline_judge_fallback(self) -> bool:
         if settings.JUDGE_INLINE_FALLBACK is not None:
@@ -202,6 +210,7 @@ class SubmissionService:
         submission: Submission,
         use_hidden: bool,
         judge_code: str | None = None,
+        judge_mode: str = "acm",
         run_testcases: list[dict[str, str]] | None = None,
     ) -> None:
         from backend.worker.tasks.judge_task import JudgeTask
@@ -214,6 +223,7 @@ class SubmissionService:
             language=submission.language,
             use_hidden=use_hidden,
             db=self.db,
+            judge_mode=judge_mode,
             run_testcases=run_testcases,
         )
         self.update_submission_status(

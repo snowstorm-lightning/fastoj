@@ -1,10 +1,61 @@
 # Codex Handoff
 
-Updated: 2026-06-06
+Updated: 2026-06-07
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-06-07 Two-Car Parking Lot Seed Problem
+
+- Added `Two-Car Parking Lot` as seed slug `two-car-parking-lot`; the bundled catalog is now 108 problems: 100 canonical Hot 100 entries, 6 AI/ML exercises, and 2 extra interview graph/search problems.
+- The function signature is `def can_reach(grid: list[list[str]]) -> bool`. The official Python solution runs BFS over the combined state of both car positions, moving one car at a time while enforcing walls, bounds, and non-overlap.
+- Seed cases include reachable grids, blocked parking spots, an impossible one-row passing case, a bypass case, and special hidden grids for the augmentation registry.
+
+## 2026-06-07 Admin DeepSeek Pro Profile And Repair Budget
+
+- Recent failed problem imports were model/schema failures, not judge failures. The latest failed `problem_import` runs ended with `AI provider returned JSON without a problem draft object`, and the model steps returned short or empty payloads before validation failed.
+- The running container had both `default` and `deepseek` resolving to `deepseek-v4-flash` with `AI_MAX_OUTPUT_TOKENS=1200`. For full problem import/draft JSON, model strength and output budget are the immediate bottlenecks; the current 30000-character raw-material limit is far below 1M context.
+- Added admin-only profile `deepseek-pro`, configured through `AI_DEEPSEEK_PRO_BASE_URL`, `AI_DEEPSEEK_PRO_API_KEY`, `AI_DEEPSEEK_PRO_MODEL=deepseek-v4-pro`, `AI_DEEPSEEK_PRO_TIMEOUT_SECONDS=120`, and `AI_DEEPSEEK_PRO_MAX_OUTPUT_TOKENS=4000`.
+- The implementation uses the normal OpenAI-compatible DeepSeek model id `deepseek-v4-pro` without `[1m]`; `[1m]` is only for the Anthropic/Claude Code compatibility naming path.
+- Regular user AI controls do not receive `deepseek-pro`, and non-admin AI actions passing that profile are rejected with 403. The admin Problem Agent defaults to `deepseek-pro` when available and still allows selecting other profiles.
+- Authoring repair attempts are now configurable through `AI_AUTHORING_REPAIR_ATTEMPTS`, defaulting to 4 repair attempts plus the initial generation attempt. Runtime clamping keeps it between 0 and 8 repair attempts; do not make it unlimited because each attempt is a full model call.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (200 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 38 tests); `cd frontend && npm run build` (existing large chunk warnings); `docker compose up --build -d api`; health check at `http://127.0.0.1:8010/api/v1/health`.
+- Container config check confirmed: `default/deepseek -> deepseek-v4-flash`, `deepseek-pro -> deepseek-v4-pro`, Pro timeout 120s, Pro max output 4000, authoring repair attempts 4.
+
+## 2026-06-07 Admin Agent Runs Trace Viewer
+
+- Admins can now inspect recent Agent executions through `GET /api/v1/admin/agent/runs`, including failed `problem_import` runs that have no `draft_id`.
+- Agent draft generation, problem import, and draft solution generation now wrap model/validation failures that already created a run as structured details: `{ message, run_id }`. The frontend keeps the message and automatically fetches the referenced run.
+- The admin Problem Agent middle panel is now a summary-first trace viewer: recent runs are listed with type/status/model/draft linkage, the selected run shows a step timeline, and each step expands on click to show sanitized input/output/error JSON.
+- The UI sanitizes trace detail display by redacting long/raw/code-like keys such as `raw_material`, `code`, `official_solution_code`, and hidden testcase collections, and truncates nested/long values so the page stays readable.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (196 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 38 tests); `cd frontend && npm run build` (existing large chunk warnings); `docker compose up --build -d api`; health check at `http://127.0.0.1:8010/api/v1/health`.
+
+## 2026-06-07 Seed Explanations Localization
+
+- All 107 seed slugs now have bilingual sample and official-solution explanation text in `backend/scripts/seed_explanations.py`.
+- Problem detail responses accept `locale` and include `sample_testcases[].explanation` for seed problems. Non-seed problems leave that field `null` so the frontend does not invent a sample explanation.
+- Seed official solutions now store real English approach notes from the registry. `/solutions` returns localized seed explanations by request locale and still falls back to Python when the requested language is missing.
+- The frontend workbench removed its hard-coded `sampleExplanation` fallback and no-solution pseudo-solution paragraph; it displays API-provided explanations only.
+- The current API container database was reseeded successfully: `created 0 missing problems and normalized 107 existing problems`.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (194 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 36 tests); `cd frontend && npm run build` (existing large chunk warnings).
+
+## 2026-06-07 Seed Official Solutions And Hidden Case Expansion
+
+- The bundled 107-problem seed catalog now has Python official solutions for every slug through `backend/scripts/seed_official_solutions.py`. `seed_data.py` uses this registry for seeded `Solution` rows, so placeholder/TODO official solutions are replaced during seed normalization.
+- Seed testcase expansion now lives in `backend/scripts/seed_testcase_augmentation.py`. It deterministically builds at least two public cases per problem and enforces hidden-count lower bounds by problem type: ordinary problems 30+, design and AI/ML 20+, high-output combination problems 15+.
+- Official seed solutions are pure function-mode implementations with signatures aligned to `FUNCTION_SIGNATURES`; the seed-wide harness executes them through `wrap_function_submission` and the same output matcher used by judging tests.
+- Public `/solutions` now falls back to Python when a requested language has no official solution, while still returning the actual solution language as `python`. Existing requested-language solutions continue to win.
+- Added backend regression coverage for full seed solution/case policy and API fallback, plus frontend API coverage for rendering a Python fallback solution.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (190 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 34 tests); `cd frontend && npm run build` (existing large chunk warnings).
+
+## 2026-06-07 Alien Dictionary Seed Problem
+
+- Added `Alien Dictionary` as seed slug `alien-dictionary`; the bundled catalog is now 107 problems: 100 canonical Hot 100 entries, 6 AI/ML exercises, and this additional graph/topological-sort interview problem.
+- The function signature is `def alienOrder(words: list[str]) -> str`, matching the LeetCode-style method name while fitting FastOJ function mode. A regression test verifies `class Solution.alienOrder(...)` submissions are wrapped and executed correctly.
+- Seed cases cover the canonical valid-order sample, a two-letter order, cycle contradiction, invalid prefix ordering, and deterministic chain cases. The official Python solution uses Kahn topological sort and returns an empty string on prefix conflicts or cycles.
+- Added English and Chinese statement-detail enrichment, Chinese title/hint localization, a Chinese official-solution explanation, frontend starter metadata, and a small topological-sort visual flow.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (184 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 33 tests); `cd frontend && npm run build` (existing large chunk warnings).
 
 ## 2026-06-06 Problem Import Agent
 
@@ -367,9 +418,23 @@ Modified and new files after the latest admin-agent, acceptance, and frontend po
 - `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/v1/health`: passed with HTTP 200 and `{"status":"healthy","app":"FastOJ"}`.
 - `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000`: passed with HTTP 200.
 - Real Docker-backed public run for Two Sum C++ function mode passed with `result=ac`.
+- `uv run ruff check .`: passed after the SSE/Markdown/dual-sample work.
+- `uv run pytest`: passed, 219 tests passed with 2 FastAPI `regex` deprecation warnings.
+- `cd frontend && npm test`: passed, 10 files and 42 tests.
+- `cd frontend && npm run build`: passed, with existing large chunk warnings.
+- `docker compose up --build -d api worker`: passed; API and worker report healthy.
+- `docker compose exec -T api uv run alembic -c backend/alembic.ini upgrade head`: passed.
+- `docker compose exec -T api uv run python -m backend.scripts.repair_online_least_squares_problem`: passed twice, each time reporting `repaired 1 problem(s), 4 draft(s)`.
+- Container service-layer check confirmed the logistics problem is `mode=both`; ACM sample input starts with `8 / ADD 10 35`, while Function sample input is a JSON string array.
 
 ## Failed Commands And Error Summary
 
+- The latest “智能物流定价引擎（在线学习）” import failure was not a model JSON failure. The structured import created drafts, but validation failed before running cases because the admin selected `python/cpp/java` while the draft only had a Python official solution. The fix now generates Python/C++/Java for the recognized online least-squares problem and falls back to reliable available languages for generic structured imports.
+- Admin Agent create/import/retry now return a running `run_id/session_id` in the HTTP path and execute as background tasks. The frontend subscribes to `/api/v1/admin/agent/runs/{run_id}/events` via fetch-based SSE and merges `snapshot`, `step`, `draft_ready`, and `run_status` events into the selected session timeline.
+- Problem statements, hints, sample explanations, official solutions, discussion bodies, Agent messages, and admin previews now render Markdown through a shared sanitized `MarkdownBlock`. Storage remains plain Markdown text.
+- `testcases.io_metadata_json` stores mode-specific views for the same logical testcase. `GET /api/v1/problems/{id}?judge_mode=acm|function` returns current-mode `sample_testcases[].input/output` and also includes optional `acm_*` / `function_*` fields for debugging and UI display.
+- The published “智能物流定价引擎（在线学习）” problem and 4 related drafts were repaired in the Docker DB with Markdown content and ACM/Function sample views by running `docker compose exec -T api uv run python -m backend.scripts.repair_online_least_squares_problem`. Re-running the script is idempotent.
+- Java ACM validation initially failed during the fix because the sandbox writes Java code to `Solution.java`; declaring `public class Main` caused CE. The generated ACM Java solution now uses `class Solution` with `main`.
 - One `uv run ruff check .` run failed on UP038 for `isinstance(nested, (dict, str))`; changed it to `isinstance(nested, dict | str)` and reran ruff successfully.
 - One sandboxed `docker compose ps` check hit Docker pipe permission denial; reran the Docker status check with approved escalation and confirmed healthy services.
 - Browser `fill`/`type` for Chinese search was blocked by the Browser virtual clipboard not being installed. The localized search behavior is covered by frontend unit tests; the rendered Chinese library was still inspected in the browser.
@@ -390,9 +455,9 @@ Modified and new files after the latest admin-agent, acceptance, and frontend po
 
 ## Next Minimal Continue Plan
 
-1. Convert `docs/ACCEPTANCE_HARNESS.md` into a Playwright/equivalent browser suite covering auth, library search/filter, function and ACM run/submit, WebSocket-first status, polling fallback, AI locale behavior, settings, admin, and screenshot smoke.
-2. Finish the remaining browser manual acceptance items not fully automated in this batch: register/login redirect, token-expiry alert, settings save/error with typed form data, admin mutation restore paths, and explicit polling fallback simulation.
-3. Inspect the Chinese UI in a real browser for any remaining mixed-language problem text; move problem statement/solution translations from temporary frontend/backend maps to backend-managed localized fields when the content model is finalized.
-4. Expand admin UI beyond current user/problem/testcase controls when ready: full problem editor, official-solution editor, submission audit, judge queue, and system health.
+1. Browser-check the new Admin Agent SSE timeline with a real import: creation should immediately show a running run, then stream plan/validation/persistence steps without page refresh.
+2. Convert `docs/ACCEPTANCE_HARNESS.md` into a Playwright/equivalent browser suite covering auth, library search/filter, function and ACM run/submit, WebSocket-first status, polling fallback, AI locale behavior, settings, admin, and screenshot smoke.
+3. Finish the remaining browser manual acceptance items not fully automated in this batch: register/login redirect, token-expiry alert, settings save/error with typed form data, admin mutation restore paths, and explicit polling fallback simulation.
+4. Inspect the Chinese UI in a real browser for any remaining mixed-language problem text; move problem statement/solution translations from temporary frontend/backend maps to backend-managed localized fields when the content model is finalized.
 5. Expand C function-mode harnesses for AI tasks that require matrices or strings, or hide C function mode for those tasks until supported.
 6. Split Monaco/Shiki into lazy chunks to reduce initial frontend bundle size.

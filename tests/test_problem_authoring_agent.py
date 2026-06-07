@@ -3,7 +3,7 @@ import uuid
 from typing import Any
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from pydantic import ValidationError
 
 from backend.ai.providers import BaseAIProvider
@@ -26,7 +26,13 @@ from backend.api.admin import (
     update_testcase,
     upsert_solution,
 )
-from backend.api.admin_agent import create_problem_draft, create_problem_import
+from backend.api.admin_agent import (
+    create_problem_draft,
+    create_problem_import,
+    list_agent_runs,
+    list_agent_sessions,
+    stream_agent_run_events,
+)
 from backend.core.config import settings
 from backend.core.time import utc_now
 from backend.models import (
@@ -54,8 +60,10 @@ from backend.schemas.problem_authoring import (
     ProblemImportRequest,
 )
 from backend.services.problem_authoring_agent import (
+    AgentRunFailedError,
     ProblemAuthoringAgentService,
     ProblemDraftValidationAdapter,
+    authoring_repair_attempts,
     load_json,
     normalize_function_call_args,
 )
@@ -92,6 +100,14 @@ class FakeQuery:
     def all(self):
         return self.items
 
+    def offset(self, value: int):
+        self.items = self.items[value:]
+        return self
+
+    def limit(self, value: int):
+        self.items = self.items[:value]
+        return self
+
 
 class FakeSession:
     def __init__(self):
@@ -119,6 +135,12 @@ class FakeSession:
             for item in items:
                 if hasattr(item, "updated_at"):
                     item.updated_at = utc_now()
+
+    def expire_all(self):
+        pass
+
+    def close(self):
+        pass
 
     def refresh(self, item):
         if hasattr(item, "updated_at"):
@@ -183,6 +205,204 @@ class SecretFailingExecutor:
             "execute_time": 1,
             "memory_used": 16,
         }
+
+
+class OnlineLeastSquaresExecutor:
+    def execute(self, code: str, language: str, input_data: str, time_limit: int = 1000, memory_limit: int = 256):
+        if input_data.lstrip().startswith("["):
+            operations = json.loads(input_data)
+            output = json.dumps(online_least_squares_outputs(operations), separators=(",", ":"))
+        else:
+            operations = online_least_squares_operations(input_data)
+            output = "\n".join(online_least_squares_outputs(operations))
+        return {
+            "status": "ac",
+            "output": output,
+            "error_message": None,
+            "execute_time": 1,
+            "memory_used": 16,
+        }
+
+
+def online_least_squares_operations(acm_input: str) -> list[list[Any]]:
+    lines = [line.strip() for line in acm_input.strip().splitlines() if line.strip()]
+    operations: list[list[Any]] = []
+    for line in lines[1:]:
+        parts = line.split()
+        if parts[0] == "ADD":
+            operations.append(["ADD", int(parts[1]), int(parts[2])])
+        else:
+            operations.append(["QUERY", int(parts[1])])
+    return operations
+
+
+def online_least_squares_outputs(operations: list[list[Any]]) -> list[str]:
+    n = 0
+    sx = sy = sxx = sxy = 0
+    first_x: int | None = None
+    same_x = True
+    outputs: list[str] = []
+    for operation in operations:
+        if isinstance(operation, str):
+            parts: list[Any] = operation.split()
+        else:
+            parts = operation
+        if parts[0] == "ADD":
+            x = int(parts[1])
+            y = int(parts[2])
+            if n == 0:
+                first_x = x
+            elif x != first_x:
+                same_x = False
+            n += 1
+            sx += x
+            sy += y
+            sxx += x * x
+            sxy += x * y
+        elif n == 0:
+            outputs.append("0.000000")
+        elif same_x:
+            outputs.append(f"{float(sy) / n:.6f}")
+        else:
+            x0 = int(parts[1])
+            numerator = float(n) * sxy - float(sx) * sy
+            denominator = float(n) * sxx - float(sx) * sx
+            a = numerator / denominator
+            b = (float(sy) - a * float(sx)) / n
+            outputs.append(f"{a * x0 + b:.6f}")
+    return outputs
+
+
+ONLINE_LEAST_SQUARES_IMPORT_RAW = """在线最小二乘回归
+题目描述
+
+你在一家同城物流平台负责“运费估计引擎”。平台记录了大量历史订单，每条订单有两个关键字段：运输距离 x（单位 km）和成交运费 y（单位元）。
+
+系统需要支持两种操作：
+
+ADD x y
+
+表示新增一条历史样本 (x, y)。
+
+QUERY x0
+
+表示基于当前所有样本拟合最小二乘直线，并输出在 x0 处的预测值。
+
+输入描述
+
+第一行包含整数 Q：
+
+1 <= Q <= 2 * 10^5
+
+接下来 Q 行，每行是 ADD x y 或 QUERY x0。
+
+输出描述
+
+对每个 QUERY 操作输出一行预测值，结果必须保留固定 6 位小数。
+
+样例 1
+输入
+8
+ADD 10 35
+ADD 20 55
+QUERY 15
+ADD 30 78
+QUERY 25
+ADD 25 69
+QUERY 40
+QUERY 5
+输出
+45.000000
+66.750000
+100.285714
+23.685714
+样例解释
+
+前两条样本加入后，回归直线为 y = 2x + 15，所以 QUERY 15 输出 45.000000。
+
+样例 2
+输入
+7
+ADD 12 30
+ADD 12 36
+QUERY 12
+ADD 12 45
+QUERY 100
+QUERY -20
+QUERY 0
+输出
+33.000000
+37.000000
+37.000000
+37.000000
+样例解释
+
+所有样本的 x 都等于 12，最小二乘解不唯一。根据退化规则，使用常数模型。
+
+题解：在线最小二乘回归
+问题拆解
+
+只需要维护 n、Sx、Sy、Sxx、Sxy。ADD 时 O(1) 更新，QUERY 时直接代入闭式公式。
+
+Python 代码
+# 智能物流定价引擎 - 在线最小二乘回归
+
+import sys
+
+
+def main():
+    data = sys.stdin.buffer.read().split()
+    idx = 0
+
+    q = int(data[idx])
+    idx += 1
+
+    n = 0
+    Sx = Sy = Sxx = Sxy = 0
+    first_x = None
+    same_x = True
+    out = []
+
+    for _ in range(q):
+        op = data[idx]
+        idx += 1
+
+        if op == b"ADD":
+            x = int(data[idx])
+            y = int(data[idx + 1])
+            idx += 2
+
+            if n == 0:
+                first_x = x
+            elif x != first_x:
+                same_x = False
+
+            n += 1
+            Sx += x
+            Sy += y
+            Sxx += x * x
+            Sxy += x * y
+
+        else:
+            x0 = int(data[idx])
+            idx += 1
+
+            if n == 0:
+                out.append("0.000000")
+            elif same_x:
+                out.append(f"{float(Sy) / n:.6f}")
+            else:
+                num = float(n) * Sxy - float(Sx) * Sy
+                den = float(n) * Sxx - float(Sx) * Sx
+                a = num / den
+                b = (float(Sy) - a * float(Sx)) / n
+                out.append(f"{a * x0 + b:.6f}")
+
+    sys.stdout.write("\\n".join(out))
+
+
+main()
+"""
 
 
 def authored_payload(public_count: int = 2, hidden_count: int = 6) -> str:
@@ -379,6 +599,58 @@ def test_import_draft_saves_source_metadata_and_uses_import_prompt():
     assert any("FastOJ" in requirement for requirement in prompt["hard_requirements"])
 
 
+@pytest.mark.parametrize("mode", ["acm", "function", "both"])
+def test_structured_import_online_least_squares_supports_acm_and_function_modes(mode):
+    db = FakeSession()
+    provider = SequenceProvider([authored_payload(public_count=1, hidden_count=0)])
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=provider,
+        validator=ProblemDraftValidationAdapter(OnlineLeastSquaresExecutor()),
+    )
+
+    draft, run = service.create_import_draft(
+        ProblemImportRequest(
+            raw_material=ONLINE_LEAST_SQUARES_IMPORT_RAW,
+            difficulty="medium",
+            tags=["Implementation"],
+            mode=mode,
+            target_language="python",
+            target_languages=["python", "cpp", "java"],
+            locale="zh",
+            model_profile="deepseek-pro",
+        ),
+        admin_user(),
+    )
+
+    assert provider.calls == []
+    assert draft.title == "智能物流定价引擎（在线学习）"
+    assert draft.status == "validated"
+    assert run.status == "succeeded"
+    assert run.run_type == "problem_import"
+    tags = load_json(draft.tags, [])
+    assert "Implementation" in tags
+    assert "在线学习" in tags
+    assert "最小二乘回归" in tags
+    assert load_json(draft.validation_report_json, {})["passed"] is True
+    assert load_json(draft.target_languages_json, []) == ["python", "cpp", "java"]
+    assert {solution["language"] for solution in load_json(draft.official_solutions_json, [])} >= {
+        "python",
+        "cpp",
+        "java",
+    }
+    testcases = load_json(draft.testcases_json, [])
+    assert sum(not testcase["is_hidden"] for testcase in testcases) == 2
+    assert sum(testcase["is_hidden"] for testcase in testcases) >= 8
+    if mode == "acm":
+        assert draft.function_signature is None
+        assert testcases[0]["output"].startswith("45.000000\n")
+    else:
+        assert draft.function_signature == "def online_least_squares(operations: list[str]) -> list[str]:"
+        assert json.loads(testcases[0]["output"])[0] == "45.000000"
+        assert json.loads(testcases[0]["input"])[0] == "ADD 10 35"
+
+
 def test_import_raw_material_stays_out_of_public_problem_response():
     db = FakeSession()
     service = ProblemAuthoringAgentService(
@@ -424,6 +696,270 @@ def test_create_problem_import_endpoint_returns_draft_response(monkeypatch):
     assert response.status == "validated"
     assert response.draft_id == str(db.data[ProblemDraft][0].id)
     assert db.data[AgentRun][0].run_type == "problem_import"
+
+
+def test_create_problem_import_http_path_queues_running_run(monkeypatch):
+    db = FakeSession()
+    user = admin_user()
+
+    class FakeImportService:
+        def __init__(self, db):
+            self.db = db
+
+        def enqueue_draft_run(self, payload, current_user, run_type):
+            run = AgentRun(
+                id=uuid.uuid4(),
+                run_type=run_type,
+                status="running",
+                input_json=json.dumps(payload.model_dump()),
+                output_json=json.dumps({"agent_session_id": "session-1"}),
+                model_profile=payload.model_profile,
+                locale=payload.locale,
+                created_by=current_user.id,
+            )
+            self.db.add(run)
+            self.db.commit()
+            return run
+
+    monkeypatch.setattr("backend.api.admin_agent.ProblemAuthoringAgentService", FakeImportService)
+
+    background_tasks = BackgroundTasks()
+    response = create_problem_import(import_payload(), db, user, background_tasks)
+
+    assert response.status == "running"
+    assert response.draft_id is None
+    assert response.run_id == str(db.data[AgentRun][0].id)
+    assert response.session_id == "session-1"
+    assert len(background_tasks.tasks) == 1
+
+
+def test_create_problem_import_failure_returns_run_id(monkeypatch):
+    class FakeImportService:
+        def __init__(self, _db):
+            pass
+
+        def create_import_draft(self, _payload, _current_user):
+            raise AgentRunFailedError(
+                "AI provider returned JSON without a problem draft object. Top-level keys: none",
+                "run-1",
+            )
+
+    monkeypatch.setattr("backend.api.admin_agent.ProblemAuthoringAgentService", FakeImportService)
+
+    with pytest.raises(HTTPException) as exc_info:
+        create_problem_import(import_payload(), FakeSession(), admin_user())
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == {
+        "message": "AI provider returned JSON without a problem draft object. Top-level keys: none",
+        "run_id": "run-1",
+    }
+
+
+def test_list_agent_runs_includes_failed_run_without_draft():
+    db = FakeSession()
+    user = admin_user()
+    run = AgentRun(
+        id=uuid.uuid4(),
+        run_type="problem_import",
+        status="failed",
+        input_json=json.dumps({"raw_material_length": 120}),
+        output_json="{}",
+        error_message="AI provider returned JSON without a problem draft object. Top-level keys: none",
+        model_profile="default",
+        locale="zh",
+        created_by=user.id,
+        finished_at=utc_now(),
+    )
+    db.add(run)
+    db.add(
+        AgentStep(
+            id=uuid.uuid4(),
+            run_id=run.id,
+            step_index=1,
+            step_type="validation",
+            tool_name="pydantic",
+            input_json=json.dumps({"attempt": 1, "case_count": 0}),
+            output_json=json.dumps({"passed": False, "summary": "schema_validation_failed"}),
+            status="failed",
+            error_message="AI provider returned JSON without a problem draft object. Top-level keys: none",
+        )
+    )
+
+    response = list_agent_runs(
+        run_type="problem_import",
+        status_filter="failed",
+        page=1,
+        page_size=20,
+        db=db,
+        current_user=user,
+    )
+
+    assert len(response) == 1
+    assert response[0].id == str(run.id)
+    assert response[0].draft_id is None
+    assert response[0].status == "failed"
+    assert response[0].steps[0].input["attempt"] == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_run_events_streams_snapshot_and_terminal_status(monkeypatch):
+    db = FakeSession()
+    user = admin_user()
+    run = AgentRun(
+        id=uuid.uuid4(),
+        run_type="problem_import",
+        status="succeeded",
+        input_json=json.dumps({"raw_material_length": 120}),
+        output_json=json.dumps({"agent_session_id": "session-1"}),
+        model_profile="deepseek-pro",
+        locale="zh",
+        created_by=user.id,
+        finished_at=utc_now(),
+    )
+    db.add(run)
+    db.add(
+        AgentStep(
+            id=uuid.uuid4(),
+            run_id=run.id,
+            step_index=1,
+            step_type="validation",
+            tool_name="validator",
+            input_json=json.dumps({"attempt": 1}),
+            output_json=json.dumps({"passed": True}),
+            status="succeeded",
+        )
+    )
+
+    class FakeRequest:
+        async def is_disconnected(self):
+            return False
+
+    monkeypatch.setattr("backend.api.admin_agent.SessionLocal", lambda: db)
+
+    response = await stream_agent_run_events(str(run.id), FakeRequest(), last_event_id=None, db=db, current_user=user)
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+    body = "".join(chunks)
+
+    assert "event: snapshot" in body
+    assert "event: step" in body
+    assert "event: run_status" in body
+    assert '"status": "succeeded"' in body
+
+
+def test_agent_sessions_group_retry_runs_for_same_import():
+    db = FakeSession()
+    user = admin_user()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=SequenceProvider([authored_payload(public_count=1, hidden_count=0)]),
+        validator=ProblemDraftValidationAdapter(OnlineLeastSquaresExecutor()),
+    )
+
+    first_draft, first_run = service.create_import_draft(
+        ProblemImportRequest(
+            raw_material=ONLINE_LEAST_SQUARES_IMPORT_RAW,
+            difficulty="medium",
+            tags=["Implementation"],
+            mode="both",
+            target_language="python",
+            target_languages=["python", "cpp", "java"],
+            locale="zh",
+            model_profile="deepseek-pro",
+        ),
+        user,
+    )
+    second_draft, second_run = service.retry_run(
+        str(first_run.id),
+        "继续修复",
+        locale="zh",
+        model_profile="deepseek-pro",
+        current_user=user,
+    )
+
+    response = list_agent_sessions(
+        run_type=None,
+        status_filter=None,
+        page=1,
+        page_size=20,
+        db=db,
+        current_user=user,
+    )
+
+    assert len(response) == 1
+    session = response[0]
+    assert session.id == load_json(first_run.input_json, {})["agent_session_id"]
+    assert session.draft_count == 2
+    assert session.run_count == 2
+    assert session.latest_draft is not None
+    assert session.latest_draft.id == str(second_draft.id)
+    assert {draft.id for draft in session.drafts} == {str(first_draft.id), str(second_draft.id)}
+    assert {run.id for run in session.runs} == {str(first_run.id), str(second_run.id)}
+    assert any("重试指导" in message.message for message in session.messages)
+
+
+def test_structured_import_falls_back_to_available_python_language():
+    raw = """整数回显
+题目描述
+
+读入一个整数 n，输出 n。
+
+样例 1
+输入
+7
+输出
+7
+样例解释
+
+输入是 7，所以输出 7。
+
+题解
+
+直接读入后输出。
+
+Python 代码
+```python
+import sys
+
+
+def main():
+    sys.stdout.write(sys.stdin.read().strip())
+
+
+main()
+```
+"""
+    db = FakeSession()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=SequenceProvider([authored_payload(public_count=1, hidden_count=0)]),
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+
+    draft, run = service.create_import_draft(
+        ProblemImportRequest(
+            raw_material=raw,
+            difficulty="easy",
+            tags=["Implementation"],
+            mode="acm",
+            target_language="python",
+            target_languages=["python", "cpp"],
+            locale="zh",
+            model_profile="deepseek-pro",
+        ),
+        admin_user(),
+    )
+
+    assert run.status == "succeeded"
+    assert draft.status == "validated"
+    assert load_json(draft.target_languages_json, []) == ["python"]
+    metadata = load_json(draft.source_metadata_json, {})
+    assert metadata["effective_languages"] == ["python"]
+    assert metadata["language_warnings"]
+    validation = load_json(draft.validation_report_json, {})
+    assert validation["passed"] is True
 
 
 def test_import_request_rejects_short_or_too_large_raw_material():
@@ -661,7 +1197,8 @@ def test_create_draft_repairs_validation_failure_and_saves_validated_draft():
     assert load_json(validation_steps[1].input_json, {})["attempt"] == 2
 
 
-def test_create_draft_persists_last_failed_draft_after_two_repairs():
+def test_create_draft_persists_last_failed_draft_after_configured_repairs(monkeypatch):
+    monkeypatch.setattr(settings, "AI_AUTHORING_REPAIR_ATTEMPTS", 2)
     db = FakeSession()
     provider = SequenceProvider([authored_payload(public_count=0, hidden_count=0)] * 3)
     service = ProblemAuthoringAgentService(
@@ -678,6 +1215,14 @@ def test_create_draft_persists_last_failed_draft_after_two_repairs():
     assert report["public_sample_count"] == 0
     failed_checks = {check["name"] for check in report["checks"] if not check["passed"]}
     assert {"testcase_count", "public_sample_count"} <= failed_checks
+
+
+def test_authoring_repair_attempts_default_and_cap(monkeypatch):
+    monkeypatch.setattr(settings, "AI_AUTHORING_REPAIR_ATTEMPTS", 4)
+    assert authoring_repair_attempts() == 4
+
+    monkeypatch.setattr(settings, "AI_AUTHORING_REPAIR_ATTEMPTS", 99)
+    assert authoring_repair_attempts() == 8
 
 
 def test_validation_accepts_simple_problem_without_hidden_cases():
@@ -775,6 +1320,13 @@ def test_model_validation_error_sanitizes_raw_payload_values():
     assert "int_parsing" in message
     assert "SECRET" not in message
     assert "hidden_testcases" not in message
+
+
+def test_extract_json_handles_large_noisy_prefix_without_retrying_every_brace():
+    service = ProblemAuthoringAgentService(FakeSession(), provider=FakeProvider("{}"))
+    raw = "{" * 300 + 'noise before json {"message": "ok", "items": [1, 2, 3]} trailing text'
+
+    assert service._extract_json(raw) == {"message": "ok", "items": [1, 2, 3]}
 
 
 def test_function_call_arg_normalizer_accepts_deepseek_shapes():

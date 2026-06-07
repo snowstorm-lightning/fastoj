@@ -31,6 +31,14 @@ const canonicalLongestSubstring = {
   tags: ["String", "Sliding Window", "Function"],
 };
 
+const alienDictionary = {
+  ...twoSum,
+  id: "4",
+  title: "Alien Dictionary",
+  slug: "alien-dictionary",
+  tags: ["Graph", "Topological Sort", "Function"],
+};
+
 describe("problem mode metadata", () => {
   it("detects function-mode problems", () => {
     expect(getProblemMode(twoSum).supportsFunction).toBe(true);
@@ -56,6 +64,11 @@ describe("problem mode metadata", () => {
     expect(buildStarter(canonicalLongestSubstring, "python", "function")).toContain(
       "def length_of_longest_substring",
     );
+  });
+
+  it("builds the Alien Dictionary LeetCode-style Python starter", () => {
+    expect(getProblemMode(alienDictionary).supportsFunction).toBe(true);
+    expect(buildStarter(alienDictionary, "python", "function")).toContain("def alienOrder");
   });
 
   it("builds a dynamic Python starter from approved agent metadata", () => {

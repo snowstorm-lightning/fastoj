@@ -30,6 +30,19 @@ class AIConfig:
                 max_output_tokens=settings.AI_MAX_OUTPUT_TOKENS,
                 profile="deepseek",
             )
+        if profile == "deepseek-pro":
+            fallback_key = settings.AI_DEEPSEEK_API_KEY or (
+                settings.AI_API_KEY if settings.AI_API_KEY != PLACEHOLDER_API_KEY else ""
+            )
+            return cls(
+                provider=settings.AI_PROVIDER,
+                base_url=settings.AI_DEEPSEEK_PRO_BASE_URL.rstrip("/"),
+                api_key=settings.AI_DEEPSEEK_PRO_API_KEY or fallback_key,
+                model=settings.AI_DEEPSEEK_PRO_MODEL,
+                timeout_seconds=settings.AI_DEEPSEEK_PRO_TIMEOUT_SECONDS,
+                max_output_tokens=settings.AI_DEEPSEEK_PRO_MAX_OUTPUT_TOKENS,
+                profile="deepseek-pro",
+            )
         if profile == "qwen-local":
             return cls(
                 provider=settings.AI_PROVIDER,

@@ -5,13 +5,18 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import "./styles.css";
 import {
   api,
+  ApiError,
   isUnauthorized,
   makeJudgeSocket,
+  streamAdminAgentRun,
   type AdminSolution,
   type AdminSolutionPayload,
   type AdminTestCase,
+  type AdminAgentActionResponse,
   type AgentRun,
+  type AgentSession,
   type AgentStep,
+  type AdminAgentStreamEvent,
   type AIModelProfile,
   type AIProfile,
   type CurrentUser,
@@ -62,8 +67,50 @@ import { measureTrainingText } from "./lib/textLayout";
 import { LANGUAGES, useAppStore } from "./stores/useAppStore";
 import type { JudgeEvent } from "./components/JudgeTimeline";
 import type { EditableRunCase, RunSnapshot } from "./components/RunResultPanel";
+import { MarkdownBlock } from "./components/MarkdownBlock";
 
 const queryClient = new QueryClient();
+
+const CONTENT_PERMISSIONS = {
+  createOwnProblem: "problem:create_own",
+  updateOwnProblem: "problem:update_own",
+  publishOwnProblem: "problem:publish_own",
+  manageUsers: "user:manage",
+  moderateDiscussion: "discussion:moderate",
+} as const;
+
+function hasContentPermission(user: CurrentUser | null, permission: string): boolean {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  if (user.role !== "content_admin") return false;
+  return (user.content_admin_permissions ?? []).includes(permission);
+}
+
+function canAccessAdmin(user: CurrentUser | null): boolean {
+  return Boolean(user?.role === "admin" || (user?.role === "content_admin" && (user.content_admin_permissions ?? []).length > 0));
+}
+
+function roleLabel(role: string, locale: Locale): string {
+  if (role === "admin") return localeText(locale, { zh: "最高管理员", en: "Admin" });
+  if (role === "content_admin") return localeText(locale, { zh: "内容管理员", en: "Content admin" });
+  return localeText(locale, { zh: "用户", en: "User" });
+}
+
+function contentPermissionLabel(permission: string, locale: Locale): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    [CONTENT_PERMISSIONS.createOwnProblem]: { zh: "增加自己的题目", en: "Create own problems" },
+    [CONTENT_PERMISSIONS.updateOwnProblem]: { zh: "修改自己的题目", en: "Edit own problems" },
+    [CONTENT_PERMISSIONS.publishOwnProblem]: { zh: "发布自己的题目", en: "Publish own problems" },
+    [CONTENT_PERMISSIONS.manageUsers]: { zh: "管理用户账号", en: "Manage users" },
+    [CONTENT_PERMISSIONS.moderateDiscussion]: { zh: "删除不当讨论", en: "Moderate discussion" },
+  };
+  return localeText(locale, labels[permission] ?? { zh: permission, en: permission });
+}
+
+function togglePermission(list: string[] | undefined, permission: string): string[] {
+  const current = list ?? [];
+  return current.includes(permission) ? current.filter((item) => item !== permission) : [...current, permission];
+}
 
 const AICopilotPanel = React.lazy(() =>
   import("./components/AICopilotPanel").then(({ AICopilotPanel }) => ({ default: AICopilotPanel })),
@@ -100,11 +147,14 @@ type LibraryLayout = "card" | "list";
 type AppTheme = "light" | "dark";
 type ProblemAuthoringMode = "function" | "acm" | "both";
 type AgentTab = "authoring" | "import";
+type AdminSection = "agent" | "users" | "problems";
 type AIChatLine = { id: string; role: "user" | "assistant"; message: string; suggestions?: string[] };
+type AgentFollowUpLine = { id: string; role: "user" | "assistant"; message: string; runId?: string | null };
 type DraftEditCase = {
   input: string;
   output: string;
   explanation: string;
+  io_metadata?: Record<string, any> | null;
   is_hidden: boolean;
   is_sample: boolean;
   order: number;
@@ -113,6 +163,8 @@ type DraftOfficialSolution = {
   language: string;
   code: string;
   explanation: string;
+  acm_code?: string | null;
+  function_code?: string | null;
 };
 type ProblemSolutionEdit = DraftOfficialSolution & {
   time_complexity: string;
@@ -176,6 +228,17 @@ const AI_PROFILE_FALLBACKS: Record<AIModelProfile, AIProfile> = {
     reason: null,
     checked_at: null,
   },
+  "deepseek-pro": {
+    value: "deepseek-pro",
+    label_zh: "DeepSeek Pro",
+    label_en: "DeepSeek Pro",
+    detail_zh: "调用 DeepSeek Pro 长上下文/强模型配置，适合管理员出题和导入题目",
+    detail_en: "Use the DeepSeek Pro long-context strong-model profile for admin authoring and imports",
+    configured: false,
+    available: false,
+    reason: null,
+    checked_at: null,
+  },
   "qwen-local": {
     value: "qwen-local",
     label_zh: "Qwen 本地",
@@ -195,8 +258,17 @@ const MAX_RUN_CASES = 8;
 const DEFAULT_LEFT_PANEL_WIDTH = 390;
 const DEFAULT_RIGHT_PANEL_WIDTH = 430;
 const DEFAULT_EDITOR_HEIGHT = 390;
+const DEFAULT_AGENT_LEFT_DRAWER_WIDTH = 300;
+const DEFAULT_AGENT_RIGHT_DRAWER_WIDTH = 540;
 const SIDE_PANEL_SNAP_WIDTH = 88;
 const SIDE_PANEL_DRAG_MIN = 56;
+const AGENT_DRAWER_RAIL_WIDTH = 30;
+const AGENT_LEFT_DRAWER_MIN = 220;
+const AGENT_LEFT_DRAWER_MAX = 520;
+const AGENT_LEFT_DRAWER_SNAP = 180;
+const AGENT_RIGHT_DRAWER_MIN = 360;
+const AGENT_RIGHT_DRAWER_MAX = 760;
+const AGENT_RIGHT_DRAWER_SNAP = 300;
 const EDITOR_MIN_HEIGHT = 260;
 const EDITOR_MAX_HEIGHT = 720;
 
@@ -291,7 +363,7 @@ function AuthBar({
         {authenticated ? (
           <>
             <span className="auth-state">{text.loggedIn}</span>
-            {currentUser?.role === "admin" ? (
+            {canAccessAdmin(currentUser) ? (
               <button className={view === "admin" ? "icon-button active tip" : "icon-button tip"} data-tip={localeText(locale, { zh: "管理后台", en: "Admin" })} onClick={() => onView("admin")}>
                 <IconGlyph>A</IconGlyph>
               </button>
@@ -378,6 +450,17 @@ function aiUnavailableText(locale: Locale, reason?: string | null) {
 function preferredAIProfile(profiles: AIProfile[]): AIModelProfile | null {
   const available = profiles.filter((profile) => profile.available);
   return available.find((profile) => profile.value === "default")?.value ?? available[0]?.value ?? null;
+}
+
+function preferredAdminAIProfile(profiles: AIProfile[]): AIModelProfile | null {
+  const available = profiles.filter((profile) => profile.available);
+  return (
+    available.find((profile) => profile.value === "deepseek-pro")?.value
+    ?? available.find((profile) => profile.value === "default")?.value
+    ?? available.find((profile) => profile.value === "deepseek")?.value
+    ?? available[0]?.value
+    ?? null
+  );
 }
 
 function AIModelDropdown({
@@ -714,6 +797,24 @@ function isImportedDraft(draft: Pick<ProblemDraft, "source_metadata"> | null | u
   return draftSourceMetadata(draft).kind === "imported";
 }
 
+function draftTimestamp(draft: ProblemDraft): number {
+  const value = draft.updated_at ?? draft.created_at ?? "";
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function mergeDrafts(...sources: Array<ProblemDraft[] | ProblemDraft | null | undefined>): ProblemDraft[] {
+  const byId = new Map<string, ProblemDraft>();
+  for (const source of sources) {
+    const items = Array.isArray(source) ? source : source ? [source] : [];
+    for (const draft of items) {
+      if (!draft?.id) continue;
+      byId.set(draft.id, { ...byId.get(draft.id), ...draft });
+    }
+  }
+  return Array.from(byId.values()).sort((left, right) => draftTimestamp(right) - draftTimestamp(left));
+}
+
 function sourceText(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -809,6 +910,8 @@ function solutionListFromDraft(draft: ProblemDraft): DraftOfficialSolution[] {
       language: String(solution.language ?? "").trim() || "python",
       code: String(solution.code ?? ""),
       explanation: String(solution.explanation ?? ""),
+      acm_code: typeof (solution as any).acm_code === "string" ? (solution as any).acm_code : null,
+      function_code: typeof (solution as any).function_code === "string" ? (solution as any).function_code : null,
     }))
     .filter((solution, index, list) => (
       solution.code.trim() && list.findIndex((item) => item.language === solution.language) === index
@@ -845,6 +948,7 @@ function draftEditFromDraft(draft: ProblemDraft): DraftEditState {
       input: String(testcase.input ?? ""),
       output: String(testcase.output ?? ""),
       explanation: String(testcase.explanation ?? ""),
+      io_metadata: typeof testcase.io_metadata === "object" && testcase.io_metadata !== null ? testcase.io_metadata : null,
       is_hidden: testcase.is_hidden === true,
       is_sample: testcase.is_sample === true,
       order: Number(testcase.order ?? index + 1) || index + 1,
@@ -859,6 +963,8 @@ function draftEditPayload(edit: DraftEditState) {
       language: solution.language.trim() || "python",
       code: solution.code,
       explanation: solution.explanation.trim(),
+      ...(solution.acm_code ? { acm_code: solution.acm_code } : {}),
+      ...(solution.function_code ? { function_code: solution.function_code } : {}),
     }))
     .filter((solution, index, list) => (
       solution.code.trim()
@@ -890,6 +996,7 @@ function draftEditPayload(edit: DraftEditState) {
       input: testcase.input,
       output: testcase.output,
       explanation: testcase.explanation.trim() || null,
+      io_metadata: testcase.io_metadata ?? null,
       is_hidden: testcase.is_hidden,
       is_sample: testcase.is_sample,
       order: Number(testcase.order) || index + 1,
@@ -946,6 +1053,9 @@ function validationStatusMessage(status: string, summary: unknown, locale: Local
   const failedCases = Number(caseSummary.failed ?? 0);
   if (status === "validated" || report.passed === true) {
     return localeText(locale, { zh: "草稿已通过结构校验和官方解法验证。", en: "Draft passed schema and official-solution validation." });
+  }
+  if (status === "running") {
+    return localeText(locale, { zh: "Agent 已开始执行，执行路径会实时更新。", en: "Agent run started. The timeline will update live." });
   }
   if (failedChecks.length) {
     const labels = failedChecks.slice(0, 3).map((name) => validationLabel(name, locale)).join(localeText(locale, { zh: "、", en: ", " }));
@@ -1275,7 +1385,7 @@ function Workspace({
   const pollRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
-  const problemQuery = useQuery({ queryKey: ["problem", problemId], queryFn: () => api.problem(problemId ?? ""), enabled: Boolean(problemId) });
+  const problemQuery = useQuery({ queryKey: ["problem", problemId, locale, judgeMode], queryFn: () => api.problem(problemId ?? "", locale, judgeMode), enabled: Boolean(problemId) });
   const trailQuery = useQuery({ queryKey: ["submissions", problemId, submission?.id], queryFn: () => api.submissions(problemId ?? ""), enabled: Boolean(problemId && authenticated) });
   const solutionsQuery = useQuery({ queryKey: ["solutions", problemId, language, locale], queryFn: () => api.solutions(problemId ?? "", language, locale), enabled: Boolean(problemId) });
   const aiProfilesQuery = useQuery({
@@ -1359,7 +1469,7 @@ function Workspace({
     }
     setRunCases(runCasesFromProblem(problem));
     setActiveRunCase(0);
-  }, [problem?.id]);
+  }, [problem?.id, problem?.sample_testcases]);
 
   useEffect(() => {
     if (!problemId || !problem) return;
@@ -1734,6 +1844,7 @@ function Workspace({
                 problemId={problemId}
                 locale={locale}
                 authenticated={authenticated}
+                currentUser={currentUser}
                 onRequireAuth={onRequireAuth}
               />
             </>
@@ -1864,6 +1975,7 @@ function DetailDock({
   problemId,
   locale,
   authenticated,
+  currentUser,
   onRequireAuth,
 }: {
   detailTab: DetailTab;
@@ -1877,6 +1989,7 @@ function DetailDock({
   problemId: string;
   locale: Locale;
   authenticated: boolean;
+  currentUser: CurrentUser | null;
   onRequireAuth: () => void;
 }) {
   const text = getUI(locale);
@@ -1902,7 +2015,7 @@ function DetailDock({
             <SubmissionTrail submissions={trail} locale={locale} />
           </Suspense>
         ) : null}
-        {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} onRequireAuth={onRequireAuth} /> : null}
+        {detailTab === "discussion" ? <DiscussionPanel problemId={problemId} locale={locale} authenticated={authenticated} currentUser={currentUser} onRequireAuth={onRequireAuth} /> : null}
       </div>
     </section>
   );
@@ -1914,7 +2027,7 @@ function ProblemStatement({ problem, locale }: { problem?: ProblemDetail; locale
   if (!displayProblem) return <p className="muted">{text.loadingProblem}</p>;
   return (
     <article className="prose-panel">
-      <p>{displayProblem.description}</p>
+      <MarkdownBlock value={displayProblem.description} />
       <p className="muted">{text.acceptance} {percent(displayProblem.ac_rate)}%, {text.submissions} {displayProblem.total_submissions}</p>
     </article>
   );
@@ -1928,7 +2041,7 @@ function ProblemGuidance({ problem, locale }: { problem?: ProblemDetail; locale:
       <ProblemVisual problem={problem} locale={locale} />
       <article className="prose-panel hint-panel">
         <h3>{text.officialHint}</h3>
-        <p>{displayProblem?.hint ?? text.noHint}</p>
+        {displayProblem?.hint ? <MarkdownBlock value={displayProblem.hint} /> : <p>{text.noHint}</p>}
       </article>
     </section>
   );
@@ -1988,7 +2101,10 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
       <div className="case-grid">
         {problem.sample_testcases.map((testcase, index) => (
           <article className="sample-card" key={`${testcase.input}-${index}`}>
-            <h3>{localeText(locale, { zh: "示例", en: "Example" })} {index + 1}</h3>
+            <h3>
+              {localeText(locale, { zh: "示例", en: "Example" })} {index + 1}
+              {testcase.display_mode ? <span className="case-chip sample">{authoringModeLabel(testcase.display_mode, locale)}</span> : null}
+            </h3>
             <div className="sample-row">
               <span>{text.input}</span>
               <pre>{testcase.input}</pre>
@@ -1997,10 +2113,12 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
               <span>{text.output}</span>
               <pre>{testcase.output}</pre>
             </div>
-            <div className="sample-row">
-              <span>{text.explanation}</span>
-              <p>{sampleExplanation(problem.slug, index, locale)}</p>
-            </div>
+            {testcase.explanation ? (
+              <div className="sample-row">
+                <span>{text.explanation}</span>
+                <MarkdownBlock value={testcase.explanation} className="sample-explanation" />
+              </div>
+            ) : null}
           </article>
         ))}
       </div>
@@ -2009,48 +2127,18 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
   );
 }
 
-function sampleExplanation(slug: string, index: number, locale: Locale): string {
-  const zh: Record<string, string[]> = {
-    "two-sum": ["nums[0] + nums[1] = 9，所以返回这两个下标。", "nums[1] + nums[2] = 6，所以返回 [1,2]。"],
-    "softmax-cross-entropy": ["先对 logits 做稳定 softmax，再取目标类别概率的负对数。", "两个类别得分相同，目标类别概率为 1/2，损失为 ln 2。"],
-    "valid-parentheses": ["每个左括号都能按正确顺序被匹配并弹出栈。", "右括号类型与栈顶左括号不同，因此不是有效括号串。"],
-  };
-  const en: Record<string, string[]> = {
-    "two-sum": ["nums[0] + nums[1] equals 9, so those indices are returned.", "nums[1] + nums[2] equals 6, so [1,2] is returned."],
-    "softmax-cross-entropy": ["Apply stable softmax to logits, then take the negative log probability of the target class.", "Both logits are equal, so the target probability is 1/2 and the loss is ln 2."],
-    "valid-parentheses": ["Every opening bracket is matched and popped in the correct order.", "The closing bracket type does not match the stack top, so the string is invalid."],
-  };
-  const fallback = localeText(locale, {
-    zh: "该输出是此输入下的标准答案；评测会按相同输入/输出格式比较。",
-    en: "The output is the canonical expected answer for this input; judging compares the same I/O format.",
-  });
-  const explanations = localeValue(locale, {
-    zh: zh[slug] ?? [],
-    en: en[slug] ?? [],
-  });
-  return explanations[index] ?? fallback;
-}
-
 function OfficialSolution({ problem, solution, locale }: { problem?: ProblemDetail; solution?: { explanation: string; code: string; language: string }; locale: Locale }) {
   if (!solution) {
-    const displayProblem = localizedProblem(problem, locale);
-    const tags = localizeTags(displayProblem?.tags.filter((tag) => tag !== "Hot 100"), locale).join(" / ");
     return (
       <article className="prose-panel solution-fallback">
         <h3>{localeText(locale, { zh: "题解思路", en: "Solution approach" })}</h3>
-        <p>{displayProblem?.hint ?? getUI(locale).noSolution}</p>
-        <p className="muted">
-          {localeText(locale, {
-            zh: `建议先根据 ${tags || "题目标签"} 选择核心数据结构或状态定义，再用公开样例逐步核对边界。`,
-            en: `Start from ${tags || "the listed tags"}, choose the core data structure or state definition, then validate edge cases with the public samples.`,
-          })}
-        </p>
+        <p>{getUI(locale).noSolution}</p>
       </article>
     );
   }
   return (
     <article className="prose-panel">
-      <p>{solution.explanation}</p>
+      <MarkdownBlock value={solution.explanation} />
       {solution.code.trim() ? (
         <Suspense fallback={<pre className="sample">{solution.code}</pre>}>
           <CodeBlock code={solution.code} language={solution.language} />
@@ -2060,44 +2148,183 @@ function OfficialSolution({ problem, solution, locale }: { problem?: ProblemDeta
   );
 }
 
+function visibleDiscussionPosts(posts: ProblemDiscussion[]): ProblemDiscussion[] {
+  return posts
+    .filter((post) => !post.is_template)
+    .map((post) => ({ ...post, replies: visibleDiscussionPosts(post.replies ?? []) }));
+}
+
+function addDiscussionToTree(posts: ProblemDiscussion[], created: ProblemDiscussion, parentId?: string | null): ProblemDiscussion[] {
+  if (!parentId) return [created, ...posts.filter((post) => post.id !== created.id)];
+  return posts.map((post) => {
+    if (post.id === parentId) {
+      const replies = [created, ...(post.replies ?? []).filter((reply) => reply.id !== created.id)];
+      return { ...post, replies, reply_count: Math.max(post.reply_count + 1, replies.length) };
+    }
+    return { ...post, replies: addDiscussionToTree(post.replies ?? [], created, parentId) };
+  });
+}
+
+function updateDiscussionInTree(
+  posts: ProblemDiscussion[],
+  discussionId: string,
+  updater: (post: ProblemDiscussion) => ProblemDiscussion,
+): ProblemDiscussion[] {
+  return posts.map((post) => {
+    const next = post.id === discussionId ? updater(post) : post;
+    return { ...next, replies: updateDiscussionInTree(next.replies ?? [], discussionId, updater) };
+  });
+}
+
+function DiscussionItem({
+  post,
+  depth,
+  locale,
+  authenticated,
+  currentUser,
+  activeReplyId,
+  replyDraft,
+  busyId,
+  onReplyStart,
+  onReplyChange,
+  onReplySubmit,
+  onLikeToggle,
+  onDelete,
+}: {
+  post: ProblemDiscussion;
+  depth: number;
+  locale: Locale;
+  authenticated: boolean;
+  currentUser: CurrentUser | null;
+  activeReplyId: string | null;
+  replyDraft: string;
+  busyId: string | null;
+  onReplyStart: (postId: string) => void;
+  onReplyChange: (postId: string, value: string) => void;
+  onReplySubmit: (postId: string) => void;
+  onLikeToggle: (post: ProblemDiscussion) => void;
+  onDelete: (post: ProblemDiscussion) => void;
+}) {
+  const canDelete = Boolean(post.can_delete || currentUser?.id === post.user_id || currentUser?.role === "admin");
+  const deleted = post.is_deleted;
+  const labels = {
+    reply: localeText(locale, { zh: "回复", en: "Reply" }),
+    send: localeText(locale, { zh: "发送回复", en: "Send reply" }),
+    cancel: localeText(locale, { zh: "取消", en: "Cancel" }),
+    like: localeText(locale, { zh: "赞", en: "Like" }),
+    unlike: localeText(locale, { zh: "取消赞", en: "Unlike" }),
+    delete: localeText(locale, { zh: "删除", en: "Delete" }),
+    deleted: localeText(locale, { zh: "评论已删除", en: "Comment deleted" }),
+    placeholder: localeText(locale, { zh: "回复这条讨论。不要粘贴隐藏用例。", en: "Reply to this thread. Do not paste hidden cases." }),
+  };
+  const replies = visibleDiscussionPosts(post.replies ?? []);
+  return (
+    <article className={`discussion-post ${deleted ? "deleted" : ""}`} style={{ "--discussion-depth": Math.min(depth, 6) } as React.CSSProperties}>
+      <div className="discussion-post-header">
+        <strong>{post.author}</strong>
+        <small>{new Date(post.created_at).toLocaleString()}</small>
+      </div>
+      {deleted ? <p>{labels.deleted}</p> : <MarkdownBlock value={post.body} className="discussion-markdown" />}
+      {!deleted ? (
+        <div className="discussion-actions">
+          <button type="button" className={post.liked_by_me ? "active" : ""} disabled={busyId === post.id} onClick={() => onLikeToggle(post)}>
+            {post.liked_by_me ? labels.unlike : labels.like} {post.like_count ? post.like_count : ""}
+          </button>
+          <button type="button" onClick={() => onReplyStart(post.id)}>{labels.reply}</button>
+          {canDelete ? <button type="button" className="danger-text" disabled={busyId === post.id} onClick={() => onDelete(post)}>{labels.delete}</button> : null}
+        </div>
+      ) : null}
+      {activeReplyId === post.id ? (
+        <div className="discussion-reply-box">
+          <textarea
+            value={activeReplyId === post.id ? replyDraft : ""}
+            onChange={(event) => onReplyChange(post.id, event.target.value)}
+            placeholder={labels.placeholder}
+            disabled={!authenticated || busyId === post.id}
+            maxLength={2000}
+          />
+          <div className="discussion-actions">
+            <button className="primary" type="button" disabled={!authenticated || !replyDraft.trim() || busyId === post.id} onClick={() => onReplySubmit(post.id)}>{labels.send}</button>
+            <button type="button" onClick={() => onReplyStart("")}>{labels.cancel}</button>
+          </div>
+        </div>
+      ) : null}
+      {replies.length ? (
+        <div className="discussion-replies">
+          {replies.map((reply) => (
+            <DiscussionItem
+              key={reply.id}
+              post={reply}
+              depth={depth + 1}
+              locale={locale}
+              authenticated={authenticated}
+              currentUser={currentUser}
+              activeReplyId={activeReplyId}
+              replyDraft={replyDraft}
+              busyId={busyId}
+              onReplyStart={onReplyStart}
+              onReplyChange={onReplyChange}
+              onReplySubmit={onReplySubmit}
+              onLikeToggle={onLikeToggle}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 function DiscussionPanel({
   problemId,
   locale,
   authenticated,
+  currentUser,
   onRequireAuth,
 }: {
   problemId: string;
   locale: Locale;
   authenticated: boolean;
+  currentUser: CurrentUser | null;
   onRequireAuth: () => void;
 }) {
   const text = getUI(locale);
   const [body, setBody] = useState("");
+  const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState("");
   const [posting, setPosting] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const discussionsQuery = useQuery({
     queryKey: ["problem-discussions", problemId],
     queryFn: () => api.discussions(problemId),
     enabled: Boolean(problemId),
   });
-  const posts = discussionsQuery.data ?? [];
+  const posts = visibleDiscussionPosts(discussionsQuery.data ?? []);
 
-  async function post() {
+  function setDiscussionCache(updater: (items: ProblemDiscussion[]) => ProblemDiscussion[]) {
+    queryClient.setQueryData<ProblemDiscussion[]>(["problem-discussions", problemId], (items = []) => updater(items));
+  }
+
+  async function post(parentId?: string | null) {
     if (!authenticated) {
       onRequireAuth();
       return;
     }
-    const trimmed = body.trim();
+    const source = parentId ? replyDraft : body;
+    const trimmed = source.trim();
     if (!trimmed) return;
     try {
       setPosting(true);
       setError(null);
-      const created = await api.createDiscussion(problemId, trimmed);
-      queryClient.setQueryData<ProblemDiscussion[]>(["problem-discussions", problemId], (items = []) => [
-        created,
-        ...items.filter((item) => item.id !== created.id),
-      ]);
-      setBody("");
+      const created = await api.createDiscussion(problemId, trimmed, parentId);
+      setDiscussionCache((items) => addDiscussionToTree(items, created, parentId));
+      if (parentId) {
+        setActiveReplyId(null);
+        setReplyDraft("");
+      } else {
+        setBody("");
+      }
     } catch (postError) {
       if (isUnauthorized(postError)) {
         localStorage.removeItem("fastoj.jwt");
@@ -2106,6 +2333,50 @@ function DiscussionPanel({
       setError(postError instanceof Error ? postError.message : localeText(locale, { zh: "发布失败。", en: "Post failed." }));
     } finally {
       setPosting(false);
+    }
+  }
+
+  async function toggleLike(post: ProblemDiscussion) {
+    if (!authenticated) {
+      onRequireAuth();
+      return;
+    }
+    setBusyId(post.id);
+    setError(null);
+    try {
+      const updated = post.liked_by_me
+        ? await api.unlikeDiscussion(problemId, post.id)
+        : await api.likeDiscussion(problemId, post.id);
+      setDiscussionCache((items) => updateDiscussionInTree(items, post.id, () => updated));
+    } catch (likeError) {
+      if (isUnauthorized(likeError)) {
+        localStorage.removeItem("fastoj.jwt");
+        onRequireAuth();
+      }
+      setError(likeError instanceof Error ? likeError.message : localeText(locale, { zh: "操作失败。", en: "Action failed." }));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deletePost(post: ProblemDiscussion) {
+    setBusyId(post.id);
+    setError(null);
+    try {
+      await api.deleteDiscussion(problemId, post.id);
+      setDiscussionCache((items) => updateDiscussionInTree(items, post.id, (item) => ({
+        ...item,
+        body: "",
+        is_deleted: true,
+      })));
+    } catch (deleteError) {
+      if (isUnauthorized(deleteError)) {
+        localStorage.removeItem("fastoj.jwt");
+        onRequireAuth();
+      }
+      setError(deleteError instanceof Error ? deleteError.message : localeText(locale, { zh: "删除失败。", en: "Delete failed." }));
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -2123,15 +2394,29 @@ function DiscussionPanel({
         disabled={!authenticated || posting}
         maxLength={2000}
       />
-      <button className="primary" onClick={post} disabled={!authenticated || !body.trim() || posting}>
+      <button className="primary" onClick={() => post()} disabled={!authenticated || !body.trim() || posting}>
         {posting ? localeText(locale, { zh: "发布中...", en: "Posting..." }) : text.postDiscussion}
       </button>
       {posts.length ? posts.map((item) => (
-        <article className="discussion-post" key={item.id}>
-          <strong>{item.author}</strong>
-          <small>{new Date(item.created_at).toLocaleString()}</small>
-          <p>{item.body}</p>
-        </article>
+        <DiscussionItem
+          key={item.id}
+          post={item}
+          depth={0}
+          locale={locale}
+          authenticated={authenticated}
+          currentUser={currentUser}
+          activeReplyId={activeReplyId}
+          replyDraft={replyDraft}
+          busyId={busyId}
+          onReplyStart={(postId) => {
+            setActiveReplyId(postId || null);
+            setReplyDraft("");
+          }}
+          onReplyChange={(_, value) => setReplyDraft(value)}
+          onReplySubmit={(postId) => post(postId)}
+          onLikeToggle={toggleLike}
+          onDelete={deletePost}
+        />
       )) : null}
       {!discussionsQuery.isLoading && !discussionsQuery.isError && !posts.length ? <p className="muted">{text.noDiscussion}</p> : null}
     </section>
@@ -2156,6 +2441,9 @@ const ADMIN_TEXT_BY_LOCALE = {
     public: "公开",
     private: "隐藏",
     problemAgent: "出题 Agent",
+    adminAgentSection: "出题 Agent",
+    adminUsersSection: "用户与权限",
+    adminProblemsSection: "已发布题目",
     agentNotice: "AI 生成内容只保存为草稿，管理员审批前不会发布。",
     authoringTab: "原创出题",
     importTab: "导入题目",
@@ -2171,6 +2459,13 @@ const ADMIN_TEXT_BY_LOCALE = {
     rawMaterialLength: "原始材料长度",
     rawMaterialPreview: "原始材料预览",
     rawMaterialRequired: "请粘贴至少 20 个字符的原始材料。",
+    agentFollowUp: "追问与重试",
+    agentFollowUpPlaceholder: "补充希望 Agent 如何修复、改写或重试的要求。",
+    sendFollowUp: "发送追问",
+    retryRun: "重试运行",
+    followUpRequired: "请先填写追问内容。",
+    followUpSent: "追问已发送，已刷新执行路径。",
+    retryStarted: "重试已提交，已刷新执行路径。",
     approveDraft: "批准发布",
     rejectDraft: "拒绝草稿",
     draftPreview: "草稿预览",
@@ -2251,6 +2546,9 @@ const ADMIN_TEXT_BY_LOCALE = {
     public: "Public",
     private: "Private",
     problemAgent: "Problem Agent",
+    adminAgentSection: "Problem Agent",
+    adminUsersSection: "Users and permissions",
+    adminProblemsSection: "Published problems",
     agentNotice: "AI-generated content is saved as a draft and is never published before admin approval.",
     authoringTab: "Original",
     importTab: "Import",
@@ -2266,6 +2564,13 @@ const ADMIN_TEXT_BY_LOCALE = {
     rawMaterialLength: "Raw material length",
     rawMaterialPreview: "Raw material preview",
     rawMaterialRequired: "Paste at least 20 characters of raw material.",
+    agentFollowUp: "Follow-up and retry",
+    agentFollowUpPlaceholder: "Add what the agent should fix, rewrite, or retry.",
+    sendFollowUp: "Send follow-up",
+    retryRun: "Retry run",
+    followUpRequired: "Enter a follow-up first.",
+    followUpSent: "Follow-up sent. Agent runs refreshed.",
+    retryStarted: "Retry submitted. Agent runs refreshed.",
     approveDraft: "Approve",
     rejectDraft: "Reject",
     draftPreview: "Draft preview",
@@ -2336,6 +2641,499 @@ const ADMIN_TEXT_LOOKUP: Partial<Record<Locale, AdminText>> & Record<"zh", Admin
 
 export function getAdminText(locale: Locale): AdminText {
   return ADMIN_TEXT_LOOKUP[locale] ?? ADMIN_TEXT_LOOKUP.zh;
+}
+
+function agentRunTypeLabel(runType: string, locale: Locale): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    problem_authoring: { zh: "原创出题", en: "Problem authoring" },
+    problem_import: { zh: "题目导入", en: "Problem import" },
+    problem_authoring_solution: { zh: "AI 填充题解", en: "Solution generation" },
+  };
+  return labels[runType] ? localeText(locale, labels[runType]) : runType;
+}
+
+function agentRunStatusLabel(status: string, locale: Locale): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    running: { zh: "运行中", en: "Running" },
+    succeeded: { zh: "成功", en: "Succeeded" },
+    failed: { zh: "失败", en: "Failed" },
+  };
+  return labels[status] ? localeText(locale, labels[status]) : status;
+}
+
+function agentStatusClass(status: string): string {
+  return `agent-status-${status.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+
+function shortDateTime(value: string | null | undefined): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function truncateTraceText(value: string, limit = 720): string {
+  return value.length > limit ? `${value.slice(0, limit - 3)}...` : value;
+}
+
+const TRACE_REDACT_KEYWORDS = [
+  "raw_material",
+  "code",
+  "official_solution_code",
+  "current_code",
+  "hidden_testcases",
+  "testcases_json",
+  "prompt",
+  "token",
+  "secret",
+  "password",
+];
+
+function shouldRedactTraceKey(key: string | undefined): boolean {
+  if (!key) return false;
+  const normalized = key.toLowerCase();
+  return TRACE_REDACT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function sanitizeTraceValue(value: unknown, key?: string, depth = 0): unknown {
+  if (shouldRedactTraceKey(key)) {
+    const length = typeof value === "string" ? value.length : JSON.stringify(value ?? "").length;
+    return `[redacted ${key ?? "value"}; ${length} chars]`;
+  }
+  if (typeof value === "string") {
+    return truncateTraceText(value);
+  }
+  if (typeof value !== "object" || value === null) {
+    return value;
+  }
+  if (depth >= 4) {
+    return "[truncated nested value]";
+  }
+  if (Array.isArray(value)) {
+    const items = value.slice(0, 20).map((item) => sanitizeTraceValue(item, key, depth + 1));
+    if (value.length > 20) {
+      items.push(`[truncated ${value.length - 20} more items]`);
+    }
+    return items;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).slice(0, 40);
+  const output: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of entries) {
+    output[entryKey] = sanitizeTraceValue(entryValue, entryKey, depth + 1);
+  }
+  const extraCount = Object.keys(value as Record<string, unknown>).length - entries.length;
+  if (extraCount > 0) {
+    output.__truncated = `${extraCount} more fields`;
+  }
+  return output;
+}
+
+function traceField(source: Record<string, unknown> | undefined, name: string): unknown {
+  return source && Object.prototype.hasOwnProperty.call(source, name) ? source[name] : undefined;
+}
+
+function agentStepSummary(step: AgentStep, locale: Locale): string {
+  const input = recordValue(step.input);
+  const output = recordValue(step.output);
+  const parts: string[] = [];
+  if (step.tool_name) parts.push(step.tool_name);
+  const attempt = traceField(input, "attempt") ?? traceField(output, "attempt");
+  if (attempt !== undefined) {
+    parts.push(localeText(locale, { zh: `第 ${String(attempt)} 次尝试`, en: `attempt ${String(attempt)}` }));
+  }
+  const repairAttempt = traceField(input, "repair_attempt");
+  if (typeof repairAttempt === "number" && repairAttempt > 0) {
+    parts.push(localeText(locale, { zh: `修复 ${repairAttempt}`, en: `repair ${repairAttempt}` }));
+  }
+  const rawLength = traceField(output, "raw_length");
+  if (typeof rawLength === "number") {
+    parts.push(localeText(locale, { zh: `模型返回 ${rawLength} 字符`, en: `${rawLength} raw chars` }));
+  }
+  const caseCount = traceField(input, "case_count");
+  if (typeof caseCount === "number") {
+    parts.push(localeText(locale, { zh: `${caseCount} 个用例`, en: `${caseCount} cases` }));
+  }
+  const summary = traceField(output, "summary");
+  if (typeof summary === "string" && summary.trim()) parts.push(summary);
+  const passed = traceField(output, "passed");
+  if (typeof passed === "boolean") {
+    parts.push(passed ? localeText(locale, { zh: "校验通过", en: "validation passed" }) : localeText(locale, { zh: "校验未通过", en: "validation failed" }));
+  }
+  if (step.error_message) parts.push(truncateTraceText(step.error_message, 140));
+  return parts.join(" · ") || localeText(locale, { zh: "查看该步骤的输入和输出摘要。", en: "View this step's input and output summary." });
+}
+
+function agentRunSummary(run: AgentRun, locale: Locale): string {
+  const stepCount = run.steps?.length ?? 0;
+  return [
+    agentRunTypeLabel(run.run_type, locale),
+    run.model_profile,
+    agentRunStatusLabel(run.status, locale),
+    localeText(locale, { zh: `${stepCount} 步`, en: `${stepCount} steps` }),
+  ].filter(Boolean).join(" · ");
+}
+
+function mergeAgentRuns(...groups: Array<AgentRun[] | undefined>): AgentRun[] {
+  const byId = new Map<string, AgentRun>();
+  for (const group of groups) {
+    for (const run of group ?? []) {
+      byId.set(run.id, run);
+    }
+  }
+  return [...byId.values()].sort((left, right) => (
+    new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+  ));
+}
+
+function upsertAgentRun(runs: AgentRun[] | undefined, run: AgentRun): AgentRun[] {
+  return mergeAgentRuns([run], runs);
+}
+
+function mergeAgentStepIntoRun(run: AgentRun, step: AgentStep): AgentRun {
+  const steps = [...(run.steps ?? []).filter((item) => item.id !== step.id), step].sort(
+    (left, right) => left.step_index - right.step_index,
+  );
+  const nextStatus = run.status === "running" && step.status === "failed" ? run.status : run.status;
+  return { ...run, status: nextStatus, steps };
+}
+
+function mergeAgentStepIntoRuns(runs: AgentRun[] | undefined, step: AgentStep): AgentRun[] {
+  const current = runs ?? [];
+  return current.map((run) => run.id === step.run_id ? mergeAgentStepIntoRun(run, step) : run);
+}
+
+function latestAgentRunId(runs: AgentRun[] | undefined): string | null {
+  const sorted = mergeAgentRuns(runs);
+  return sorted[0]?.id ?? null;
+}
+
+function sessionTimestamp(session: AgentSession): number {
+  const timestamp = Date.parse(session.updated_at || session.created_at || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function mergeAgentSessions(...groups: Array<AgentSession[] | AgentSession | null | undefined>): AgentSession[] {
+  const byId = new Map<string, AgentSession>();
+  for (const group of groups) {
+    const items = Array.isArray(group) ? group : group ? [group] : [];
+    for (const session of items) {
+      if (!session?.id) continue;
+      const current = byId.get(session.id);
+      byId.set(session.id, current ? { ...current, ...session } : session);
+    }
+  }
+  return [...byId.values()].sort((left, right) => sessionTimestamp(right) - sessionTimestamp(left));
+}
+
+function agentSessionDrafts(session: AgentSession | null | undefined): ProblemDraft[] {
+  return mergeDrafts(session?.drafts, session?.latest_draft);
+}
+
+function agentSessionRuns(session: AgentSession | null | undefined): AgentRun[] {
+  return mergeAgentRuns(session?.runs, session?.latest_run ? [session.latest_run] : undefined);
+}
+
+function agentRunSessionId(run: AgentRun | null | undefined): string | null {
+  const inputSession = typeof run?.input?.agent_session_id === "string" ? run.input.agent_session_id : "";
+  const outputSession = typeof run?.output?.agent_session_id === "string" ? run.output.agent_session_id : "";
+  return inputSession || outputSession || null;
+}
+
+function latestAgentDraft(session: AgentSession | null | undefined): ProblemDraft | null {
+  return session?.latest_draft ?? agentSessionDrafts(session)[0] ?? null;
+}
+
+function agentSessionSourceLabel(session: AgentSession, locale: Locale): string | null {
+  if (session.source_kind === "imported") {
+    return localeText(locale, { zh: "导入", en: "Imported" });
+  }
+  if (session.source_kind) {
+    return session.source_kind;
+  }
+  return null;
+}
+
+function TraceJsonBlock({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="trace-json-block">
+      <strong>{label}</strong>
+      <pre>{JSON.stringify(sanitizeTraceValue(value), null, 2)}</pre>
+    </div>
+  );
+}
+
+function agentFailureAdvice(run: AgentRun, locale: Locale): string | null {
+  const message = run.error_message ?? "";
+  if (/without a problem draft object/i.test(message) || /did not return a JSON object for the problem draft/i.test(message)) {
+    return localeText(locale, {
+      zh: "模型没有返回 FastOJ 需要的 problem draft JSON。可以重试、切换模型，或把原始题面拆得更结构化一些。",
+      en: "The model did not return the problem draft JSON FastOJ expected. Retry, switch models, or shorten and structure the source material.",
+    });
+  }
+  return null;
+}
+
+type AgentTimelineItem =
+  | { kind: "message"; id: string; createdAt: string; role: "user" | "assistant" | "system"; message: string; runId?: string | null; pending?: boolean }
+  | { kind: "run"; id: string; createdAt: string; run: AgentRun }
+  | { kind: "draft"; id: string; createdAt: string; draft: ProblemDraft };
+
+function agentTimelineTime(value: string | null | undefined): number {
+  if (!value) return 0;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function localFollowUpCreatedAt(id: string): string {
+  const timestamp = Number(id.split(".")[0]);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : new Date().toISOString();
+}
+
+function AgentRunStepDetail({
+  run,
+  locale,
+  expandedStepIds,
+  onToggleStep,
+}: {
+  run: AgentRun;
+  locale: Locale;
+  expandedStepIds: Set<string>;
+  onToggleStep: (stepId: string) => void;
+}) {
+  return (
+    <section className="agent-run-detail">
+      <div className="agent-run-detail-head">
+        <strong>{agentRunSummary(run, locale)}</strong>
+        <span className="muted">{shortDateTime(run.created_at)} - {shortDateTime(run.finished_at)}</span>
+      </div>
+      {run.error_message ? <p className="agent-run-error">{run.error_message}</p> : null}
+      {agentFailureAdvice(run, locale) ? <p className="muted">{agentFailureAdvice(run, locale)}</p> : null}
+      <div className="agent-step-list">
+        {(run.steps ?? []).map((step) => {
+          const expanded = expandedStepIds.has(step.id);
+          return (
+            <article className={`agent-step ${agentStatusClass(step.status)}`} key={step.id}>
+              <button className="agent-step-summary" onClick={() => onToggleStep(step.id)}>
+                <span>
+                  <strong>{step.step_index}. {step.step_type}</strong>
+                  <small>{agentStepSummary(step, locale)}</small>
+                </span>
+                <span className={`agent-status-chip ${agentStatusClass(step.status)}`}>{agentRunStatusLabel(step.status, locale)}</span>
+              </button>
+              {expanded ? (
+                <div className="agent-step-details">
+                  <TraceJsonBlock label={localeText(locale, { zh: "输入", en: "Input" })} value={step.input} />
+                  <TraceJsonBlock label={localeText(locale, { zh: "输出", en: "Output" })} value={step.output} />
+                  {step.error_message ? <TraceJsonBlock label={localeText(locale, { zh: "错误", en: "Error" })} value={step.error_message} /> : null}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+        {run.steps?.length ? null : <p className="muted">{localeText(locale, { zh: "该运行还没有步骤记录。", en: "This run has no recorded steps." })}</p>}
+      </div>
+    </section>
+  );
+}
+
+function AgentSessionTimeline({
+  locale,
+  text,
+  session,
+  runs,
+  selectedRunId,
+  selectedDraftId,
+  expandedStepIds,
+  loading,
+  followUpDraft,
+  followUpLines,
+  followUpBusy,
+  canFollowUp,
+  emptyMessage,
+  onSelectRun,
+  onSelectDraft,
+  onToggleStep,
+  onFollowUpDraftChange,
+  onFollowUpSubmit,
+  onRetryRun,
+}: {
+  locale: Locale;
+  text: AdminText;
+  session: AgentSession | null;
+  runs: AgentRun[];
+  selectedRunId: string | null;
+  selectedDraftId: string | null;
+  expandedStepIds: Set<string>;
+  loading: boolean;
+  followUpDraft: string;
+  followUpLines: AgentFollowUpLine[];
+  followUpBusy: "chat" | "retry" | null;
+  canFollowUp: boolean;
+  emptyMessage: string;
+  onSelectRun: (runId: string) => void;
+  onSelectDraft: (draft: ProblemDraft) => void;
+  onToggleStep: (stepId: string) => void;
+  onFollowUpDraftChange: (value: string) => void;
+  onFollowUpSubmit: () => void;
+  onRetryRun: () => void;
+}) {
+  const selectedRun = runs.find((run) => run.id === selectedRunId) ?? null;
+  const drafts = agentSessionDrafts(session);
+  const knownMessages = new Set((session?.messages ?? []).map((message) => (
+    `${message.role}:${message.run_id ?? ""}:${message.message}`
+  )));
+  const timelineItems: AgentTimelineItem[] = [
+    ...(session?.messages ?? []).map((message): AgentTimelineItem => ({
+      kind: "message",
+      id: `message-${message.id}`,
+      createdAt: message.created_at,
+      role: message.role,
+      message: message.message,
+      runId: message.run_id,
+    })),
+    ...followUpLines
+      .filter((line) => !knownMessages.has(`${line.role}:${line.runId ?? ""}:${line.message}`))
+      .map((line): AgentTimelineItem => ({
+        kind: "message",
+        id: `local-${line.id}`,
+        createdAt: localFollowUpCreatedAt(line.id),
+        role: line.role,
+        message: line.message,
+        runId: line.runId,
+        pending: true,
+      })),
+    ...runs.map((run): AgentTimelineItem => ({
+      kind: "run",
+      id: `run-${run.id}`,
+      createdAt: run.created_at,
+      run,
+    })),
+    ...drafts.map((draft): AgentTimelineItem => ({
+      kind: "draft",
+      id: `draft-${draft.id}`,
+      createdAt: draft.updated_at ?? draft.created_at ?? "",
+      draft,
+    })),
+  ].sort((left, right) => {
+    const diff = agentTimelineTime(left.createdAt) - agentTimelineTime(right.createdAt);
+    if (diff !== 0) return diff;
+    const order = { message: 0, run: 1, draft: 2 };
+    return order[left.kind] - order[right.kind];
+  });
+  const sourceLabel = session ? agentSessionSourceLabel(session, locale) : null;
+  const hasTimeline = Boolean(session) || timelineItems.length > 0;
+
+  return (
+    <div className="agent-preview agent-runs-panel agent-session-panel">
+      <div className="testcase-panel-head">
+        <div>
+          <h3>{localeText(locale, { zh: "会话时间线", en: "Session Timeline" })}</h3>
+          {session ? (
+            <span className="muted">
+              {agentRunTypeLabel(session.run_type, locale)} · {session.run_count} {localeText(locale, { zh: "次运行", en: "runs" })} · {session.draft_count} {localeText(locale, { zh: "个草稿", en: "drafts" })}
+            </span>
+          ) : null}
+        </div>
+        {session ? <span className={`agent-status-chip ${agentStatusClass(session.status)}`}>{agentRunStatusLabel(session.status, locale)}</span> : null}
+      </div>
+      {loading ? <p className="muted">{localeText(locale, { zh: "正在加载会话...", en: "Loading session..." })}</p> : null}
+      {!hasTimeline && !loading ? <p className="muted">{emptyMessage}</p> : null}
+      {hasTimeline ? (
+        <>
+          {session ? (
+            <section className="agent-session-summary">
+              <strong>{session.title || localeText(locale, { zh: "未命名会话", en: "Untitled session" })}</strong>
+              <span className="muted">{shortDateTime(session.updated_at)}</span>
+              <span className="draft-status-line">
+                {sourceLabel ? <span className="draft-status-chip imported">{sourceLabel}</span> : null}
+                {session.mode ? <span>{authoringModeLabel(session.mode, locale)}</span> : null}
+              </span>
+            </section>
+          ) : null}
+          <div className="agent-timeline">
+            {timelineItems.length ? timelineItems.map((item) => {
+              if (item.kind === "message") {
+                const label = item.role === "user"
+                  ? localeText(locale, { zh: "管理员", en: "Admin" })
+                  : item.role === "assistant"
+                    ? "Agent"
+                    : localeText(locale, { zh: "系统", en: "System" });
+                return (
+                  <article className={`agent-timeline-item message ${item.role}`} key={item.id}>
+                    <div className="agent-message-bubble">
+                      <strong>{label}</strong>
+                      <MarkdownBlock value={item.message} className="agent-message-markdown" />
+                      <small>{shortDateTime(item.createdAt)}{item.pending ? ` · ${localeText(locale, { zh: "待同步", en: "pending" })}` : ""}</small>
+                    </div>
+                  </article>
+                );
+              }
+              if (item.kind === "draft") {
+                const statusClass = draftStatusClass(item.draft.status);
+                return (
+                  <article className="agent-timeline-item draft" key={item.id}>
+                    <button
+                      type="button"
+                      className={`agent-timeline-draft ${selectedDraftId === item.draft.id ? "active" : ""}`}
+                      onClick={() => onSelectDraft(item.draft)}
+                    >
+                      <span>
+                        <strong>{item.draft.title}</strong>
+                        <small>{item.draft.slug || shortDateTime(item.createdAt)}</small>
+                      </span>
+                      <span className={`draft-status-chip ${statusClass}`}>{draftStatusLabel(item.draft.status, locale)}</span>
+                    </button>
+                  </article>
+                );
+              }
+              const run = item.run;
+              return (
+                <article className={`agent-timeline-item run ${agentStatusClass(run.status)} ${selectedRunId === run.id ? "active" : ""}`} key={item.id}>
+                  <button type="button" className="agent-timeline-run" onClick={() => onSelectRun(run.id)}>
+                    <span className="agent-run-row-title">
+                      <strong>{agentRunTypeLabel(run.run_type, locale)}</strong>
+                      <span className={`agent-status-chip ${agentStatusClass(run.status)}`}>{agentRunStatusLabel(run.status, locale)}</span>
+                    </span>
+                    <span className="agent-run-meta">{run.model_profile} · {shortDateTime(run.created_at)}</span>
+                    <span className="agent-run-meta">{run.draft_id ? localeText(locale, { zh: "已关联草稿", en: "linked draft" }) : localeText(locale, { zh: "未生成草稿", en: "no draft" })}</span>
+                    {run.error_message ? <span className="agent-run-error">{truncateTraceText(run.error_message, 110)}</span> : null}
+                  </button>
+                  {selectedRunId === run.id ? (
+                    <AgentRunStepDetail
+                      run={run}
+                      locale={locale}
+                      expandedStepIds={expandedStepIds}
+                      onToggleStep={onToggleStep}
+                    />
+                  ) : null}
+                </article>
+              );
+            }) : <p className="muted">{localeText(locale, { zh: "这个会话还没有消息或运行记录。", en: "This session has no messages or runs yet." })}</p>}
+          </div>
+          <div className="agent-follow-up">
+            <div>
+              <strong>{text.agentFollowUp}</strong>
+              <span className="muted">{selectedRun?.id ?? session?.id ?? ""}</span>
+            </div>
+            <textarea
+              value={followUpDraft}
+              onChange={(event) => onFollowUpDraftChange(event.target.value)}
+              placeholder={text.agentFollowUpPlaceholder}
+              maxLength={2000}
+              disabled={!canFollowUp || Boolean(followUpBusy)}
+            />
+            <div className="agent-actions">
+              <button className="primary" disabled={!canFollowUp || !followUpDraft.trim() || Boolean(followUpBusy)} onClick={onFollowUpSubmit}>
+                {followUpBusy === "chat" ? text.loading : text.sendFollowUp}
+              </button>
+              <button disabled={!canFollowUp || Boolean(followUpBusy)} onClick={onRetryRun}>
+                {followUpBusy === "retry" ? text.loading : text.retryRun}
+              </button>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 function AgentDifficultyField({
@@ -2419,7 +3217,7 @@ function AgentModelField({
   return (
     <label>{localeText(locale, { zh: "模型", en: "Model" })}
       <select value={value} onChange={(event) => onChange(event.target.value as AIModelProfile)}>
-        {(profiles.length ? profiles : [AI_PROFILE_FALLBACKS.default]).map((profile) => (
+        {(profiles.length ? profiles : [AI_PROFILE_FALLBACKS["deepseek-pro"], AI_PROFILE_FALLBACKS.default]).map((profile) => (
           <option key={profile.value} value={profile.value} disabled={!profile.available}>
             {aiProfileLabel(profile, locale)}{profile.available ? "" : ` (${localeText(locale, { zh: "不可用", en: "unavailable" })})`}
           </option>
@@ -2502,7 +3300,14 @@ export function ProblemImportForm({
     <div className="agent-form import-agent-form">
       <label className="import-source-field">{text.sourceUrlLabel}<input value={sourceUrl} onChange={(event) => onSourceUrlChange(event.target.value)} /></label>
       <AgentDifficultyField value={difficulty} locale={locale} onChange={onDifficultyChange} />
-      <label>{localeText(locale, { zh: "标签", en: "Tags" })}<input value={tags} onChange={(event) => onTagsChange(event.target.value)} /></label>
+      <label>
+        {localeText(locale, { zh: "题目标签（Tag）", en: "Problem Tags" })}
+        <input
+          value={tags}
+          placeholder={localeText(locale, { zh: "逗号分隔，如 Math, Data Stream, 最小二乘回归", en: "Comma separated, e.g. Math, Data Stream, Regression" })}
+          onChange={(event) => onTagsChange(event.target.value)}
+        />
+      </label>
       <AgentModeField value={mode} locale={locale} onChange={onModeChange} />
       <AgentModelField profiles={profiles} value={model} locale={locale} onChange={onModelChange} />
       <AgentLanguageField languages={languages} text={text} onToggle={onToggleLanguage} />
@@ -2531,6 +3336,8 @@ export function ProblemImportForm({
 
 function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUser: CurrentUser | null; onBack: () => void }) {
   const text = getAdminText(locale);
+  const adminAccess = canAccessAdmin(currentUser);
+  const [adminSection, setAdminSection] = useState<AdminSection>("agent");
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState("");
   const [userStatusFilter, setUserStatusFilter] = useState("");
@@ -2561,20 +3368,33 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const [agentDifficulty, setAgentDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [agentMode, setAgentMode] = useState<ProblemAuthoringMode>("both");
   const [agentLanguages, setAgentLanguages] = useState<string[]>(["python", "cpp", "java"]);
-  const [agentModel, setAgentModel] = useState<AIModelProfile>("default");
+  const [agentModel, setAgentModel] = useState<AIModelProfile>("deepseek-pro");
   const [agentConstraints, setAgentConstraints] = useState("");
   const [importSourceUrl, setImportSourceUrl] = useState("");
   const [importRawMaterial, setImportRawMaterial] = useState("");
   const [importNotes, setImportNotes] = useState("");
   const [agentMessage, setAgentMessage] = useState("");
-  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
+  const [selectedAgentSessionId, setSelectedAgentSessionId] = useState<string | null>(null);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [localAgentDrafts, setLocalAgentDrafts] = useState<ProblemDraft[]>([]);
+  const [selectedAgentRunId, setSelectedAgentRunId] = useState<string | null>(null);
+  const [expandedAgentStepIds, setExpandedAgentStepIds] = useState<Set<string>>(() => new Set());
+  const [agentFollowUpDraft, setAgentFollowUpDraft] = useState("");
+  const [agentFollowUpLines, setAgentFollowUpLines] = useState<AgentFollowUpLine[]>([]);
+  const [agentFollowUpBusy, setAgentFollowUpBusy] = useState<"chat" | "retry" | null>(null);
+  const [agentLeftOpen, setAgentLeftOpen] = useState(true);
+  const [agentRightOpen, setAgentRightOpen] = useState(true);
+  const [agentLeftWidth, setAgentLeftWidth] = useState(DEFAULT_AGENT_LEFT_DRAWER_WIDTH);
+  const [agentRightWidth, setAgentRightWidth] = useState(DEFAULT_AGENT_RIGHT_DRAWER_WIDTH);
+  const [agentDrawerResizing, setAgentDrawerResizing] = useState<"left" | "right" | null>(null);
   const [draftSaving, setDraftSaving] = useState(false);
   const [draftSolutionGenerating, setDraftSolutionGenerating] = useState<string | null>(null);
   const [selectedDraft, setSelectedDraft] = useState<ProblemDraft | null>(null);
   const [draftEdit, setDraftEdit] = useState<DraftEditState | null>(null);
   const [draftSaveMessage, setDraftSaveMessage] = useState("");
   const initializedProblemEditIdRef = useRef<string | null>(null);
+  const agentStreamAbortRef = useRef<AbortController | null>(null);
+  const activeAgentStreamRunRef = useRef<string | null>(null);
   const overviewQuery = useQuery({
     queryKey: [
       "admin-overview",
@@ -2600,31 +3420,46 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       problemPage,
       problemPageSize: 8,
     }),
-    enabled: currentUser?.role === "admin",
+    enabled: adminAccess,
   });
   const draftsQuery = useQuery({
     queryKey: ["admin-problem-drafts", currentUser?.id],
-    queryFn: () => api.adminProblemDrafts({ pageSize: 8 }),
-    enabled: currentUser?.role === "admin",
+    queryFn: () => api.adminProblemDrafts({ pageSize: 20 }),
+    enabled: hasContentPermission(currentUser, CONTENT_PERMISSIONS.createOwnProblem),
+  });
+  const agentSessionsQuery = useQuery({
+    queryKey: ["admin-agent-sessions", currentUser?.id],
+    queryFn: () => api.adminAgentSessions({ pageSize: 20 }),
+    enabled: hasContentPermission(currentUser, CONTENT_PERMISSIONS.createOwnProblem),
+  });
+  const selectedAgentSessionQuery = useQuery({
+    queryKey: ["admin-agent-session", selectedAgentSessionId],
+    queryFn: () => api.adminAgentSession(selectedAgentSessionId ?? ""),
+    enabled: hasContentPermission(currentUser, CONTENT_PERMISSIONS.createOwnProblem) && Boolean(selectedAgentSessionId),
+  });
+  const agentRunsQuery = useQuery({
+    queryKey: ["admin-agent-runs", currentUser?.id],
+    queryFn: () => api.adminAgentRuns({ pageSize: 20 }),
+    enabled: hasContentPermission(currentUser, CONTENT_PERMISSIONS.createOwnProblem),
   });
   const testcasesQuery = useQuery({
     queryKey: ["admin-problem-testcases", selectedProblemId],
     queryFn: () => api.adminProblemTestcases(selectedProblemId ?? ""),
-    enabled: currentUser?.role === "admin" && Boolean(selectedProblemId),
+    enabled: hasContentPermission(currentUser, CONTENT_PERMISSIONS.updateOwnProblem) && Boolean(selectedProblemId),
   });
   const problemSolutionsQuery = useQuery({
     queryKey: ["admin-problem-solutions", selectedProblemId],
     queryFn: () => api.adminProblemSolutions(selectedProblemId ?? ""),
-    enabled: currentUser?.role === "admin" && Boolean(selectedProblemId),
+    enabled: hasContentPermission(currentUser, CONTENT_PERMISSIONS.updateOwnProblem) && Boolean(selectedProblemId),
   });
   const adminAiProfilesQuery = useQuery({
     queryKey: ["ai-profiles", "admin", currentUser?.id],
     queryFn: () => api.aiProfiles(),
-    enabled: currentUser?.role === "admin",
+    enabled: adminAccess,
     staleTime: 60_000,
   });
   const adminAiProfiles = adminAiProfilesQuery.data ?? [];
-  const agentPreferredProfile = preferredAIProfile(adminAiProfiles);
+  const agentPreferredProfile = preferredAdminAIProfile(adminAiProfiles);
   const selectedAgentProfile = adminAiProfiles.find((profile) => profile.value === agentModel);
   const agentModelAvailable = Boolean(selectedAgentProfile?.available);
   const agentModelUnavailableReason = adminAiProfilesQuery.isLoading
@@ -2657,12 +3492,52 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   useEffect(() => {
     if (!adminAiProfiles.length) return;
     if (!adminAiProfiles.some((profile) => profile.available && profile.value === agentModel)) {
-      const next = preferredAIProfile(adminAiProfiles);
+      const next = preferredAdminAIProfile(adminAiProfiles);
       if (next) setAgentModel(next);
     }
   }, [adminAiProfiles, agentModel]);
 
-  if (currentUser?.role !== "admin") {
+  useEffect(() => () => stopAgentRunStream(), []);
+
+  useEffect(() => {
+    if (!selectedAgentSessionId) return;
+    const session = selectedAgentSessionQuery.data
+      ?? (agentSessionsQuery.data ?? []).find((item) => item.id === selectedAgentSessionId)
+      ?? null;
+    if (!session) return;
+    const sessionRuns = agentSessionRuns(session);
+    setAgentRuns(sessionRuns);
+    if (!selectedAgentRunId || !sessionRuns.some((run) => run.id === selectedAgentRunId)) {
+      setSelectedAgentRunId(latestAgentRunId(sessionRuns));
+      setExpandedAgentStepIds(new Set());
+    }
+    const runningRun = sessionRuns.find((run) => run.status === "running");
+    if (runningRun) connectAgentRunStream(runningRun.id);
+    const sessionDrafts = agentSessionDrafts(session);
+    const selectedDraftInSession = selectedDraft ? sessionDrafts.some((draft) => draft.id === selectedDraft.id) : false;
+    const nextDraft = latestAgentDraft(session);
+    const selectedDraftStale = Boolean(
+      selectedDraft
+      && nextDraft
+      && selectedDraft.id === nextDraft.id
+      && selectedDraft.updated_at !== nextDraft.updated_at,
+    );
+    if ((!selectedDraftInSession || selectedDraftStale) && nextDraft) {
+      void previewAgentDraft(nextDraft);
+    } else if (!sessionDrafts.length && selectedDraft) {
+      setSelectedDraft(null);
+      setDraftEdit(null);
+      setDraftSaveMessage("");
+    }
+  }, [
+    agentSessionsQuery.data,
+    selectedAgentSessionId,
+    selectedAgentSessionQuery.data,
+    selectedAgentRunId,
+    selectedDraft,
+  ]);
+
+  if (!adminAccess) {
     return (
       <main className="settings-page">
         <section className="settings-card">
@@ -2709,6 +3584,382 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     });
   }
 
+  function startAgentDrawerResize(side: "left" | "right", event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const isLeft = side === "left";
+    const open = isLeft ? agentLeftOpen : agentRightOpen;
+    const startWidth = open
+      ? (isLeft ? agentLeftWidth : agentRightWidth)
+      : AGENT_DRAWER_RAIL_WIDTH;
+    const minWidth = isLeft ? AGENT_LEFT_DRAWER_MIN : AGENT_RIGHT_DRAWER_MIN;
+    const maxWidth = isLeft ? AGENT_LEFT_DRAWER_MAX : AGENT_RIGHT_DRAWER_MAX;
+    const snapWidth = isLeft ? AGENT_LEFT_DRAWER_SNAP : AGENT_RIGHT_DRAWER_SNAP;
+    const defaultWidth = isLeft ? DEFAULT_AGENT_LEFT_DRAWER_WIDTH : DEFAULT_AGENT_RIGHT_DRAWER_WIDTH;
+    let latestWidth = startWidth;
+
+    if (!open) {
+      if (isLeft) {
+        setAgentLeftOpen(true);
+        setAgentLeftWidth(startWidth);
+      } else {
+        setAgentRightOpen(true);
+        setAgentRightWidth(startWidth);
+      }
+    }
+
+    setAgentDrawerResizing(side);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const delta = isLeft ? moveEvent.clientX - startX : startX - moveEvent.clientX;
+      const next = clamp(startWidth + delta, AGENT_DRAWER_RAIL_WIDTH, maxWidth);
+      latestWidth = next;
+      if (isLeft) setAgentLeftWidth(next);
+      else setAgentRightWidth(next);
+    };
+    const onUp = () => {
+      if (latestWidth <= snapWidth) {
+        if (isLeft) {
+          setAgentLeftOpen(false);
+          setAgentLeftWidth(defaultWidth);
+        } else {
+          setAgentRightOpen(false);
+          setAgentRightWidth(defaultWidth);
+        }
+      } else if (isLeft) {
+        setAgentLeftWidth(clamp(latestWidth, minWidth, maxWidth));
+      } else {
+        setAgentRightWidth(clamp(latestWidth, minWidth, maxWidth));
+      }
+      setAgentDrawerResizing(null);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  function selectAgentSession(sessionId: string) {
+    setSelectedAgentSessionId(sessionId);
+    setSelectedAgentRunId(null);
+    setExpandedAgentStepIds(new Set());
+    setAgentFollowUpDraft("");
+    setAgentFollowUpLines([]);
+    setSelectedDraft(null);
+    setDraftEdit(null);
+    setDraftSaveMessage("");
+  }
+
+  function selectAgentRun(runId: string) {
+    setSelectedAgentRunId(runId);
+    setExpandedAgentStepIds(new Set());
+    setAgentFollowUpDraft("");
+  }
+
+  function stopAgentRunStream() {
+    if (agentStreamAbortRef.current) {
+      agentStreamAbortRef.current.abort();
+      agentStreamAbortRef.current = null;
+    }
+    activeAgentStreamRunRef.current = null;
+  }
+
+  function updateCachedAgentRun(run: AgentRun) {
+    setAgentRuns((value) => upsertAgentRun(value, run));
+    const sessionId = agentRunSessionId(run) ?? selectedAgentSessionId;
+    if (sessionId) {
+      queryClient.setQueryData<AgentSession | undefined>(["admin-agent-session", sessionId], (session) => (
+        session ? {
+          ...session,
+          status: run.draft_id ? session.status : run.status,
+          latest_run: run,
+          runs: upsertAgentRun(session.runs, run),
+          updated_at: run.finished_at ?? run.created_at ?? session.updated_at,
+        } : session
+      ));
+      queryClient.setQueryData<AgentSession[] | undefined>(["admin-agent-sessions", currentUser?.id], (sessions) => (
+        sessions?.map((session) => session.id === sessionId ? {
+          ...session,
+          status: run.draft_id ? session.status : run.status,
+          latest_run: run,
+          runs: upsertAgentRun(session.runs, run),
+          updated_at: run.finished_at ?? run.created_at ?? session.updated_at,
+        } : session)
+      ));
+    }
+  }
+
+  function updateCachedAgentStep(step: AgentStep) {
+    setAgentRuns((value) => mergeAgentStepIntoRuns(value, step));
+    const sessionId = selectedAgentSessionId;
+    if (!sessionId) return;
+    queryClient.setQueryData<AgentSession | undefined>(["admin-agent-session", sessionId], (session) => {
+      if (!session) return session;
+      const runs = mergeAgentStepIntoRuns(session.runs, step);
+      const currentLatestRun = session.latest_run ?? null;
+      const latestRun = currentLatestRun && currentLatestRun.id === step.run_id
+        ? mergeAgentStepIntoRun(currentLatestRun, step)
+        : currentLatestRun;
+      return { ...session, runs, latest_run: latestRun ?? null };
+    });
+  }
+
+  function handleAgentStreamEvent(streamEvent: AdminAgentStreamEvent) {
+    if (streamEvent.event === "snapshot" || streamEvent.event === "run_status") {
+      const run = streamEvent.data.run as AgentRun | undefined;
+      if (run?.id) {
+        updateCachedAgentRun(run);
+        setSelectedAgentRunId((value) => value ?? run.id);
+        if (streamEvent.event === "run_status") {
+          void agentRunsQuery.refetch();
+          void agentSessionsQuery.refetch();
+          const sessionId = agentRunSessionId(run) ?? selectedAgentSessionId;
+          if (sessionId) void selectedAgentSessionQuery.refetch();
+          if (run.draft_id) {
+            void api.adminProblemDraft(run.draft_id).then((draft) => {
+              rememberAgentDraft(draft);
+              setSelectedDraft(draft);
+              setDraftEdit(draftEditFromDraft(draft));
+            }).catch(() => undefined);
+          }
+        }
+      }
+      return;
+    }
+    if (streamEvent.event === "step") {
+      const step = streamEvent.data.step as AgentStep | undefined;
+      if (step?.id) updateCachedAgentStep(step);
+      return;
+    }
+    if (streamEvent.event === "draft_ready") {
+      const draftId = typeof streamEvent.data.draft_id === "string" ? streamEvent.data.draft_id : "";
+      if (draftId) {
+        void api.adminProblemDraft(draftId).then((draft) => {
+          rememberAgentDraft(draft);
+          setSelectedDraft(draft);
+          setDraftEdit(draftEditFromDraft(draft));
+          setDraftSaveMessage("");
+        }).catch(() => undefined);
+      }
+    }
+  }
+
+  function connectAgentRunStream(runId: string | null | undefined) {
+    if (!runId) return;
+    if (activeAgentStreamRunRef.current === runId) return;
+    stopAgentRunStream();
+    const controller = new AbortController();
+    agentStreamAbortRef.current = controller;
+    activeAgentStreamRunRef.current = runId;
+    void streamAdminAgentRun(runId, handleAgentStreamEvent, { signal: controller.signal }).catch((error) => {
+      if (controller.signal.aborted) return;
+      setAgentMessage(error instanceof Error ? error.message : localeText(locale, { zh: "执行路径实时连接已断开。", en: "Agent stream disconnected." }));
+      void agentRunsQuery.refetch();
+      void agentSessionsQuery.refetch();
+    });
+  }
+
+  function toggleAgentStep(stepId: string) {
+    setExpandedAgentStepIds((value) => {
+      const next = new Set(value);
+      if (next.has(stepId)) {
+        next.delete(stepId);
+      } else {
+        next.add(stepId);
+      }
+      return next;
+    });
+  }
+
+  function rememberAgentDraft(draft: ProblemDraft | null | undefined) {
+    if (!draft?.id) return;
+    setLocalAgentDrafts((value) => mergeDrafts(value, draft));
+  }
+
+  async function previewAgentDraft(draft: ProblemDraft) {
+    let nextDraft = draft;
+    if (!draft.description && draft.id) {
+      try {
+        nextDraft = await api.adminProblemDraft(draft.id);
+      } catch {
+        nextDraft = draft;
+      }
+    }
+    rememberAgentDraft(nextDraft);
+    setSelectedDraft(nextDraft);
+    setDraftEdit(draftEditFromDraft(nextDraft));
+    setDraftSaveMessage("");
+  }
+
+  function applyDraftRuns(draft: ProblemDraft, fallbackRun?: AgentRun) {
+    const runs = draft.runs?.length ? draft.runs : fallbackRun ? [fallbackRun] : [];
+    rememberAgentDraft(draft);
+    setAgentRuns(runs);
+    setSelectedAgentRunId(fallbackRun?.id ?? latestAgentRunId(runs));
+    setExpandedAgentStepIds(new Set());
+  }
+
+  async function handleAgentFailure(error: unknown, fallback: string) {
+    const message = error instanceof Error ? error.message : fallback;
+    setAgentMessage(message);
+    const runId = error instanceof ApiError ? error.run_id : null;
+    if (!runId) return;
+    try {
+      const run = await api.adminAgentRun(runId);
+      setAgentRuns([run]);
+      setSelectedAgentRunId(run.id);
+      setExpandedAgentStepIds(new Set());
+      const sessionId = agentRunSessionId(run);
+      if (sessionId) {
+        setSelectedAgentSessionId(sessionId);
+        try {
+          const session = await api.adminAgentSession(sessionId);
+          queryClient.setQueryData(["admin-agent-session", sessionId], session);
+        } catch {
+          // Keep the fetched run visible even if the grouped session is not available yet.
+        }
+      }
+      await agentRunsQuery.refetch();
+      await agentSessionsQuery.refetch();
+    } catch {
+      await agentRunsQuery.refetch();
+      await agentSessionsQuery.refetch();
+    }
+  }
+
+  async function applyAgentActionResponse(response: AdminAgentActionResponse): Promise<AgentRun | null> {
+    const sessionId = response.session_id ?? null;
+    let responseSession: AgentSession | null = null;
+    if (sessionId) {
+      setSelectedAgentSessionId(sessionId);
+      try {
+        responseSession = await api.adminAgentSession(sessionId);
+        queryClient.setQueryData(["admin-agent-session", sessionId], responseSession);
+      } catch {
+        responseSession = null;
+      }
+    }
+    const responseRun = response.run ?? null;
+    const runId = response.run_id ?? responseRun?.id ?? null;
+    let run = responseRun;
+    if (!run && runId) {
+      run = await api.adminAgentRun(runId);
+    }
+    if (run) {
+      updateCachedAgentRun(run);
+      setAgentRuns([run]);
+      setSelectedAgentRunId(run.id);
+      setExpandedAgentStepIds(new Set());
+      if (run.status === "running") connectAgentRunStream(run.id);
+    }
+    const responseDraft = response.draft ?? null;
+    const draftId = response.draft_id ?? responseDraft?.id ?? run?.draft_id ?? null;
+    if (responseDraft) {
+      setSelectedDraft(responseDraft);
+      setDraftEdit(draftEditFromDraft(responseDraft));
+      applyDraftRuns(responseDraft, run ?? undefined);
+      setDraftSaveMessage("");
+    } else if (draftId) {
+      try {
+        const draft = await api.adminProblemDraft(draftId);
+        setSelectedDraft(draft);
+        setDraftEdit(draftEditFromDraft(draft));
+        applyDraftRuns(draft, run ?? undefined);
+        setDraftSaveMessage("");
+      } catch {
+        // The run is still useful even if its draft was not created or is unavailable.
+      }
+    }
+    if (responseSession) {
+      const sessionRuns = agentSessionRuns(responseSession);
+      const sessionDraft = latestAgentDraft(responseSession);
+      setAgentRuns(sessionRuns);
+      setSelectedAgentRunId(run?.id ?? latestAgentRunId(sessionRuns));
+      setExpandedAgentStepIds(new Set());
+      const streamRun = run ?? sessionRuns.find((item) => item.status === "running") ?? null;
+      if (streamRun?.status === "running") connectAgentRunStream(streamRun.id);
+      if (sessionDraft) {
+        await previewAgentDraft(sessionDraft);
+      }
+    }
+    await draftsQuery.refetch();
+    await agentRunsQuery.refetch();
+    await agentSessionsQuery.refetch();
+    return run;
+  }
+
+  async function sendAgentFollowUp() {
+    const selectedRun = visibleAgentRuns.find((run) => run.id === selectedAgentRunId) ?? null;
+    if (!selectedRun) return;
+    const message = agentFollowUpDraft.trim();
+    if (!message) {
+      setAgentMessage(text.followUpRequired);
+      return;
+    }
+    setAgentFollowUpBusy("chat");
+    setAgentMessage("");
+    const lineId = `${Date.now()}`;
+    setAgentFollowUpLines((value) => [...value, { id: `${lineId}.user`, role: "user", message, runId: selectedRun.id }]);
+    try {
+      const result = await api.adminAgentFollowUp(selectedRun.id, {
+        message,
+        locale,
+        model_profile: agentModel,
+        draft_id: selectedDraft?.id ?? selectedRun.draft_id ?? null,
+      });
+      const run = await applyAgentActionResponse(result);
+      setAgentFollowUpLines((value) => [...value, {
+        id: `${lineId}.assistant`,
+        role: "assistant",
+        message: result.message ?? text.followUpSent,
+        runId: run?.id ?? result.run_id ?? null,
+      }]);
+      setAgentFollowUpDraft("");
+      setAgentMessage(result.message ?? text.followUpSent);
+    } catch (error) {
+      await handleAgentFailure(error, localeText(locale, { zh: "追问失败。", en: "Follow-up failed." }));
+    } finally {
+      setAgentFollowUpBusy(null);
+    }
+  }
+
+  async function retrySelectedAgentRun() {
+    const selectedRun = visibleAgentRuns.find((run) => run.id === selectedAgentRunId) ?? null;
+    if (!selectedRun) return;
+    const retryMessage = agentFollowUpDraft.trim();
+    setAgentFollowUpBusy("retry");
+    setAgentMessage("");
+    const lineId = `${Date.now()}`;
+    if (retryMessage) {
+      setAgentFollowUpLines((value) => [...value, { id: `${lineId}.retry-user`, role: "user", message: retryMessage, runId: selectedRun.id }]);
+    }
+    try {
+      const result = await api.adminRetryAgentRun(selectedRun.id, {
+        locale,
+        model_profile: agentModel,
+        draft_id: selectedDraft?.id ?? selectedRun.draft_id ?? null,
+        message: retryMessage || null,
+      });
+      const run = await applyAgentActionResponse(result);
+      setAgentFollowUpLines((value) => [...value, {
+        id: `${lineId}.retry`,
+        role: "assistant",
+        message: result.message ?? text.retryStarted,
+        runId: run?.id ?? result.run_id ?? null,
+      }]);
+      setAgentFollowUpDraft("");
+      setAgentMessage(result.message ?? text.retryStarted);
+    } catch (error) {
+      await handleAgentFailure(error, localeText(locale, { zh: "重试失败。", en: "Retry failed." }));
+    } finally {
+      setAgentFollowUpBusy(null);
+    }
+  }
+
   async function createAgentDraft() {
     if (!agentTopic.trim()) {
       setAgentMessage(localeText(locale, { zh: "请先填写主题。", en: "Enter a topic first." }));
@@ -2731,17 +3982,12 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         model_profile: agentModel,
         constraints: agentConstraints.trim() || null,
       });
-      const run = await api.adminAgentRun(result.run_id);
-      const draft = await api.adminProblemDraft(result.draft_id);
-      setAgentSteps(draft.steps?.length ? draft.steps : run.steps ?? []);
-      setAgentRuns(draft.runs?.length ? draft.runs : [run]);
-      setSelectedDraft(draft);
-      setDraftEdit(draftEditFromDraft(draft));
-      setDraftSaveMessage("");
-      setAgentMessage(validationStatusMessage(result.status, result.validation_summary, locale));
-      await draftsQuery.refetch();
+      await applyAgentActionResponse(result);
+      setAgentMessage(result.status
+        ? validationStatusMessage(result.status, result.validation_summary, locale)
+        : result.message ?? localeText(locale, { zh: "草稿已创建。", en: "Draft created." }));
     } catch (error) {
-      setAgentMessage(error instanceof Error ? error.message : localeText(locale, { zh: "生成失败。", en: "Generation failed." }));
+      await handleAgentFailure(error, localeText(locale, { zh: "生成失败。", en: "Generation failed." }));
     }
   }
 
@@ -2768,17 +4014,12 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         model_profile: agentModel,
         import_notes: importNotes.trim() || null,
       });
-      const run = await api.adminAgentRun(result.run_id);
-      const draft = await api.adminProblemDraft(result.draft_id);
-      setAgentSteps(draft.steps?.length ? draft.steps : run.steps ?? []);
-      setAgentRuns(draft.runs?.length ? draft.runs : [run]);
-      setSelectedDraft(draft);
-      setDraftEdit(draftEditFromDraft(draft));
-      setDraftSaveMessage("");
-      setAgentMessage(validationStatusMessage(result.status, result.validation_summary, locale));
-      await draftsQuery.refetch();
+      await applyAgentActionResponse(result);
+      setAgentMessage(result.status
+        ? validationStatusMessage(result.status, result.validation_summary, locale)
+        : result.message ?? localeText(locale, { zh: "草稿已导入。", en: "Draft imported." }));
     } catch (error) {
-      setAgentMessage(error instanceof Error ? error.message : localeText(locale, { zh: "导入失败。", en: "Import failed." }));
+      await handleAgentFailure(error, localeText(locale, { zh: "导入失败。", en: "Import failed." }));
     }
   }
 
@@ -2786,8 +4027,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     const draft = await api.adminProblemDraft(draftId);
     setSelectedDraft(draft);
     setDraftEdit(draftEditFromDraft(draft));
-    setAgentSteps(draft.steps ?? []);
-    setAgentRuns(draft.runs ?? []);
+    applyDraftRuns(draft);
     setDraftSaveMessage("");
   }
 
@@ -2802,11 +4042,12 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       const draft = await api.adminApproveProblemDraft(selectedDraft.id);
       setSelectedDraft(draft);
       setDraftEdit(draftEditFromDraft(draft));
-      setAgentSteps(draft.steps ?? []);
-      setAgentRuns(draft.runs ?? []);
+      applyDraftRuns(draft);
       setDraftSaveMessage("");
       await overviewQuery.refetch();
       await draftsQuery.refetch();
+      await agentRunsQuery.refetch();
+      await agentSessionsQuery.refetch();
     } catch (error) {
       setDraftSaveMessage(error instanceof Error ? error.message : localeText(locale, { zh: "发布失败。", en: "Approval failed." }));
     }
@@ -2819,10 +4060,11 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       const draft = await api.adminRejectProblemDraft(selectedDraft.id);
       setSelectedDraft(draft);
       setDraftEdit(draftEditFromDraft(draft));
-      setAgentSteps(draft.steps ?? []);
-      setAgentRuns(draft.runs ?? []);
+      applyDraftRuns(draft);
       setDraftSaveMessage("");
       await draftsQuery.refetch();
+      await agentRunsQuery.refetch();
+      await agentSessionsQuery.refetch();
     } catch (error) {
       setDraftSaveMessage(error instanceof Error ? error.message : localeText(locale, { zh: "拒绝失败。", en: "Rejection failed." }));
     }
@@ -2956,11 +4198,12 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       const draft = await api.adminUpdateProblemDraft(selectedDraft.id, draftEditPayload(draftEdit));
       setSelectedDraft(draft);
       setDraftEdit(draftEditFromDraft(draft));
-      setAgentSteps(draft.steps ?? []);
-      setAgentRuns(draft.runs ?? []);
+      applyDraftRuns(draft);
       setDraftSaveMessage(validationStatusMessage(draft.status, draft.validation_report ?? draft.validation_summary, locale));
       setAgentMessage(validationStatusMessage(draft.status, draft.validation_report ?? draft.validation_summary, locale));
       await draftsQuery.refetch();
+      await agentRunsQuery.refetch();
+      await agentSessionsQuery.refetch();
     } catch (error) {
       setDraftSaveMessage(draftSaveErrorMessage(error, locale));
     } finally {
@@ -3001,11 +4244,13 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       });
       const refreshed = await api.adminProblemDraft(selectedDraft.id);
       setSelectedDraft(refreshed);
-      setAgentSteps(refreshed.steps ?? []);
-      setAgentRuns(refreshed.runs ?? []);
+      applyDraftRuns(refreshed);
       setDraftSaveMessage(text.aiFillSolutionDone);
+      await agentRunsQuery.refetch();
+      await agentSessionsQuery.refetch();
     } catch (error) {
       setDraftSaveMessage(error instanceof Error ? error.message : localeText(locale, { zh: "AI 填充失败。", en: "AI fill failed." }));
+      await handleAgentFailure(error, localeText(locale, { zh: "AI 填充失败。", en: "AI fill failed." }));
     } finally {
       setDraftSolutionGenerating(null);
     }
@@ -3015,12 +4260,27 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const problems = overviewQuery.data?.problems ?? [];
   const userPagination = overviewQuery.data?.pagination?.users ?? { page: userPage, page_size: 8, total: 0, total_pages: 0 };
   const problemPagination = overviewQuery.data?.pagination?.problems ?? { page: problemPage, page_size: 8, total: 0, total_pages: 0 };
-  const drafts = draftsQuery.data ?? [];
+  const queriedAgentSessions = agentSessionsQuery.data ?? [];
+  const selectedAgentSessionFromList = queriedAgentSessions.find((session) => session.id === selectedAgentSessionId) ?? null;
+  const selectedAgentSession = selectedAgentSessionQuery.data ?? selectedAgentSessionFromList;
+  const visibleAgentSessions = mergeAgentSessions(queriedAgentSessions, selectedAgentSession);
+  const visibleAgentRuns = selectedAgentSession ? agentSessionRuns(selectedAgentSession) : agentRuns;
+  const selectedAgentRun = visibleAgentRuns.find((run) => run.id === selectedAgentRunId) ?? null;
+  const agentRunsEmptyMessage = visibleAgentSessions.length
+    ? localeText(locale, { zh: "请选择左侧的出题会话。", en: "Select an authoring session on the left." })
+    : localeText(locale, {
+        zh: "还没有出题会话。生成或导入草稿后会在这里出现。",
+        en: "No authoring sessions yet. Generate or import a draft to start one.",
+      });
   const draftHasUnsavedChanges = isDraftEditDirty(selectedDraft, draftEdit);
   const draftEditLocked = draftSaving || Boolean(draftSolutionGenerating) || (selectedDraft ? draftIsReadOnly(selectedDraft.status) : false);
   const selectedUser = users.find((user: any) => user.id === selectedUserId) ?? null;
   const selectedProblem = problems.find((problem: any) => problem.id === selectedProblemId) ?? null;
   const problemEditLocked = problemSaving || Boolean(problemSolutionGenerating);
+  const agentWorkspaceStyle = {
+    "--agent-left-panel": agentLeftOpen ? `${agentLeftWidth}px` : `${AGENT_DRAWER_RAIL_WIDTH}px`,
+    "--agent-right-panel": agentRightOpen ? `${agentRightWidth}px` : `${AGENT_DRAWER_RAIL_WIDTH}px`,
+  } as React.CSSProperties;
 
   function pageSummary(pagination: any) {
     const totalPages = Math.max(Number(pagination.total_pages ?? 0), 1);
@@ -3213,7 +4473,12 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         <p className="eyebrow">{text.title}</p>
         <h1>{text.title}</h1>
         <p className="muted">{text.copy}</p>
-        <section className="admin-panel problem-agent-panel">
+        <nav className="admin-section-tabs segmented" aria-label={text.title}>
+          <button type="button" className={adminSection === "agent" ? "active" : ""} aria-pressed={adminSection === "agent"} onClick={() => setAdminSection("agent")}>{text.adminAgentSection}</button>
+          <button type="button" className={adminSection === "users" ? "active" : ""} aria-pressed={adminSection === "users"} onClick={() => setAdminSection("users")}>{text.adminUsersSection}</button>
+          <button type="button" className={adminSection === "problems" ? "active" : ""} aria-pressed={adminSection === "problems"} onClick={() => setAdminSection("problems")}>{text.adminProblemsSection}</button>
+        </nav>
+        {adminSection === "agent" ? <section className="admin-panel problem-agent-panel">
           <div>
             <h2>{text.problemAgent}</h2>
             <p className="muted">{text.agentNotice}</p>
@@ -3226,7 +4491,14 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
             <div className="agent-form">
               <label>{localeText(locale, { zh: "主题", en: "Topic" })}<input value={agentTopic} onChange={(event) => setAgentTopic(event.target.value)} /></label>
               <AgentDifficultyField value={agentDifficulty} locale={locale} onChange={setAgentDifficulty} />
-              <label>{localeText(locale, { zh: "标签", en: "Tags" })}<input value={agentTags} onChange={(event) => setAgentTags(event.target.value)} /></label>
+              <label>
+                {localeText(locale, { zh: "题目标签（Tag）", en: "Problem Tags" })}
+                <input
+                  value={agentTags}
+                  placeholder={localeText(locale, { zh: "逗号分隔，如 Graph, DP, 在线学习", en: "Comma separated, e.g. Graph, DP, Online Learning" })}
+                  onChange={(event) => setAgentTags(event.target.value)}
+                />
+              </label>
               <AgentModeField value={agentMode} locale={locale} onChange={setAgentMode} />
               <AgentLanguageField languages={agentLanguages} text={text} onToggle={toggleAgentLanguage} />
               <AgentModelField profiles={adminAiProfiles} value={agentModel} locale={locale} onChange={setAgentModel} />
@@ -3273,49 +4545,119 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
           {agentTab === "import" && importRawMaterial.trim().length < 20 ? <p className="muted model-unavailable-note">{text.rawMaterialRequired}</p> : null}
           {agentModelUnavailableReason ? <p className="muted model-unavailable-note">{agentModelUnavailableReason}</p> : null}
           {agentMessage ? <p className="muted">{agentMessage}</p> : null}
-          <div className="agent-workspace">
-            <div className="agent-drafts">
-              {drafts.map((draft) => {
-                const statusClass = draftStatusClass(draft.status);
-                return (
-                  <button
-                    key={draft.id}
-                    className={`draft-row ${statusClass} ${selectedDraft?.id === draft.id ? "active" : ""}`}
-                    onClick={() => loadDraft(draft.id)}
-                  >
-                    <strong>{draft.title}</strong>
-                      <span className="draft-status-line">
-                        <span className={`draft-status-chip ${statusClass}`}>{draftStatusLabel(draft.status, locale)}</span>
-                        {isImportedDraft(draft) ? <span className="draft-status-chip imported">{text.importedDraft}</span> : null}
-                        <span>{authoringModeLabel(draft.mode, locale)}</span>
-                      </span>
-                    </button>
-                );
-              })}
-            </div>
-            <div className="agent-preview">
-              <h3>{text.steps}</h3>
-              {agentRuns.length ? agentRuns.map((run, runIndex) => (
-                <div className="agent-run-group" key={run.id}>
-                  <strong>{runIndex + 1}. {run.model_profile} / {run.status}</strong>
-                  {(run.steps ?? []).map((step) => (
-                    <article className="agent-step" key={step.id}>
-                      <strong>{step.step_index}. {step.step_type}</strong>
-                      <span>{step.status}{step.error_message ? `: ${step.error_message}` : ""}</span>
-                    </article>
-                  ))}
+          <div
+            className={`agent-workspace ${agentLeftOpen ? "" : "agent-left-collapsed"} ${agentRightOpen ? "" : "agent-right-collapsed"} ${agentDrawerResizing ? "agent-is-resizing" : ""}`}
+            style={agentWorkspaceStyle}
+          >
+            <aside className="agent-drawer agent-left-drawer">
+              <div className="agent-drawer-content">
+                <div className="agent-drafts">
+                  <div className="agent-list-title">
+                    <strong>{localeText(locale, { zh: "出题会话", en: "Sessions" })}</strong>
+                    <span className="muted">{visibleAgentSessions.length}</span>
+                  </div>
+                  {visibleAgentSessions.map((session) => {
+                    const sessionDraft = latestAgentDraft(session);
+                    const sourceLabel = agentSessionSourceLabel(session, locale);
+                    return (
+                      <button
+                        key={session.id}
+                        className={`agent-session-row ${agentStatusClass(session.status)} ${selectedAgentSessionId === session.id ? "active" : ""}`}
+                        onClick={() => selectAgentSession(session.id)}
+                      >
+                        <strong>{session.title || sessionDraft?.title || localeText(locale, { zh: "未命名会话", en: "Untitled session" })}</strong>
+                          <span className="draft-status-line">
+                            <span className={`agent-status-chip ${agentStatusClass(session.status)}`}>{agentRunStatusLabel(session.status, locale)}</span>
+                            {sourceLabel ? <span className="draft-status-chip imported">{sourceLabel}</span> : null}
+                            {session.mode ? <span>{authoringModeLabel(session.mode, locale)}</span> : null}
+                            <span>{session.run_count} {localeText(locale, { zh: "运行", en: "runs" })}</span>
+                            <span>{session.draft_count} {localeText(locale, { zh: "草稿", en: "drafts" })}</span>
+                          </span>
+                          {sessionDraft ? <span className="agent-run-meta">{sessionDraft.title} · {shortDateTime(session.updated_at)}</span> : null}
+                      </button>
+                    );
+                  })}
+                  {!visibleAgentSessions.length && !agentSessionsQuery.isLoading ? <p className="muted">{localeText(locale, { zh: "还没有出题会话。", en: "No sessions yet." })}</p> : null}
                 </div>
-              )) : agentSteps.length ? agentSteps.map((step) => (
-                <article className="agent-step" key={step.id}>
-                  <strong>{step.step_index}. {step.step_type}</strong>
-                  <span>{step.status}{step.error_message ? `: ${step.error_message}` : ""}</span>
-                </article>
-              )) : <p className="muted">{localeText(locale, { zh: "选择或生成草稿后显示执行轨迹。", en: "Generate a draft to see the run timeline." })}</p>}
+              </div>
+              <span className="agent-drawer-rail" aria-hidden={agentLeftOpen}>
+                <span>{localeText(locale, { zh: "会", en: "S" })}</span>
+                <span>{localeText(locale, { zh: "话", en: "N" })}</span>
+              </span>
+            </aside>
+            <div className="agent-drawer-edge agent-left-edge">
+              <button
+                type="button"
+                className="agent-drawer-toggle"
+                aria-label={agentLeftOpen
+                  ? localeText(locale, { zh: "收起出题会话", en: "Collapse sessions" })
+                  : localeText(locale, { zh: "展开出题会话", en: "Expand sessions" })}
+                aria-expanded={agentLeftOpen}
+                title={agentLeftOpen
+                  ? localeText(locale, { zh: "收起出题会话", en: "Collapse sessions" })
+                  : localeText(locale, { zh: "展开出题会话", en: "Expand sessions" })}
+                onClick={() => setAgentLeftOpen((value) => !value)}
+              >
+                <PanelToggleIcon open={agentLeftOpen} side="left" />
+              </button>
+              <div
+                className="agent-drawer-resize"
+                role="separator"
+                aria-label={localeText(locale, { zh: "调整出题会话宽度", en: "Resize sessions" })}
+                title={localeText(locale, { zh: "拖动调整出题会话宽度", en: "Drag to resize sessions" })}
+                onPointerDown={(event) => startAgentDrawerResize("left", event)}
+              />
             </div>
-            <div className="agent-preview">
-              <h3>{text.draftPreview}</h3>
-              {selectedDraft ? (
-                <>
+            <AgentSessionTimeline
+              locale={locale}
+              text={text}
+              session={selectedAgentSession}
+              runs={visibleAgentRuns}
+              selectedRunId={selectedAgentRunId}
+              selectedDraftId={selectedDraft?.id ?? null}
+              expandedStepIds={expandedAgentStepIds}
+              loading={agentSessionsQuery.isLoading || selectedAgentSessionQuery.isLoading}
+              followUpDraft={agentFollowUpDraft}
+              followUpLines={agentFollowUpLines}
+              followUpBusy={agentFollowUpBusy}
+              canFollowUp={Boolean(selectedAgentRun && agentModelAvailable)}
+              emptyMessage={agentRunsEmptyMessage}
+              onSelectRun={selectAgentRun}
+              onSelectDraft={previewAgentDraft}
+              onToggleStep={toggleAgentStep}
+              onFollowUpDraftChange={setAgentFollowUpDraft}
+              onFollowUpSubmit={sendAgentFollowUp}
+              onRetryRun={retrySelectedAgentRun}
+            />
+            <div className="agent-drawer-edge agent-right-edge">
+              <div
+                className="agent-drawer-resize"
+                role="separator"
+                aria-label={localeText(locale, { zh: "调整草稿预览宽度", en: "Resize draft preview" })}
+                title={localeText(locale, { zh: "拖动调整草稿预览宽度", en: "Drag to resize draft preview" })}
+                onPointerDown={(event) => startAgentDrawerResize("right", event)}
+              />
+              <button
+                type="button"
+                className="agent-drawer-toggle"
+                aria-label={agentRightOpen
+                  ? localeText(locale, { zh: "收起草稿预览", en: "Collapse draft preview" })
+                  : localeText(locale, { zh: "展开草稿预览", en: "Expand draft preview" })}
+                aria-expanded={agentRightOpen}
+                title={agentRightOpen
+                  ? localeText(locale, { zh: "收起草稿预览", en: "Collapse draft preview" })
+                  : localeText(locale, { zh: "展开草稿预览", en: "Expand draft preview" })}
+                onClick={() => setAgentRightOpen((value) => !value)}
+              >
+                <PanelToggleIcon open={agentRightOpen} side="right" />
+              </button>
+            </div>
+            <aside className="agent-drawer agent-right-drawer">
+              <div className="agent-drawer-content">
+                <div className="agent-preview">
+                  <h3>{text.draftPreview}</h3>
+                  {selectedDraft ? (
+                    <>
                   <div className="testcase-panel-head">
                     <div>
                       <strong>{selectedDraft.title}</strong>
@@ -3324,6 +4666,11 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                     <span className={`draft-status-chip ${draftStatusClass(selectedDraft.status)}`}>{draftStatusLabel(selectedDraft.status, locale)}</span>
                   </div>
                   {isImportedDraft(selectedDraft) ? <DraftSourceSummary draft={selectedDraft} locale={locale} text={text} /> : null}
+                  <details className="markdown-preview-panel">
+                    <summary>{localeText(locale, { zh: "Markdown 预览", en: "Markdown preview" })}</summary>
+                    <MarkdownBlock value={selectedDraft.description} />
+                    {selectedDraft.hint ? <MarkdownBlock value={selectedDraft.hint} className="markdown-preview-muted" /> : null}
+                  </details>
                   {draftSaveMessage ? <p className="muted">{draftSaveMessage}</p> : null}
                   {draftEdit ? (
                     <div className="draft-edit-panel">
@@ -3463,12 +4810,18 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                     <button disabled={draftEditLocked || selectedDraft.status === "rejected"} onClick={rejectSelectedDraft}>{text.rejectDraft}</button>
                   </div>
                 </>
-              ) : <p className="muted">{localeText(locale, { zh: "还没有选中的草稿。", en: "No draft selected." })}</p>}
-            </div>
+                  ) : <p className="muted">{localeText(locale, { zh: "还没有选中的草稿。", en: "No draft selected." })}</p>}
+                </div>
+              </div>
+              <span className="agent-drawer-rail" aria-hidden={agentRightOpen}>
+                <span>{localeText(locale, { zh: "预", en: "P" })}</span>
+                <span>{localeText(locale, { zh: "览", en: "V" })}</span>
+              </span>
+            </aside>
           </div>
-        </section>
-        <div className="admin-grid">
-          <section className="admin-panel">
+        </section> : null}
+        {adminSection === "users" ? (
+          <section className="admin-panel admin-section-panel">
             <div className="admin-panel-header">
               <h2>{text.users}</h2>
               <span className="muted">{pageSummary(userPagination)}</span>
@@ -3490,8 +4843,9 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 }}
               >
                 <option value="">{text.allRoles}</option>
-                <option value="user">{text.user}</option>
-                <option value="admin">{text.admin}</option>
+                <option value="user">{roleLabel("user", locale)}</option>
+                <option value="content_admin">{roleLabel("content_admin", locale)}</option>
+                <option value="admin">{roleLabel("admin", locale)}</option>
               </select>
               <select
                 value={userStatusFilter}
@@ -3511,9 +4865,14 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                   <strong>{user.username}</strong>
                   <span>{user.email}</span>
                 </div>
-                <select value={user.role} onChange={(event) => updateUser(user.id, { role: event.target.value })}>
-                  <option value="user">{text.user}</option>
-                  <option value="admin">{text.admin}</option>
+                <select
+                  value={user.role}
+                  disabled={currentUser?.role !== "admin"}
+                  onChange={(event) => updateUser(user.id, { role: event.target.value })}
+                >
+                  <option value="user">{roleLabel("user", locale)}</option>
+                  <option value="content_admin">{roleLabel("content_admin", locale)}</option>
+                  <option value="admin">{roleLabel("admin", locale)}</option>
                 </select>
                 <button onClick={() => updateUser(user.id, { is_active: !user.is_active })}>
                   {user.is_active ? text.active : text.disabled}
@@ -3531,11 +4890,36 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                 <span className="muted">{selectedUser.id}</span>
                 <div className="admin-edit-grid">
                   <label>{localeText(locale, { zh: "角色", en: "Role" })}
-                    <select value={selectedUser.role} onChange={(event) => updateUser(selectedUser.id, { role: event.target.value })}>
-                      <option value="user">{text.user}</option>
-                      <option value="admin">{text.admin}</option>
+                    <select
+                      value={selectedUser.role}
+                      disabled={currentUser?.role !== "admin"}
+                      onChange={(event) => updateUser(selectedUser.id, { role: event.target.value })}
+                    >
+                      <option value="user">{roleLabel("user", locale)}</option>
+                      <option value="content_admin">{roleLabel("content_admin", locale)}</option>
+                      <option value="admin">{roleLabel("admin", locale)}</option>
                     </select>
                   </label>
+                  {selectedUser.role === "content_admin" ? (
+                    <div className="agent-field language-checklist-label">
+                      <span>{localeText(locale, { zh: "内容管理员权限", en: "Content admin permissions" })}</span>
+                      <div className="language-checklist">
+                        {Object.values(CONTENT_PERMISSIONS).map((permission) => (
+                          <label className="checkbox-label language-chip" key={permission}>
+                            <input
+                              type="checkbox"
+                              checked={(selectedUser.content_admin_permissions ?? []).includes(permission)}
+                              disabled={currentUser?.role !== "admin"}
+                              onChange={() => updateUser(selectedUser.id, {
+                                content_admin_permissions: togglePermission(selectedUser.content_admin_permissions, permission),
+                              })}
+                            />
+                            {contentPermissionLabel(permission, locale)}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <button onClick={() => updateUser(selectedUser.id, { is_active: !selectedUser.is_active })}>
                     {selectedUser.is_active ? text.disabled : text.active}
                   </button>
@@ -3543,7 +4927,9 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
               </div>
             ) : null}
           </section>
-          <section className="admin-panel">
+        ) : null}
+        {adminSection === "problems" ? (
+          <section className="admin-panel admin-section-panel">
             <div className="admin-panel-header">
               <h2>{text.problems}</h2>
               <span className="muted">{pageSummary(problemPagination)}</span>
@@ -3754,7 +5140,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
               </div>
             ) : null}
           </section>
-        </div>
+        ) : null}
       </section>
     </main>
   );

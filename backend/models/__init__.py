@@ -1,7 +1,17 @@
 import enum
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import relationship
@@ -53,12 +63,14 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True)
     locale = Column(String(10), nullable=False, default=DEFAULT_LOCALE)
     role = Column(String(20), default="user")
+    content_admin_permissions = Column(ARRAY(String(80)), nullable=False, default=list)  # type: ignore[var-annotated]
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     submissions = relationship("Submission", back_populates="user")
-    discussions = relationship("ProblemDiscussion", back_populates="user")
+    discussions = relationship("ProblemDiscussion", back_populates="user", foreign_keys="ProblemDiscussion.user_id")
+    discussion_likes = relationship("ProblemDiscussionLike", back_populates="user")
 
 
 class Problem(Base):
@@ -103,6 +115,7 @@ class TestCase(Base):
     problem_id = Column(UUID(as_uuid=True), ForeignKey("problems.id"), nullable=False, index=True)
     input = Column(Text, nullable=False)
     output = Column(Text, nullable=False)
+    io_metadata_json = Column(Text, nullable=True)
     is_hidden = Column(Boolean, default=False)
     is_sample = Column(Boolean, default=False)
     score = Column(Integer, default=10)
@@ -187,13 +200,46 @@ class ProblemDiscussion(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     problem_id = Column(UUID(as_uuid=True), ForeignKey("problems.id"), nullable=False, index=True)
+    parent_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("problem_discussions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     body = Column(Text, nullable=False)
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     problem = relationship("Problem", back_populates="discussions")
-    user = relationship("User", back_populates="discussions")
+    parent = relationship("ProblemDiscussion", remote_side=[id], back_populates="replies")
+    replies = relationship("ProblemDiscussion", back_populates="parent")
+    user = relationship("User", back_populates="discussions", foreign_keys=[user_id])
+    deleted_by_user = relationship("User", foreign_keys=[deleted_by])
+    likes = relationship("ProblemDiscussionLike", back_populates="discussion")
+
+
+class ProblemDiscussionLike(Base):
+    __tablename__ = "problem_discussion_likes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "discussion_id", name="uq_problem_discussion_likes_user_discussion"),
+        Index("idx_problem_discussion_likes_discussion", "discussion_id"),
+        Index("idx_problem_discussion_likes_user", "user_id"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    discussion_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("problem_discussions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=utc_now)
+
+    discussion = relationship("ProblemDiscussion", back_populates="likes")
+    user = relationship("User", back_populates="discussion_likes")
 
 
 class ProblemDraft(Base):

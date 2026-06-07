@@ -1,3 +1,4 @@
+import inspect
 import logging
 from typing import Any
 
@@ -152,15 +153,22 @@ class JudgeTaskConsumer:
             )
 
             # Execute judge task
-            result = self.judge_task.execute(
-                submission_id=submission_id,
-                problem_id=str(submission.problem_id),
-                code=task.get("code") or submission.code,
-                language=submission.language,
-                use_hidden=task.get("use_hidden", True),
-                db=db,
-                run_testcases=task.get("run_testcases"),
-            )
+            judge_kwargs = {
+                "submission_id": submission_id,
+                "problem_id": str(submission.problem_id),
+                "code": task.get("code") or submission.code,
+                "language": submission.language,
+                "use_hidden": task.get("use_hidden", True),
+                "db": db,
+                "run_testcases": task.get("run_testcases"),
+            }
+            execute_signature = inspect.signature(self.judge_task.execute)
+            if "judge_mode" in execute_signature.parameters or any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD
+                for parameter in execute_signature.parameters.values()
+            ):
+                judge_kwargs["judge_mode"] = str(task.get("judge_mode") or "acm")
+            result = self.judge_task.execute(**judge_kwargs)
 
             # Update submission with results
             service.update_submission_status(

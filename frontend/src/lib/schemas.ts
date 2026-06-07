@@ -61,19 +61,56 @@ export const problemDetailSchema = z.object({
   total_submissions: z.number(),
   accepted_submissions: z.number(),
   ac_rate: z.number(),
-  sample_testcases: z.array(z.object({ input: z.string(), output: z.string() })),
+  sample_testcases: z.array(z.object({
+    input: z.string(),
+    output: z.string(),
+    explanation: z.string().nullable().optional(),
+    acm_input: z.string().nullable().optional(),
+    acm_output: z.string().nullable().optional(),
+    function_input: z.string().nullable().optional(),
+    function_output: z.string().nullable().optional(),
+    display_mode: z.string().nullable().optional(),
+  })),
   created_at: z.string(),
 });
 
-export const problemDiscussionSchema = z.object({
-  id: z.string(),
-  problem_id: z.string(),
-  user_id: z.string(),
-  author: z.string(),
-  body: z.string(),
-  created_at: z.string(),
-  updated_at: z.string().nullable().optional(),
-});
+export type ProblemDiscussion = {
+  id: string;
+  problem_id: string;
+  user_id: string;
+  author: string;
+  body: string;
+  created_at: string;
+  updated_at?: string | null;
+  parent_id?: string | null;
+  like_count: number;
+  liked_by_me: boolean;
+  reply_count: number;
+  can_delete: boolean;
+  is_deleted: boolean;
+  is_template: boolean;
+  replies: ProblemDiscussion[];
+};
+
+export const problemDiscussionSchema: z.ZodType<ProblemDiscussion> = z.lazy(() =>
+  z.object({
+    id: z.string(),
+    problem_id: z.string(),
+    user_id: z.string(),
+    author: z.string(),
+    body: z.string(),
+    created_at: z.string(),
+    updated_at: z.string().nullable().optional(),
+    parent_id: z.string().nullable().optional(),
+    like_count: z.number().int().nonnegative().default(0),
+    liked_by_me: z.boolean().default(false),
+    reply_count: z.number().int().nonnegative().default(0),
+    can_delete: z.boolean().default(false),
+    is_deleted: z.boolean().default(false),
+    is_template: z.boolean().default(false),
+    replies: z.array(problemDiscussionSchema).default([]),
+  }) as z.ZodType<ProblemDiscussion>,
+);
 
 export const aiExplainSchema = z.object({
   summary: z.string(),
@@ -134,7 +171,6 @@ export const aiChatSchema = z.object({
 
 export type ProblemListItem = z.infer<typeof problemListItemSchema>;
 export type ProblemDetail = z.infer<typeof problemDetailSchema>;
-export type ProblemDiscussion = z.infer<typeof problemDiscussionSchema>;
 export type SubmissionDetail = z.infer<typeof submissionDetailSchema>;
 export type AIExplain = z.infer<typeof aiExplainSchema>;
 export type AIReview = z.infer<typeof aiReviewSchema>;

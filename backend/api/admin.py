@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Iterable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -17,6 +18,7 @@ from backend.models import (
     Difficulty,
     Problem,
     ProblemDiscussion,
+    ProblemDiscussionLike,
     ProblemDraft,
     Solution,
     Submission,
@@ -32,15 +34,47 @@ from backend.schemas.problem_authoring import (
 from backend.services.problem_authoring_agent import (
     ProblemAuthoringAgentService,
     ProblemDraftValidationAdapter,
+    dump_json,
+    load_json,
     normalize_slug,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+ROLE_USER = "user"
+ROLE_ADMIN = "admin"
+ROLE_CONTENT_ADMIN = "content_admin"
+VALID_USER_ROLES = {ROLE_USER, ROLE_ADMIN, ROLE_CONTENT_ADMIN}
+
+CONTENT_PERMISSION_CREATE_OWN_PROBLEMS = "problem:create_own"
+CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS = "problem:update_own"
+CONTENT_PERMISSION_PUBLISH_OWN_PROBLEMS = "problem:publish_own"
+CONTENT_PERMISSION_MANAGE_USERS = "user:manage"
+CONTENT_PERMISSION_MODERATE_DISCUSSIONS = "discussion:moderate"
+VALID_CONTENT_ADMIN_PERMISSIONS = {
+    CONTENT_PERMISSION_CREATE_OWN_PROBLEMS,
+    CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS,
+    CONTENT_PERMISSION_PUBLISH_OWN_PROBLEMS,
+    CONTENT_PERMISSION_MANAGE_USERS,
+    CONTENT_PERMISSION_MODERATE_DISCUSSIONS,
+}
+
 
 class AdminUserUpdate(BaseModel):
     role: str | None = None
+    content_admin_permissions: list[str] | None = Field(default=None, max_length=len(VALID_CONTENT_ADMIN_PERMISSIONS))
     is_active: bool | None = None
+
+    @field_validator("content_admin_permissions")
+    @classmethod
+    def validate_content_admin_permissions(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        permissions = _normalize_content_admin_permissions(value)
+        invalid = sorted(set(permissions) - VALID_CONTENT_ADMIN_PERMISSIONS)
+        if invalid:
+            raise ValueError(f"Invalid content admin permissions: {', '.join(invalid)}")
+        return permissions
 
 
 class AdminProblemUpdate(BaseModel):
@@ -85,6 +119,7 @@ class AdminSolutionGenerateRequest(BaseModel):
 class AdminTestCaseUpdate(BaseModel):
     input: str | None = None
     output: str | None = None
+    io_metadata: dict[str, Any] | None = None
     is_hidden: bool | None = None
     is_sample: bool | None = None
     score: int | None = Field(default=None, ge=0)
@@ -94,16 +129,78 @@ class AdminTestCaseUpdate(BaseModel):
 class AdminTestCaseCreate(BaseModel):
     input: str
     output: str
+    io_metadata: dict[str, Any] | None = None
     is_hidden: bool = False
     is_sample: bool = False
     score: int = Field(default=10, ge=0)
     order: int | None = Field(default=None, ge=0)
 
 
+def _normalize_content_admin_permissions(permissions: Iterable[str] | None) -> list[str]:
+    if not permissions:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for permission in permissions:
+        value = str(permission).strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized
+
+
+def content_admin_permissions(user: User | None) -> list[str]:
+    return _normalize_content_admin_permissions(getattr(user, "content_admin_permissions", None))
+
+
+def has_content_permission(user: User | None, permission: str) -> bool:
+    if user is None:
+        return False
+    if user.role == ROLE_ADMIN:
+        return True
+    if user.role != ROLE_CONTENT_ADMIN:
+        return False
+    return permission in content_admin_permissions(user)
+
+
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != "admin":
+    if current_user.role != ROLE_ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
     return current_user
+
+
+def require_content_permission(permission: str):
+    def dependency(current_user: User = Depends(get_current_user)) -> User:
+        if not has_content_permission(current_user, permission):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient content permission")
+        return current_user
+
+    return dependency
+
+
+def require_admin_dashboard_access(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role == ROLE_ADMIN:
+        return current_user
+    if current_user.role == ROLE_CONTENT_ADMIN and content_admin_permissions(current_user):
+        return current_user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+
+
+def _ensure_own_problem_or_admin(problem: Problem, current_user: User) -> None:
+    if current_user.role == ROLE_ADMIN:
+        return
+    if str(problem.created_by) == str(current_user.id):
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Can only manage your own problems")
+
+
+def _ensure_own_draft_or_admin(draft: ProblemDraft, current_user: User) -> None:
+    if current_user.role == ROLE_ADMIN:
+        return
+    if str(draft.created_by) == str(current_user.id):
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Can only manage your own drafts")
 
 
 def _nullable_text(value: str | None) -> str | None:
@@ -130,7 +227,7 @@ def _normalize_case_flags(is_hidden: bool, is_sample: bool) -> tuple[bool, bool]
 @router.get("/overview")
 def overview(
     user_query: str | None = Query(None, max_length=100),
-    user_role: str | None = Query(None, pattern="^(user|admin)$"),
+    user_role: str | None = Query(None, pattern="^(user|admin|content_admin)$"),
     user_status: str | None = Query(None, pattern="^(active|disabled)$"),
     user_page: int = Query(1, ge=1),
     user_page_size: int = Query(10, ge=1, le=50),
@@ -140,9 +237,11 @@ def overview(
     problem_page: int = Query(1, ge=1),
     problem_page_size: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin_dashboard_access),
 ):
     user_base_query = db.query(User)
+    if current_user.role != ROLE_ADMIN and not has_content_permission(current_user, CONTENT_PERMISSION_MANAGE_USERS):
+        user_base_query = user_base_query.filter(User.id == current_user.id)
     if user_query and user_query.strip():
         pattern = f"%{user_query.strip()}%"
         user_base_query = user_base_query.filter(or_(User.username.ilike(pattern), User.email.ilike(pattern)))
@@ -152,6 +251,8 @@ def overview(
         user_base_query = user_base_query.filter(User.is_active.is_(user_status == "active"))
 
     problem_base_query = db.query(Problem)
+    if current_user.role != ROLE_ADMIN:
+        problem_base_query = problem_base_query.filter(Problem.created_by == current_user.id)
     if problem_query and problem_query.strip():
         pattern = f"%{problem_query.strip()}%"
         problem_base_query = problem_base_query.filter(or_(Problem.title.ilike(pattern), Problem.slug.ilike(pattern)))
@@ -183,6 +284,7 @@ def overview(
                     "username": user.username,
                     "email": user.email,
                     "role": user.role,
+                    "content_admin_permissions": content_admin_permissions(user),
                     "is_active": user.is_active,
                     "created_at": user.created_at.isoformat(),
                     "updated_at": user.updated_at.isoformat() if user.updated_at else None,
@@ -237,15 +339,27 @@ def update_user(
     user_id: str,
     payload: AdminUserUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_MANAGE_USERS)),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if current_user.role != ROLE_ADMIN and (payload.role is not None or payload.content_admin_permissions is not None):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can change roles and permissions")
+    next_role = str(payload.role if payload.role is not None else (user.role or ROLE_USER))
+    if next_role not in VALID_USER_ROLES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
+    if payload.content_admin_permissions is not None and next_role != ROLE_CONTENT_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Content admin permissions require content_admin role",
+        )
     if payload.role is not None:
-        if payload.role not in {"user", "admin"}:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
         user.role = payload.role
+        if payload.role != ROLE_CONTENT_ADMIN:
+            user.content_admin_permissions = []
+    if payload.content_admin_permissions is not None:
+        user.content_admin_permissions = payload.content_admin_permissions
     if payload.is_active is not None:
         user.is_active = payload.is_active
     db.commit()
@@ -257,11 +371,12 @@ def update_problem(
     problem_id: str,
     payload: AdminProblemUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    _ensure_own_problem_or_admin(problem, current_user)
     if payload.difficulty is not None:
         try:
             problem.difficulty = Difficulty(payload.difficulty)
@@ -296,16 +411,25 @@ def update_problem(
 def delete_problem(
     problem_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    _ensure_own_problem_or_admin(problem, current_user)
 
     testcases = db.query(TestCase).filter(TestCase.problem_id == problem.id).all()
     submissions = db.query(Submission).filter(Submission.problem_id == problem.id).all()
     solutions = db.query(Solution).filter(Solution.problem_id == problem.id).all()
     discussions = db.query(ProblemDiscussion).filter(ProblemDiscussion.problem_id == problem.id).all()
+    discussion_ids = [discussion.id for discussion in discussions]
+    discussion_likes = (
+        db.query(ProblemDiscussionLike)
+        .filter(ProblemDiscussionLike.discussion_id.in_(discussion_ids))
+        .all()
+        if discussion_ids
+        else []
+    )
     linked_drafts = db.query(ProblemDraft).filter(ProblemDraft.approved_problem_id == problem.id).all()
 
     testcase_results: list[TestCaseResult] = []
@@ -332,7 +456,22 @@ def delete_problem(
         db.delete(submission)
     for solution in solutions:
         db.delete(solution)
-    for discussion in discussions:
+    for like in discussion_likes:
+        db.delete(like)
+
+    discussions_by_id = {str(discussion.id): discussion for discussion in discussions}
+
+    def discussion_depth(discussion: ProblemDiscussion) -> int:
+        depth = 0
+        parent_id = getattr(discussion, "parent_id", None)
+        seen: set[str] = set()
+        while parent_id is not None and str(parent_id) in discussions_by_id and str(parent_id) not in seen:
+            seen.add(str(parent_id))
+            depth += 1
+            parent_id = getattr(discussions_by_id[str(parent_id)], "parent_id", None)
+        return depth
+
+    for discussion in sorted(discussions, key=discussion_depth, reverse=True):
         db.delete(discussion)
     for testcase in testcases:
         db.delete(testcase)
@@ -347,6 +486,7 @@ def delete_problem(
             "testcase_results": len(testcase_results),
             "solutions": len(solutions),
             "discussions": len(discussions),
+            "discussion_likes": len(discussion_likes),
             "draft_links_cleared": len(linked_drafts),
         },
     }
@@ -356,11 +496,12 @@ def delete_problem(
 def list_solutions(
     problem_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    _ensure_own_problem_or_admin(problem, current_user)
     solutions = (
         db.query(Solution)
         .filter(Solution.problem_id == problem.id)
@@ -375,11 +516,12 @@ def upsert_solution(
     problem_id: str,
     payload: AdminSolutionUpsert,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    _ensure_own_problem_or_admin(problem, current_user)
     language = payload.language.strip().lower()
     if not Language.is_supported(language):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported language: {language}")
@@ -402,11 +544,12 @@ def generate_solution(
     problem_id: str,
     payload: AdminSolutionGenerateRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    _ensure_own_problem_or_admin(problem, current_user)
     language = payload.language.strip().lower()
     if not Language.is_supported(language):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported language: {language}")
@@ -428,11 +571,12 @@ def delete_solution(
     problem_id: str,
     language: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    _ensure_own_problem_or_admin(problem, current_user)
     normalized_language = language.strip().lower()
     solution = (
         db.query(Solution)
@@ -450,11 +594,12 @@ def delete_solution(
 def revalidate_problem(
     problem_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    _ensure_own_problem_or_admin(problem, current_user)
     report = _validate_problem(problem)
     return {"success": True, "data": report}
 
@@ -463,11 +608,12 @@ def revalidate_problem(
 def list_testcases(
     problem_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    _ensure_own_problem_or_admin(problem, current_user)
     testcases = (
         db.query(TestCase)
         .filter(TestCase.problem_id == problem.id)
@@ -482,11 +628,12 @@ def create_testcase(
     problem_id: str,
     payload: AdminTestCaseCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
+    _ensure_own_problem_or_admin(problem, current_user)
     order = payload.order
     if order is None:
         latest = (
@@ -502,6 +649,7 @@ def create_testcase(
         problem_id=problem.id,
         input=payload.input,
         output=payload.output,
+        io_metadata_json=dump_json(payload.io_metadata) if payload.io_metadata else None,
         is_hidden=is_hidden,
         is_sample=is_sample,
         score=payload.score,
@@ -518,15 +666,19 @@ def update_testcase(
     testcase_id: str,
     payload: AdminTestCaseUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     testcase = db.query(TestCase).filter(TestCase.id == testcase_id).first()
     if not testcase:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Testcase not found")
+    if testcase.problem:
+        _ensure_own_problem_or_admin(testcase.problem, current_user)
     for field in ["input", "output", "is_hidden", "is_sample", "score", "order"]:
         value = getattr(payload, field)
         if value is not None:
             setattr(testcase, field, value)
+    if payload.io_metadata is not None:
+        testcase.io_metadata_json = dump_json(payload.io_metadata) if payload.io_metadata else None
     if payload.is_hidden is True:
         testcase.is_hidden, testcase.is_sample = True, False
     elif payload.is_sample is True:
@@ -542,11 +694,13 @@ def update_testcase(
 def delete_testcase(
     testcase_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_content_permission(CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS)),
 ):
     testcase = db.query(TestCase).filter(TestCase.id == testcase_id).first()
     if not testcase:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Testcase not found")
+    if testcase.problem:
+        _ensure_own_problem_or_admin(testcase.problem, current_user)
     db.delete(testcase)
     db.commit()
     return {"success": True}
@@ -558,6 +712,7 @@ def _testcase_response(testcase: TestCase) -> dict:
         "problem_id": str(testcase.problem_id),
         "input": testcase.input,
         "output": testcase.output,
+        "io_metadata": load_json(getattr(testcase, "io_metadata_json", None), None),
         "is_hidden": testcase.is_hidden,
         "is_sample": testcase.is_sample,
         "score": testcase.score,

@@ -1,9 +1,14 @@
 
+import json
+from typing import Any
+
 from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import Session
 
+from backend.core.locales import DEFAULT_LOCALE
 from backend.models import Problem, TestCase
 from backend.schemas.problem import ProblemDetail, ProblemFilter, ProblemListItem, SampleTestCase
+from backend.scripts.seed_explanations import sample_explanation_for_slug
 from backend.services.problem_modes import FUNCTION_SIGNATURES
 
 
@@ -31,6 +36,10 @@ class ProblemService:
 
     @classmethod
     def _mode(cls, problem: Problem) -> str:
+        if str(problem.mode or "") == "both":
+            return "both"
+        if str(problem.mode or "") == "function":
+            return "function"
         if cls._function_signature(problem):
             return "function"
         return problem.mode or "acm"
@@ -96,7 +105,12 @@ class ProblemService:
 
         return result, total
 
-    def get_problem_by_id(self, problem_id: str) -> ProblemDetail | None:
+    def get_problem_by_id(
+        self,
+        problem_id: str,
+        locale: str = DEFAULT_LOCALE,
+        judge_mode: str | None = None,
+    ) -> ProblemDetail | None:
         """Get problem detail by ID."""
         problem = self.db.query(Problem).filter(Problem.id == problem_id).first()
         if not problem or not problem.is_public:
@@ -134,17 +148,76 @@ class ProblemService:
             accepted_submissions=self._accepted_submissions(problem),
             ac_rate=ac_rate,
             sample_testcases=[
-                SampleTestCase(input=tc.input, output=tc.output) for tc in sample_testcases  # type: ignore[arg-type]
+                self._sample_testcase_response(problem, tc, index, locale, judge_mode)
+                for index, tc in enumerate(sample_testcases)
             ],
             created_at=problem.created_at.isoformat(),
         )
 
-    def get_problem_by_slug(self, slug: str) -> ProblemDetail | None:
+    def get_problem_by_slug(
+        self,
+        slug: str,
+        locale: str = DEFAULT_LOCALE,
+        judge_mode: str | None = None,
+    ) -> ProblemDetail | None:
         """Get problem detail by slug."""
         problem = self.db.query(Problem).filter(Problem.slug == slug).first()
         if not problem or not problem.is_public:
             return None
-        return self.get_problem_by_id(str(problem.id))
+        return self.get_problem_by_id(str(problem.id), locale, judge_mode)
+
+    @staticmethod
+    def _io_metadata(testcase: TestCase) -> dict[str, Any]:
+        raw = getattr(testcase, "io_metadata_json", None)
+        if not raw:
+            return {}
+        try:
+            value = json.loads(str(raw))
+        except json.JSONDecodeError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    @classmethod
+    def testcase_io_view(cls, testcase: TestCase, judge_mode: str | None) -> tuple[str, str, str | None]:
+        metadata = cls._io_metadata(testcase)
+        normalized_mode = judge_mode if judge_mode in {"acm", "function"} else None
+        if normalized_mode:
+            view = metadata.get(normalized_mode)
+            if isinstance(view, dict):
+                input_value = view.get("input")
+                output_value = view.get("output")
+                if input_value is not None and output_value is not None:
+                    return str(input_value), str(output_value), normalized_mode
+        return str(testcase.input), str(testcase.output), normalized_mode
+
+    def _sample_testcase_response(
+        self,
+        problem: Problem,
+        testcase: TestCase,
+        index: int,
+        locale: str,
+        judge_mode: str | None,
+    ) -> SampleTestCase:
+        input_value, output_value, display_mode = self.testcase_io_view(testcase, judge_mode)
+        metadata = self._io_metadata(testcase)
+        acm_view = metadata.get("acm") if isinstance(metadata.get("acm"), dict) else {}
+        function_view = metadata.get("function") if isinstance(metadata.get("function"), dict) else {}
+        return SampleTestCase(
+            input=input_value,
+            output=output_value,
+            explanation=sample_explanation_for_slug(
+                str(problem.slug),
+                index,
+                input_value,
+                output_value,
+                locale,
+            ),
+            acm_input=str(acm_view.get("input")) if acm_view.get("input") is not None else None,
+            acm_output=str(acm_view.get("output")) if acm_view.get("output") is not None else None,
+            function_input=str(function_view.get("input")) if function_view.get("input") is not None else None,
+            function_output=str(function_view.get("output")) if function_view.get("output") is not None else None,
+            display_mode=display_mode,
+        )
 
     def get_public_testcases(self, problem_id: str) -> list[TestCase]:
         """Get public (non-hidden) testcases for a problem."""
