@@ -69,8 +69,10 @@ for that.
    without refreshing. Runs are shown as a summary-first trace, including failed
    imports that never created a draft; step input/output/error details expand on
    demand with long or code-like fields safely abbreviated.
-   User management covers roles and account status; problem management covers
-   statements, slug, mode, function signature, ACM formats, limits, visibility,
+   User management is an account center with searchable user rows, status and
+   role badges, detail-side permission editing, admin password reset, and
+   server-side safeguards against disabling the last active administrator.
+   Problem management covers statements, slug, mode, function signature, ACM formats, limits, visibility,
    official solutions, full testcase sets, revalidation, and deleting retired
    problems. Drafts can publish dual-mode problems that support both function
    and ACM practice; dual mode can store separate ACM stdin/stdout and function
@@ -582,6 +584,9 @@ Full deployment steps are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
   access all submissions through server-side role checks.
 - Public registration always creates a normal `user`; administrator accounts are
   bootstrapped from a trusted shell or managed by an existing admin.
+- Password recovery is admin-assisted for now: users who forget passwords contact
+  an administrator, who can set a temporary password. Password changes increment
+  the user's token version so existing access and refresh tokens are rejected.
 - Production judging uses Docker sandbox execution. The
   `FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true` escape hatch is for local
   development only.

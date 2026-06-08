@@ -1,5 +1,15 @@
 # Codex Progress
 
+## 2026-06-08 User Management And Account Recovery
+
+- [x] Added admin-assisted password reset: `POST /api/v1/admin/users/{user_id}/reset-password` hashes a temporary password and increments `users.token_version`; self-service password changes also increment the version.
+- [x] Added `users.token_version` through Alembic revision `20260608_0011`; new tokens carry the version, stale tokens are rejected, and pre-migration tokens without a version remain valid only while the stored version is still `0`.
+- [x] Hardened user-management RBAC: content admins with `user:manage` can only enable/disable ordinary users, cannot change roles/permissions, cannot operate elevated accounts, and admins cannot disable/downgrade themselves or remove the last active admin.
+- [x] Reworked the admin “Users & Permissions” page into an account-management layout with searchable rows, role/status badges, detail-side role/permission editing, status actions, and a password-reset panel with generate/copy/confirm controls.
+- [x] Added login-page guidance that forgotten passwords are handled by contacting an administrator instead of an email reset flow.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (236 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 44 tests); `cd frontend && npm run build` (existing large chunk warnings).
+- [x] Runtime refresh passed: `docker compose up --build -d api`, `docker compose exec -T api uv run alembic -c backend/alembic.ini upgrade head`, and health check at `http://127.0.0.1:8010/api/v1/health`; API container reports healthy.
+
 ## 2026-06-07 Two-Car Parking Lot Seed Problem
 
 - [x] Added `two-car-parking-lot` to the bundled seed data, bringing the current catalog to 108 problems: 100 canonical Hot 100 problems, 6 AI/ML exercises, and 2 extra interview graph/search problems.

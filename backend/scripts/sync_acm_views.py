@@ -74,28 +74,30 @@ def backfill_acm_views(dry_run: bool = False) -> Stats:
 
             for testcase in testcase_candidates:
                 metadata = _parse_json(getattr(testcase, "io_metadata_json", None))
-                if metadata.get("acm") and metadata.get("function"):
-                    completed += 1
-                    continue
 
                 views = function_case_io_metadata(slug, str(testcase.input), str(testcase.output))
-                if views is None:
+                if not views:
+                    if metadata.get("acm") and metadata.get("function"):
+                        completed += 1
+                        continue
                     stats.failed += 1
                     continue
 
                 if not metadata:
                     metadata = views
                 else:
-                    metadata.setdefault("function", views.get("function", {}))
-                    metadata.setdefault("acm", views.get("acm", {}))
+                    metadata["function"] = views.get("function", {})
+                    metadata["acm"] = views.get("acm", {})
 
                 if not metadata.get("acm") or not metadata.get("function"):
                     stats.failed += 1
                     continue
 
-                testcase.io_metadata_json = json.dumps(metadata, separators=(",", ":"))
+                next_metadata = json.dumps(metadata, separators=(",", ":"))
+                if testcase.io_metadata_json != next_metadata:
+                    testcase.io_metadata_json = next_metadata
+                    changed = True
                 completed += 1
-                changed = True
 
             if _can_promote_to_both(problem, len(testcase_candidates), completed):
                 problem.mode = "both"

@@ -482,6 +482,12 @@ export const api = {
       body: JSON.stringify(payload),
     }, (data: any) => data);
   },
+  async adminResetUserPassword(userId: string, newPassword: string) {
+    return request(`/api/v1/admin/users/${userId}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ new_password: newPassword }),
+    }, (data: any) => data);
+  },
   async adminUpdateProblem(problemId: string, payload: Record<string, unknown>) {
     return request(`/api/v1/admin/problems/${problemId}`, {
       method: "PATCH",

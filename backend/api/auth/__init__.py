@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8)
     locale: str = DEFAULT_LOCALE
 
     @field_validator("locale", mode="before")
@@ -50,7 +50,7 @@ class UserUpdate(BaseModel):
     avatar_url: str | None = None
     locale: str | None = None
     current_password: str | None = None
-    new_password: str | None = None
+    new_password: str | None = Field(default=None, min_length=8)
 
     @field_validator("locale", mode="before")
     @classmethod
@@ -67,6 +67,29 @@ class TokenResponse(BaseModel):
 
 def _normalize_locale(value: str | None) -> str:
     return normalize_locale(value)
+
+
+def _token_version(user: User) -> int:
+    return int(getattr(user, "token_version", 0) or 0)
+
+
+def _token_payload(user: User) -> dict:
+    return {"sub": str(user.id), "username": user.username, "token_version": _token_version(user)}
+
+
+def _ensure_current_token_version(payload: dict, user: User) -> None:
+    if "token_version" not in payload and _token_version(user) == 0:
+        return
+    try:
+        payload_version = int(payload.get("token_version"))
+    except (TypeError, ValueError):
+        payload_version = -1
+    if payload_version != _token_version(user):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session is no longer valid",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -121,8 +144,8 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="User account is disabled",
         )
 
-    access_token = create_access_token(data={"sub": str(user.id), "username": user.username})
-    refresh_token = create_refresh_token(data={"sub": str(user.id)})
+    access_token = create_access_token(data=_token_payload(user))
+    refresh_token = create_refresh_token(data=_token_payload(user))
 
     return TokenResponse(
         access_token=access_token,
@@ -149,8 +172,9 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
         )
+    _ensure_current_token_version(payload, user)
 
-    access_token = create_access_token(data={"sub": str(user.id), "username": user.username})
+    access_token = create_access_token(data=_token_payload(user))
 
     return TokenResponse(
         access_token=access_token,
@@ -184,6 +208,7 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is disabled",
         )
+    _ensure_current_token_version(payload, user)
 
     return user
 
@@ -231,6 +256,7 @@ def update_me(
         if not payload.current_password or not verify_password(payload.current_password, current_user.password_hash):  # type: ignore[arg-type]
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
         current_user.password_hash = get_password_hash(payload.new_password)
+        current_user.token_version = _token_version(current_user) + 1
     db.commit()
     db.refresh(current_user)
     return _user_response(current_user)

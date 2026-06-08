@@ -6,6 +6,16 @@ Updated: 2026-06-07
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
 
+## 2026-06-08 User Management And Account Recovery
+
+- Added Alembic revision `20260608_0011` with `users.token_version`. Login and refresh tokens now include the version; password changes reject older access/refresh tokens. Legacy tokens without the version continue to work only while the user's stored version is still `0`.
+- Added admin-only `POST /api/v1/admin/users/{user_id}/reset-password` for temporary password resets. The route hashes the new password, increments `token_version`, rejects self-reset, and is limited to highest administrators.
+- `PATCH /api/v1/admin/users/{id}` now has stronger server-side safety: content admins with `user:manage` can only toggle ordinary users; role/permission edits and elevated-account operations require highest admin. Highest admins cannot disable/downgrade themselves or remove the last active admin.
+- The frontend “Users & Permissions” page is now a focused account-management surface: rows show account/email, role chip, status chip, update time, and explicit action labels; role/permission editing and password reset live in the selected user's detail panel.
+- Login now tells users who forgot passwords to contact an administrator. No email recovery table/SMTP flow was added in this pass.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (236 passed, 2 existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 44 tests); `cd frontend && npm run build` (existing large chunk warnings).
+- Runtime refresh passed: `docker compose up --build -d api`, `docker compose exec -T api uv run alembic -c backend/alembic.ini upgrade head`, and health check at `http://127.0.0.1:8010/api/v1/health`; API container reports healthy.
+
 ## 2026-06-07 Two-Car Parking Lot Seed Problem
 
 - Added `Two-Car Parking Lot` as seed slug `two-car-parking-lot`; the bundled catalog is now 108 problems: 100 canonical Hot 100 entries, 6 AI/ML exercises, and 2 extra interview graph/search problems.

@@ -14,7 +14,16 @@ from backend.api.auth import (
     register,
     update_me,
 )
-from backend.core.security import create_access_token, get_password_hash
+from backend.api.auth import (
+    refresh_token as refresh_access_token,
+)
+from backend.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_password_hash,
+    verify_password,
+)
 from backend.core.time import utc_now
 from backend.models import User
 
@@ -86,6 +95,7 @@ def test_login_success():
     token = login(SimpleNamespace(username="alice", password="password123"), FakeAuthDb([user]))
     assert token.token_type == "bearer"
     assert token.access_token
+    assert decode_token(token.access_token)["token_version"] == 0
 
 
 def test_login_wrong_password_fails():
@@ -113,6 +123,81 @@ def test_get_current_user_rejects_disabled_user_token():
     with pytest.raises(HTTPException) as exc:
         get_current_user(token, FakeAuthDb([user]))
 
+    assert exc.value.status_code == 401
+
+
+def test_get_current_user_accepts_legacy_token_until_password_changes():
+    user = User(
+        id=uuid4(),
+        username="alice",
+        email="alice@example.com",
+        password_hash=get_password_hash("password123"),
+        is_active=True,
+        token_version=0,
+    )
+    token = create_access_token(data={"sub": str(user.id), "username": user.username})
+
+    assert get_current_user(token, FakeAuthDb([user])).id == user.id
+
+    user.token_version = 1
+    with pytest.raises(HTTPException) as exc:
+        get_current_user(token, FakeAuthDb([user]))
+    assert exc.value.status_code == 401
+
+
+def test_get_current_user_rejects_stale_token_version():
+    user = User(
+        id=uuid4(),
+        username="alice",
+        email="alice@example.com",
+        password_hash=get_password_hash("password123"),
+        is_active=True,
+        token_version=2,
+    )
+    token = create_access_token(data={"sub": str(user.id), "username": user.username, "token_version": 1})
+
+    with pytest.raises(HTTPException) as exc:
+        get_current_user(token, FakeAuthDb([user]))
+
+    assert exc.value.status_code == 401
+
+
+def test_refresh_rejects_stale_token_version():
+    user = User(
+        id=uuid4(),
+        username="alice",
+        email="alice@example.com",
+        password_hash=get_password_hash("password123"),
+        is_active=True,
+        token_version=3,
+    )
+    token = create_refresh_token(data={"sub": str(user.id), "username": user.username, "token_version": 2})
+
+    with pytest.raises(HTTPException) as exc:
+        refresh_access_token(token, FakeAuthDb([user]))
+
+    assert exc.value.status_code == 401
+
+
+def test_update_me_password_bumps_token_version_and_invalidates_old_token():
+    user = User(
+        id=uuid4(),
+        username="alice",
+        email="alice@example.com",
+        password_hash=get_password_hash("password123"),
+        locale="zh",
+        is_active=True,
+        token_version=0,
+        created_at=utc_now(),
+    )
+    old_token = create_access_token(data={"sub": str(user.id), "username": user.username, "token_version": 0})
+
+    update_me(UserUpdate(current_password="password123", new_password="newpassword"), FakeAuthDb([user]), user)
+
+    assert user.token_version == 1
+    assert verify_password("newpassword", user.password_hash)
+    with pytest.raises(HTTPException) as exc:
+        get_current_user(old_token, FakeAuthDb([user]))
     assert exc.value.status_code == 401
 
 

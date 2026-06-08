@@ -41,6 +41,7 @@ from backend.schemas.problem_authoring import (
     ProblemDraftUpdate,
     ProblemImportRequest,
 )
+from backend.services.acm_views import build_acm_view
 from backend.services.function_mode import wrap_function_submission
 
 DEFAULT_AUTHORING_REPAIR_ATTEMPTS = 6
@@ -2178,7 +2179,7 @@ def online_least_squares(operations: list[str]) -> list[str]:
             code=authored.official_solution_code,
             explanation=authored.official_solution_explanation,
         )
-        return authored.model_copy(
+        prepared = authored.model_copy(
             update={
                 "difficulty": payload.difficulty,
                 "mode": payload.mode,
@@ -2189,6 +2190,115 @@ def online_least_squares(operations: list[str]) -> list[str]:
                 "official_solutions": solutions,
             }
         )
+        return self._with_auto_io_metadata(prepared)
+
+    def _with_auto_io_metadata(self, authored: AuthoredProblemDraft) -> AuthoredProblemDraft:
+        if authored.mode not in {"function", "both"} or not str(authored.function_signature or "").strip():
+            return authored
+        try:
+            parameter_names = self._authored_function_parameters(authored)
+        except ValueError:
+            return authored
+
+        public_cases, public_complete = self._cases_with_auto_io_metadata(
+            authored.public_sample_testcases,
+            authored,
+            parameter_names,
+        )
+        hidden_cases, hidden_complete = self._cases_with_auto_io_metadata(
+            authored.hidden_testcases,
+            authored,
+            parameter_names,
+        )
+        next_mode = "both" if public_complete and hidden_complete else authored.mode
+        return authored.model_copy(
+            update={
+                "mode": next_mode,
+                "public_sample_testcases": public_cases,
+                "hidden_testcases": hidden_cases,
+            }
+        )
+
+    def _authored_function_parameters(self, authored: AuthoredProblemDraft) -> list[str]:
+        signature = str(authored.function_signature or "")
+        match = re.search(r"def\s+[A-Za-z_][A-Za-z0-9_]*\s*\((?P<params>.*?)\)", signature, re.DOTALL)
+        if not match:
+            raise ValueError("Function mode requires a parseable Python function signature")
+        names: list[str] = []
+        for item in self._split_function_parameters(match.group("params")):
+            cleaned = item.strip()
+            if not cleaned or cleaned in {"self", "cls"} or cleaned.startswith("*"):
+                continue
+            name = cleaned.split(":", 1)[0].split("=", 1)[0].strip()
+            if name and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+                names.append(name)
+        if not names:
+            raise ValueError("Function mode requires at least one function parameter")
+        return names
+
+    def _split_function_parameters(self, params: str) -> list[str]:
+        parts: list[str] = []
+        start = 0
+        depth = 0
+        for index, char in enumerate(params):
+            if char in "([{":
+                depth += 1
+            elif char in ")]}" and depth:
+                depth -= 1
+            elif char == "," and depth == 0:
+                parts.append(params[start:index])
+                start = index + 1
+        parts.append(params[start:])
+        return parts
+
+    def _cases_with_auto_io_metadata(
+        self,
+        cases: list[AuthoredTestCase],
+        authored: AuthoredProblemDraft,
+        parameter_names: list[str],
+    ) -> tuple[list[AuthoredTestCase], bool]:
+        completed = True
+        enriched: list[AuthoredTestCase] = []
+        for testcase in cases:
+            next_case = self._case_with_auto_io_metadata(testcase, authored, parameter_names)
+            if not next_case.io_metadata or "acm" not in next_case.io_metadata or "function" not in next_case.io_metadata:
+                completed = False
+            enriched.append(next_case)
+        return enriched, completed
+
+    def _case_with_auto_io_metadata(
+        self,
+        testcase: AuthoredTestCase,
+        authored: AuthoredProblemDraft,
+        parameter_names: list[str],
+    ) -> AuthoredTestCase:
+        metadata = dict(testcase.io_metadata or {})
+        acm_view = metadata.get("acm") if isinstance(metadata.get("acm"), dict) else {}
+        function_view = metadata.get("function") if isinstance(metadata.get("function"), dict) else {}
+        if (
+            acm_view.get("input") is not None
+            and acm_view.get("output") is not None
+            and function_view.get("input") is not None
+            and function_view.get("output") is not None
+        ):
+            return testcase
+
+        function_input = str(function_view.get("input") if function_view.get("input") is not None else testcase.input)
+        function_output = str(function_view.get("output") if function_view.get("output") is not None else testcase.output)
+        try:
+            args = normalize_function_call_args(function_input, parameter_names)
+            acm_view = build_acm_view(
+                authored.slug_candidate or "generated-problem",
+                str(authored.function_signature or ""),
+                args,
+                function_output,
+            )
+        except ValueError:
+            return testcase
+
+        metadata["function"] = {"input": function_input, "output": function_output}
+        metadata["acm"] = acm_view
+        return testcase.model_copy(update={"io_metadata": metadata})
 
     def _import_tags(self, requested_tags: list[str], authored_tags: list[str]) -> list[str]:
         merged: list[str] = []

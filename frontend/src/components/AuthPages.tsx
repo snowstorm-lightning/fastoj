@@ -123,6 +123,14 @@ export function AuthPage({
           <label>{text.username}<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" /></label>
           {mode === "register" ? <label>{text.email}<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="off" /></label> : null}
           <label>{text.password}<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="off" /></label>
+          {mode === "login" ? (
+            <p className="muted">
+              {localeText(locale, {
+                zh: "忘记密码请联系管理员重置。",
+                en: "Forgot your password? Ask an administrator to reset it.",
+              })}
+            </p>
+          ) : null}
           {mode === "register" ? <label>{text.confirmPassword}<input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="off" /></label> : null}
           <button className="primary auth-submit" disabled={busy}>
             {busy ? text.processing : mode === "login" ? text.loginContinue : text.registerContinue}

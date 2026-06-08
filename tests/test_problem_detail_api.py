@@ -48,7 +48,7 @@ class FakeSession:
         return FakeQuery(self.data.setdefault(model, []))
 
 
-def _problem(slug: str = "two-sum") -> Problem:
+def _problem(slug: str = "two-sum", mode: str = "function") -> Problem:
     return Problem(
         id=uuid.uuid4(),
         title="Two Sum",
@@ -56,7 +56,7 @@ def _problem(slug: str = "two-sum") -> Problem:
         description="Find two indices.",
         difficulty=Difficulty.EASY,
         tags=["Array"],
-        mode="function",
+        mode=mode,
         function_signature="def two_sum(nums: list[int], target: int) -> list[int]",
         time_limit=1000,
         memory_limit=256,
@@ -141,7 +141,7 @@ def test_problem_detail_returns_null_explanation_for_non_seed_problem():
 
 
 def test_problem_detail_supports_function_acm_view_in_same_case():
-    problem = _problem()
+    problem = _problem(mode="both")
     testcases = [_metadata_case(problem.id, 0, "[1,2,3]\n3", "[0, 1]", "[1,2,3]\n3")]
     db = FakeSession(problem, testcases)
     service = ProblemService(db)
@@ -152,7 +152,7 @@ def test_problem_detail_supports_function_acm_view_in_same_case():
     case_acm = detail_acm.sample_testcases[0]
     assert case_acm.display_mode == "acm"
     assert case_acm.input == "[1,2,3]\n3"
-    assert case_acm.function_input is None
+    assert case_acm.function_input == "[1,2,3]\n3"
 
     detail_function = service.get_problem_by_id(str(problem.id), "en", "function")
     if detail_function is None:
@@ -161,6 +161,7 @@ def test_problem_detail_supports_function_acm_view_in_same_case():
     assert case_function is not None
     assert case_function.display_mode == "function"
     assert case_function.function_input == "[1,2,3]\n3"
+    assert case_function.acm_input == "[1,2,3]\n3"
 
 
 def test_problem_detail_fallback_to_function_when_acm_view_is_missing():

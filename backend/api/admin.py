@@ -14,6 +14,7 @@ from backend.core.code_normalization import normalize_source_code
 from backend.core.database import get_db
 from backend.core.languages import Language
 from backend.core.locales import DEFAULT_LOCALE, ai_response_language
+from backend.core.security import get_password_hash
 from backend.models import (
     Difficulty,
     Problem,
@@ -75,6 +76,10 @@ class AdminUserUpdate(BaseModel):
         if invalid:
             raise ValueError(f"Invalid content admin permissions: {', '.join(invalid)}")
         return permissions
+
+
+class AdminPasswordReset(BaseModel):
+    new_password: str = Field(min_length=8)
 
 
 class AdminProblemUpdate(BaseModel):
@@ -224,6 +229,39 @@ def _normalize_case_flags(is_hidden: bool, is_sample: bool) -> tuple[bool, bool]
     return False, False
 
 
+def _user_token_version(user: User) -> int:
+    return int(getattr(user, "token_version", 0) or 0)
+
+
+def _active_admin_count(db: Session) -> int:
+    return (
+        db.query(User)
+        .filter(User.role == ROLE_ADMIN, User.is_active.is_(True))
+        .count()
+    )
+
+
+def _ensure_safe_user_update(db: Session, user: User, payload: AdminUserUpdate, current_user: User) -> None:
+    next_role = str(payload.role if payload.role is not None else (user.role or ROLE_USER))
+    next_active = bool(payload.is_active if payload.is_active is not None else user.is_active)
+    current_role = str(user.role or ROLE_USER)
+    currently_active = bool(user.is_active)
+
+    if current_user.role != ROLE_ADMIN:
+        if current_role != ROLE_USER:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can manage elevated accounts")
+        if payload.role is not None or payload.content_admin_permissions is not None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can change roles or permissions")
+
+    if str(user.id) == str(current_user.id):
+        if payload.is_active is False or (payload.role is not None and next_role != ROLE_ADMIN):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot disable or downgrade your own admin account")
+
+    removes_active_admin = currently_active and current_role == ROLE_ADMIN and (next_role != ROLE_ADMIN or not next_active)
+    if removes_active_admin and _active_admin_count(db) <= 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove the last active admin")
+
+
 @router.get("/overview")
 def overview(
     user_query: str | None = Query(None, max_length=100),
@@ -354,6 +392,7 @@ def update_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Content admin permissions require content_admin role",
         )
+    _ensure_safe_user_update(db, user, payload, current_user)
     if payload.role is not None:
         user.role = payload.role
         if payload.role != ROLE_CONTENT_ADMIN:
@@ -362,6 +401,25 @@ def update_user(
         user.content_admin_permissions = payload.content_admin_permissions
     if payload.is_active is not None:
         user.is_active = payload.is_active
+    db.commit()
+    return {"success": True}
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: str,
+    payload: AdminPasswordReset,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    require_admin(current_user)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if str(user.id) == str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Use account settings to change your own password")
+    user.password_hash = get_password_hash(payload.new_password)
+    user.token_version = _user_token_version(user) + 1
     db.commit()
     return {"success": True}
 

@@ -65,6 +65,7 @@ class User(Base):
     role = Column(String(20), default="user")
     content_admin_permissions = Column(ARRAY(String(80)), nullable=False, default=list)  # type: ignore[var-annotated]
     is_active = Column(Boolean, default=True)
+    token_version = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 

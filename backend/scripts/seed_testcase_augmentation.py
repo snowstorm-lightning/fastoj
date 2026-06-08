@@ -8,6 +8,7 @@ from copy import deepcopy
 from typing import Any
 
 from backend.scripts.seed_official_solutions import official_function_for_slug
+from backend.services.acm_views import build_acm_view
 from backend.services.problem_modes import FUNCTION_SIGNATURES
 
 DESIGN_SLUGS = {
@@ -164,16 +165,6 @@ def _format_value(value: Any, annotation: str, nested: bool = False) -> str:
     return str(value)
 
 
-def _json_line(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, separators=(",", ":"))
-
-
-def _input_from_args(args: list[Any]) -> str:
-    return "\n".join(_json_line(arg) for arg in args)
-
-
 def _expected_output(slug: str, input_data: str) -> str:
     signature = FUNCTION_SIGNATURES[slug]
     params = _params_from_signature(signature)
@@ -188,16 +179,13 @@ def _io_views_for_function_case(slug: str, input_data: str, output_value: str | 
         return {}
     params = _params_from_signature(signature)
     args = _load_args(input_data, params)
-    acm_input = _input_from_args(args)
+    output = output_value if output_value is not None else _expected_output(slug, input_data)
     io_views: dict[str, dict[str, str]] = {
         "function": {
             "input": input_data,
-            "output": output_value if output_value is not None else _expected_output(slug, input_data),
+            "output": output,
         },
-        "acm": {
-            "input": acm_input,
-            "output": output_value if output_value is not None else _expected_output(slug, input_data),
-        },
+        "acm": build_acm_view(slug, signature, args, output),
     }
     return io_views
 

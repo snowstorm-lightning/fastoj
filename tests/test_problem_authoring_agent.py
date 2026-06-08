@@ -467,6 +467,14 @@ def authored_both_payload() -> str:
     )
 
 
+def authored_function_payload() -> str:
+    payload = json.loads(authored_both_payload())
+    payload["mode"] = "function"
+    payload["input_format"] = "Function mode receives one integer value."
+    payload["output_format"] = "Function mode returns the same integer value."
+    return json.dumps(payload)
+
+
 def authored_multilanguage_payload() -> str:
     payload = json.loads(authored_payload(public_count=1, hidden_count=0))
     payload["official_solutions"] = [
@@ -1268,6 +1276,40 @@ def test_validation_accepts_both_mode_with_acm_and_function_contracts():
     assert {result["execution_mode"] for result in report["case_results"]} == {"function"}
     assert {result["validation_mode"] for result in report["case_results"]} == {"canonical_function"}
     assert {result["problem_mode"] for result in report["case_results"]} == {"both"}
+
+
+def test_function_draft_auto_adds_acm_metadata_and_promotes_to_both():
+    db = FakeSession()
+    service = ProblemAuthoringAgentService(
+        db,
+        provider=FakeProvider(authored_function_payload()),
+        validator=ProblemDraftValidationAdapter(EchoExecutor()),
+    )
+    request = ProblemAuthoringRequest(
+        topic="echo value",
+        difficulty="easy",
+        tags=["io"],
+        mode="function",
+        target_language="python",
+        locale="en",
+        model_profile="default",
+    )
+
+    draft, _run = service.create_draft(request, admin_user())
+
+    assert draft.status == "validated"
+    assert draft.mode == "both"
+    testcases = load_json(draft.testcases_json, [])
+    metadata = testcases[0]["io_metadata"]
+    assert metadata["function"]["input"] == "7"
+    assert metadata["acm"]["input"] == "7"
+    assert metadata["acm"]["generated_format"] == "structured-acm"
+
+    approved = service.approve_draft(str(draft.id), admin_user())
+    assert approved.approved_problem_id is not None
+    assert db.data[Problem][0].mode == "both"
+    persisted_metadata = json.loads(db.data[OJTestCase][0].io_metadata_json)
+    assert persisted_metadata["acm"]["input"] == "7"
 
 
 def test_authoring_output_match_accepts_json_string_expected_value():

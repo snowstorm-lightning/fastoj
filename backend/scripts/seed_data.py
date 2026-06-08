@@ -348,7 +348,7 @@ PROBLEMS_DATA.extend(HOT100_PROBLEMS_DATA)
 for item in PROBLEMS_DATA:
     signature = FUNCTION_SIGNATURES.get(item["problem"]["slug"])
     if signature:
-        item["problem"]["mode"] = "function"
+        item["problem"]["mode"] = "both"
         item["problem"]["function_signature"] = signature
 
 enrich_problem_descriptions(PROBLEMS_DATA)

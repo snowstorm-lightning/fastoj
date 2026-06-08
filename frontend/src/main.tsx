@@ -96,6 +96,18 @@ function roleLabel(role: string, locale: Locale): string {
   return localeText(locale, { zh: "用户", en: "User" });
 }
 
+function userStatusLabel(isActive: boolean, locale: Locale): string {
+  return isActive
+    ? localeText(locale, { zh: "启用中", en: "Active" })
+    : localeText(locale, { zh: "已停用", en: "Disabled" });
+}
+
+function userStatusActionLabel(isActive: boolean, locale: Locale): string {
+  return isActive
+    ? localeText(locale, { zh: "停用账号", en: "Disable account" })
+    : localeText(locale, { zh: "重新启用", en: "Enable account" });
+}
+
 function contentPermissionLabel(permission: string, locale: Locale): string {
   const labels: Record<string, { zh: string; en: string }> = {
     [CONTENT_PERMISSIONS.createOwnProblem]: { zh: "增加自己的题目", en: "Create own problems" },
@@ -110,6 +122,20 @@ function contentPermissionLabel(permission: string, locale: Locale): string {
 function togglePermission(list: string[] | undefined, permission: string): string[] {
   const current = list ?? [];
   return current.includes(permission) ? current.filter((item) => item !== permission) : [...current, permission];
+}
+
+function generateTemporaryPassword(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  const values = new Uint32Array(12);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(values);
+  } else {
+    for (let index = 0; index < values.length; index += 1) {
+      values[index] = Math.floor(Math.random() * alphabet.length);
+    }
+  }
+  const randomPart = Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
+  return `Aa1!${randomPart}`;
 }
 
 const AICopilotPanel = React.lazy(() =>
@@ -2499,6 +2525,43 @@ const ADMIN_TEXT_BY_LOCALE = {
     allDifficulty: "全部难度",
     allVisibility: "全部可见性",
     manage: "管理",
+    activeStatus: "启用中",
+    disabledStatus: "已停用",
+    disableAccount: "停用账号",
+    enableAccount: "重新启用",
+    viewDetails: "查看详情",
+    hideDetails: "收起详情",
+    chooseUserDetails: "选择一个用户查看账号、权限和密码重置操作。",
+    noUserManagePermission: "当前账号没有用户管理权限。",
+    accountOverview: "账号概览",
+    rolePermissions: "角色与权限",
+    accountStatus: "账号状态",
+    passwordReset: "密码重置",
+    auditInfo: "审计信息",
+    resetPassword: "重置密码",
+    newPassword: "新密码",
+    confirmNewPassword: "确认新密码",
+    generatePassword: "生成强密码",
+    copyPassword: "复制密码",
+    copied: "已复制",
+    copyPasswordFailed: "复制失败，请手动选择临时密码。",
+    resetPasswordHelp: "管理员重置后，请通过站外方式把临时密码告知用户。用户登录后可在账号设置中改为自己的密码。",
+    resetOwnPasswordHint: "请在右上角账号设置中修改自己的密码。",
+    passwordMismatch: "两次输入的密码不一致。",
+    passwordTooShort: "密码至少需要 8 位。",
+    resetPasswordSuccess: "密码已重置。旧登录会话已失效。",
+    userUpdateSuccess: "用户信息已更新。",
+    userUpdateFailed: "用户更新失败。",
+    userResetFailed: "密码重置失败。",
+    confirmDisableUser: "确定停用账号“{username}”吗？该用户将无法登录。",
+    confirmEnableUser: "确定重新启用账号“{username}”吗？",
+    confirmRoleChange: "确定将“{username}”的角色改为“{role}”吗？",
+    confirmPermissionChange: "确定修改“{username}”的内容管理员权限吗？",
+    confirmResetPassword: "确定重置“{username}”的密码吗？旧登录会话会立即失效。",
+    createdAtLabel: "创建时间",
+    updatedAtLabel: "更新时间",
+    accountIdLabel: "账号 ID",
+    noUsersFound: "没有找到用户。可以调整或清空筛选条件。",
     edit: "编辑",
     save: "保存",
     cancel: "取消",
@@ -2604,6 +2667,43 @@ const ADMIN_TEXT_BY_LOCALE = {
     allDifficulty: "All difficulty",
     allVisibility: "All visibility",
     manage: "Manage",
+    activeStatus: "Active",
+    disabledStatus: "Disabled",
+    disableAccount: "Disable account",
+    enableAccount: "Enable account",
+    viewDetails: "View details",
+    hideDetails: "Hide details",
+    chooseUserDetails: "Select a user to view account, permission, and password reset controls.",
+    noUserManagePermission: "This account does not have user management permission.",
+    accountOverview: "Account overview",
+    rolePermissions: "Role and permissions",
+    accountStatus: "Account status",
+    passwordReset: "Password reset",
+    auditInfo: "Audit info",
+    resetPassword: "Reset password",
+    newPassword: "New password",
+    confirmNewPassword: "Confirm new password",
+    generatePassword: "Generate strong password",
+    copyPassword: "Copy password",
+    copied: "Copied",
+    copyPasswordFailed: "Copy failed. Select the temporary password manually.",
+    resetPasswordHelp: "After reset, share the temporary password outside FastOJ. The user can change it in account settings after login.",
+    resetOwnPasswordHint: "Use the account settings in the top-right corner to change your own password.",
+    passwordMismatch: "The two passwords do not match.",
+    passwordTooShort: "Password must be at least 8 characters.",
+    resetPasswordSuccess: "Password reset. Existing sessions are no longer valid.",
+    userUpdateSuccess: "User updated.",
+    userUpdateFailed: "User update failed.",
+    userResetFailed: "Password reset failed.",
+    confirmDisableUser: "Disable account \"{username}\"? This user will not be able to log in.",
+    confirmEnableUser: "Enable account \"{username}\"?",
+    confirmRoleChange: "Change \"{username}\" role to \"{role}\"?",
+    confirmPermissionChange: "Change content admin permissions for \"{username}\"?",
+    confirmResetPassword: "Reset password for \"{username}\"? Existing sessions will be invalidated.",
+    createdAtLabel: "Created",
+    updatedAtLabel: "Updated",
+    accountIdLabel: "Account ID",
+    noUsersFound: "No users found. Adjust or clear the filters.",
     edit: "Edit",
     save: "Save",
     cancel: "Cancel",
@@ -3351,11 +3451,19 @@ export function ProblemImportForm({
 function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUser: CurrentUser | null; onBack: () => void }) {
   const text = getAdminText(locale);
   const adminAccess = canAccessAdmin(currentUser);
+  const canManageUsers = hasContentPermission(currentUser, CONTENT_PERMISSIONS.manageUsers);
+  const canEditUserRoles = currentUser?.role === "admin";
+  const canResetUserPasswords = currentUser?.role === "admin";
   const [adminSection, setAdminSection] = useState<AdminSection>("agent");
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState("");
   const [userStatusFilter, setUserStatusFilter] = useState("");
   const [userPage, setUserPage] = useState(1);
+  const [userActionMessage, setUserActionMessage] = useState("");
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
+  const [resetPasswordCopied, setResetPasswordCopied] = useState(false);
   const [problemSearch, setProblemSearch] = useState("");
   const [problemDifficultyFilter, setProblemDifficultyFilter] = useState("");
   const [problemVisibilityFilter, setProblemVisibilityFilter] = useState("");
@@ -3514,6 +3622,19 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   useEffect(() => () => stopAgentRunStream(), []);
 
   useEffect(() => {
+    if (adminSection === "users" && !canManageUsers) {
+      setAdminSection("agent");
+    }
+  }, [adminSection, canManageUsers]);
+
+  useEffect(() => {
+    setResetPasswordValue("");
+    setResetPasswordConfirm("");
+    setResetPasswordCopied(false);
+    setUserActionMessage("");
+  }, [selectedUserId]);
+
+  useEffect(() => {
     if (!selectedAgentSessionId) return;
     const session = selectedAgentSessionQuery.data
       ?? (agentSessionsQuery.data ?? []).find((item) => item.id === selectedAgentSessionId)
@@ -3564,9 +3685,103 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     );
   }
 
-  async function updateUser(userId: string, payload: Record<string, unknown>) {
-    await api.adminUpdateUser(userId, payload);
-    await overviewQuery.refetch();
+  async function updateUser(userId: string, payload: Record<string, unknown>, successMessage = text.userUpdateSuccess) {
+    setUpdatingUserId(userId);
+    setUserActionMessage("");
+    try {
+      await api.adminUpdateUser(userId, payload);
+      setUserActionMessage(successMessage);
+      await overviewQuery.refetch();
+    } catch (error) {
+      setUserActionMessage(error instanceof Error ? error.message : text.userUpdateFailed);
+    } finally {
+      setUpdatingUserId(null);
+    }
+  }
+
+  function canToggleUserStatus(user: any): boolean {
+    if (!canManageUsers) return false;
+    if (user.id === currentUser?.id) return false;
+    if (currentUser?.role !== "admin" && user.role === "admin") return false;
+    return true;
+  }
+
+  function canEditUserRole(user: any): boolean {
+    return Boolean(canEditUserRoles && user.id !== currentUser?.id);
+  }
+
+  function canEditUserPermissions(user: any): boolean {
+    return Boolean(canEditUserRoles && user.role === "content_admin" && user.id !== currentUser?.id);
+  }
+
+  async function toggleUserStatus(user: any) {
+    if (!canToggleUserStatus(user)) return;
+    const template = user.is_active ? text.confirmDisableUser : text.confirmEnableUser;
+    const confirmed = window.confirm(template.replace("{username}", user.username));
+    if (!confirmed) return;
+    await updateUser(user.id, { is_active: !user.is_active });
+  }
+
+  async function changeUserRole(user: any, nextRole: string) {
+    if (!canEditUserRole(user) || nextRole === user.role) return;
+    const confirmed = window.confirm(
+      text.confirmRoleChange
+        .replace("{username}", user.username)
+        .replace("{role}", roleLabel(nextRole, locale)),
+    );
+    if (!confirmed) return;
+    await updateUser(user.id, { role: nextRole });
+  }
+
+  async function toggleUserPermission(user: any, permission: string) {
+    if (!canEditUserPermissions(user)) return;
+    const confirmed = window.confirm(text.confirmPermissionChange.replace("{username}", user.username));
+    if (!confirmed) return;
+    await updateUser(user.id, {
+      content_admin_permissions: togglePermission(user.content_admin_permissions, permission),
+    });
+  }
+
+  function fillGeneratedPassword() {
+    const password = generateTemporaryPassword();
+    setResetPasswordValue(password);
+    setResetPasswordConfirm(password);
+    setResetPasswordCopied(false);
+  }
+
+  async function copyResetPassword() {
+    if (!resetPasswordValue) return;
+    try {
+      await navigator.clipboard?.writeText(resetPasswordValue);
+      setResetPasswordCopied(true);
+    } catch {
+      setUserActionMessage(text.copyPasswordFailed);
+    }
+  }
+
+  async function resetSelectedUserPassword() {
+    if (!selectedUser || !canResetUserPasswords || selectedUser.id === currentUser?.id) return;
+    if (resetPasswordValue.length < 8) {
+      setUserActionMessage(text.passwordTooShort);
+      return;
+    }
+    if (resetPasswordValue !== resetPasswordConfirm) {
+      setUserActionMessage(text.passwordMismatch);
+      return;
+    }
+    const confirmed = window.confirm(text.confirmResetPassword.replace("{username}", selectedUser.username));
+    if (!confirmed) return;
+    setUpdatingUserId(`password:${selectedUser.id}`);
+    setUserActionMessage("");
+    try {
+      await api.adminResetUserPassword(selectedUser.id, resetPasswordValue);
+      setUserActionMessage(text.resetPasswordSuccess);
+      await overviewQuery.refetch();
+    } catch (error) {
+      setUserActionMessage(error instanceof Error ? error.message : text.userResetFailed);
+    } finally {
+      setUpdatingUserId(null);
+    }
   }
 
   async function updateProblem(problemId: string, payload: Record<string, unknown>) {
@@ -4489,7 +4704,9 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         <p className="muted">{text.copy}</p>
         <nav className="admin-section-tabs segmented" aria-label={text.title}>
           <button type="button" className={adminSection === "agent" ? "active" : ""} aria-pressed={adminSection === "agent"} onClick={() => setAdminSection("agent")}>{text.adminAgentSection}</button>
-          <button type="button" className={adminSection === "users" ? "active" : ""} aria-pressed={adminSection === "users"} onClick={() => setAdminSection("users")}>{text.adminUsersSection}</button>
+          {canManageUsers ? (
+            <button type="button" className={adminSection === "users" ? "active" : ""} aria-pressed={adminSection === "users"} onClick={() => setAdminSection("users")}>{text.adminUsersSection}</button>
+          ) : null}
           <button type="button" className={adminSection === "problems" ? "active" : ""} aria-pressed={adminSection === "problems"} onClick={() => setAdminSection("problems")}>{text.adminProblemsSection}</button>
         </nav>
         {adminSection === "agent" ? <section className="admin-panel problem-agent-panel">
@@ -4835,111 +5052,181 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
           </div>
         </section> : null}
         {adminSection === "users" ? (
-          <section className="admin-panel admin-section-panel">
-            <div className="admin-panel-header">
-              <h2>{text.users}</h2>
-              <span className="muted">{pageSummary(userPagination)}</span>
-            </div>
-            <div className="admin-filters">
-              <input
-                value={userSearch}
-                onChange={(event) => {
-                  setUserSearch(event.target.value);
-                  setUserPage(1);
-                }}
-                placeholder={text.searchUsers}
-              />
-              <select
-                value={userRoleFilter}
-                onChange={(event) => {
-                  setUserRoleFilter(event.target.value);
-                  setUserPage(1);
-                }}
-              >
-                <option value="">{text.allRoles}</option>
-                <option value="user">{roleLabel("user", locale)}</option>
-                <option value="content_admin">{roleLabel("content_admin", locale)}</option>
-                <option value="admin">{roleLabel("admin", locale)}</option>
-              </select>
-              <select
-                value={userStatusFilter}
-                onChange={(event) => {
-                  setUserStatusFilter(event.target.value);
-                  setUserPage(1);
-                }}
-              >
-                <option value="">{text.allStatus}</option>
-                <option value="active">{text.active}</option>
-                <option value="disabled">{text.disabled}</option>
-              </select>
-            </div>
-            {users.length ? users.map((user: any) => (
-              <article className={selectedUserId === user.id ? "admin-row active" : "admin-row"} key={user.id}>
-                <div>
-                  <strong>{user.username}</strong>
-                  <span>{user.email}</span>
+          <section className="admin-panel admin-section-panel admin-users-panel">
+            {canManageUsers ? (
+              <>
+                <div className="admin-panel-header">
+                  <h2>{text.users}</h2>
+                  <span className="muted">{pageSummary(userPagination)}</span>
                 </div>
-                <select
-                  value={user.role}
-                  disabled={currentUser?.role !== "admin"}
-                  onChange={(event) => updateUser(user.id, { role: event.target.value })}
-                >
-                  <option value="user">{roleLabel("user", locale)}</option>
-                  <option value="content_admin">{roleLabel("content_admin", locale)}</option>
-                  <option value="admin">{roleLabel("admin", locale)}</option>
-                </select>
-                <button onClick={() => updateUser(user.id, { is_active: !user.is_active })}>
-                  {user.is_active ? text.active : text.disabled}
-                </button>
-                <button onClick={() => setSelectedUserId(selectedUserId === user.id ? null : user.id)}>{text.manage}</button>
-              </article>
-            )) : <p className="muted">{text.noResults}</p>}
-            <div className="admin-pagination">
-              <button disabled={userPage <= 1} onClick={() => setUserPage((page) => Math.max(1, page - 1))}>{text.previous}</button>
-              <button disabled={userPage >= Math.max(Number(userPagination.total_pages ?? 0), 1)} onClick={() => setUserPage((page) => page + 1)}>{text.next}</button>
-            </div>
-            {selectedUser ? (
-              <div className="admin-edit-panel">
-                <h3>{selectedUser.username}</h3>
-                <span className="muted">{selectedUser.id}</span>
-                <div className="admin-edit-grid">
-                  <label>{localeText(locale, { zh: "角色", en: "Role" })}
-                    <select
-                      value={selectedUser.role}
-                      disabled={currentUser?.role !== "admin"}
-                      onChange={(event) => updateUser(selectedUser.id, { role: event.target.value })}
-                    >
-                      <option value="user">{roleLabel("user", locale)}</option>
-                      <option value="content_admin">{roleLabel("content_admin", locale)}</option>
-                      <option value="admin">{roleLabel("admin", locale)}</option>
-                    </select>
-                  </label>
-                  {selectedUser.role === "content_admin" ? (
-                    <div className="agent-field language-checklist-label">
-                      <span>{localeText(locale, { zh: "内容管理员权限", en: "Content admin permissions" })}</span>
-                      <div className="language-checklist">
-                        {Object.values(CONTENT_PERMISSIONS).map((permission) => (
-                          <label className="checkbox-label language-chip" key={permission}>
-                            <input
-                              type="checkbox"
-                              checked={(selectedUser.content_admin_permissions ?? []).includes(permission)}
-                              disabled={currentUser?.role !== "admin"}
-                              onChange={() => updateUser(selectedUser.id, {
-                                content_admin_permissions: togglePermission(selectedUser.content_admin_permissions, permission),
-                              })}
-                            />
-                            {contentPermissionLabel(permission, locale)}
-                          </label>
-                        ))}
-                      </div>
+                <div className="admin-filters admin-user-filters">
+                  <input
+                    value={userSearch}
+                    onChange={(event) => {
+                      setUserSearch(event.target.value);
+                      setUserPage(1);
+                    }}
+                    placeholder={text.searchUsers}
+                  />
+                  <select
+                    value={userRoleFilter}
+                    onChange={(event) => {
+                      setUserRoleFilter(event.target.value);
+                      setUserPage(1);
+                    }}
+                  >
+                    <option value="">{text.allRoles}</option>
+                    <option value="user">{roleLabel("user", locale)}</option>
+                    <option value="content_admin">{roleLabel("content_admin", locale)}</option>
+                    <option value="admin">{roleLabel("admin", locale)}</option>
+                  </select>
+                  <select
+                    value={userStatusFilter}
+                    onChange={(event) => {
+                      setUserStatusFilter(event.target.value);
+                      setUserPage(1);
+                    }}
+                  >
+                    <option value="">{text.allStatus}</option>
+                    <option value="active">{text.activeStatus}</option>
+                    <option value="disabled">{text.disabledStatus}</option>
+                  </select>
+                </div>
+                {userActionMessage ? <p className="muted admin-user-message">{userActionMessage}</p> : null}
+                {!selectedUser ? <p className="muted admin-user-inline-hint">{text.chooseUserDetails}</p> : null}
+                <div className={selectedUser ? "admin-users-layout has-detail" : "admin-users-layout"}>
+                  <div className="admin-user-list">
+                    <div className="admin-user-list-head" aria-hidden="true">
+                      <span>{text.accountOverview}</span>
+                      <span>{localeText(locale, { zh: "角色", en: "Role" })}</span>
+                      <span>{text.accountStatus}</span>
+                      <span>{text.updatedAtLabel}</span>
+                      <span>{localeText(locale, { zh: "操作", en: "Actions" })}</span>
                     </div>
+                    {users.length ? users.map((user: any) => {
+                      const selected = selectedUserId === user.id;
+                      const statusActionAllowed = canToggleUserStatus(user);
+                      return (
+                        <article className={selected ? "admin-user-row active" : "admin-user-row"} key={user.id}>
+                          <div className="admin-user-account">
+                            <strong>{user.username}</strong>
+                            <span>{user.email}</span>
+                          </div>
+                          <span className={`user-role-chip role-${String(user.role).replace(/_/g, "-")}`}>{roleLabel(user.role, locale)}</span>
+                          <span className={user.is_active ? "user-status-chip active" : "user-status-chip disabled"}>{userStatusLabel(Boolean(user.is_active), locale)}</span>
+                          <span className="admin-user-date">{shortDateTime(user.updated_at ?? user.created_at)}</span>
+                          <div className="admin-user-actions">
+                            <button onClick={() => setSelectedUserId(selected ? null : user.id)}>
+                              {selected ? text.hideDetails : text.viewDetails}
+                            </button>
+                            <button
+                              className={user.is_active ? "danger-text" : "primary"}
+                              disabled={!statusActionAllowed || updatingUserId === user.id}
+                              onClick={() => toggleUserStatus(user)}
+                            >
+                              {updatingUserId === user.id ? text.loading : userStatusActionLabel(Boolean(user.is_active), locale)}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    }) : <p className="muted admin-user-empty">{text.noUsersFound}</p>}
+                    <div className="admin-pagination">
+                      <button disabled={userPage <= 1} onClick={() => setUserPage((page) => Math.max(1, page - 1))}>{text.previous}</button>
+                      <button disabled={userPage >= Math.max(Number(userPagination.total_pages ?? 0), 1)} onClick={() => setUserPage((page) => page + 1)}>{text.next}</button>
+                    </div>
+                  </div>
+                  {selectedUser ? (
+                    <aside className="admin-user-detail">
+                      <>
+                        <div className="admin-user-detail-header">
+                          <div>
+                            <h3>{selectedUser.username}</h3>
+                            <span>{selectedUser.email}</span>
+                          </div>
+                          <span className={selectedUser.is_active ? "user-status-chip active" : "user-status-chip disabled"}>{userStatusLabel(Boolean(selectedUser.is_active), locale)}</span>
+                        </div>
+                        <section className="admin-user-section">
+                          <h4>{text.accountOverview}</h4>
+                          <dl className="admin-user-facts">
+                            <div><dt>{text.accountIdLabel}</dt><dd>{selectedUser.id}</dd></div>
+                            <div><dt>{text.createdAtLabel}</dt><dd>{shortDateTime(selectedUser.created_at)}</dd></div>
+                            <div><dt>{text.updatedAtLabel}</dt><dd>{shortDateTime(selectedUser.updated_at)}</dd></div>
+                          </dl>
+                        </section>
+                        <section className="admin-user-section">
+                          <h4>{text.rolePermissions}</h4>
+                          <label>{localeText(locale, { zh: "角色", en: "Role" })}
+                            <select
+                              value={selectedUser.role}
+                              disabled={!canEditUserRole(selectedUser) || updatingUserId === selectedUser.id}
+                              onChange={(event) => changeUserRole(selectedUser, event.target.value)}
+                            >
+                              <option value="user">{roleLabel("user", locale)}</option>
+                              <option value="content_admin">{roleLabel("content_admin", locale)}</option>
+                              <option value="admin">{roleLabel("admin", locale)}</option>
+                            </select>
+                          </label>
+                          {selectedUser.role === "content_admin" ? (
+                            <div className="agent-field language-checklist-label">
+                              <span>{localeText(locale, { zh: "内容管理员权限", en: "Content admin permissions" })}</span>
+                              <div className="language-checklist">
+                                {Object.values(CONTENT_PERMISSIONS).map((permission) => (
+                                  <label className="checkbox-label language-chip" key={permission}>
+                                    <input
+                                      type="checkbox"
+                                      checked={(selectedUser.content_admin_permissions ?? []).includes(permission)}
+                                      disabled={!canEditUserPermissions(selectedUser) || updatingUserId === selectedUser.id}
+                                      onChange={() => toggleUserPermission(selectedUser, permission)}
+                                    />
+                                    {contentPermissionLabel(permission, locale)}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </section>
+                        <section className="admin-user-section">
+                          <h4>{text.accountStatus}</h4>
+                          <div className="admin-user-status-line">
+                            <span className={selectedUser.is_active ? "user-status-chip active" : "user-status-chip disabled"}>{userStatusLabel(Boolean(selectedUser.is_active), locale)}</span>
+                            <button
+                              className={selectedUser.is_active ? "danger-text" : "primary"}
+                              disabled={!canToggleUserStatus(selectedUser) || updatingUserId === selectedUser.id}
+                              onClick={() => toggleUserStatus(selectedUser)}
+                            >
+                              {updatingUserId === selectedUser.id ? text.loading : userStatusActionLabel(Boolean(selectedUser.is_active), locale)}
+                            </button>
+                          </div>
+                        </section>
+                        <section className="admin-user-section admin-password-reset">
+                          <h4>{text.passwordReset}</h4>
+                          {canResetUserPasswords && selectedUser.id !== currentUser?.id ? (
+                            <>
+                              <p className="muted">{text.resetPasswordHelp}</p>
+                              <div className="admin-password-grid">
+                                <label>{text.newPassword}<input type="password" value={resetPasswordValue} onChange={(event) => { setResetPasswordValue(event.target.value); setResetPasswordCopied(false); }} autoComplete="new-password" /></label>
+                                <label>{text.confirmNewPassword}<input type="password" value={resetPasswordConfirm} onChange={(event) => setResetPasswordConfirm(event.target.value)} autoComplete="new-password" /></label>
+                              </div>
+                              <div className="agent-actions">
+                                <button onClick={fillGeneratedPassword}>{text.generatePassword}</button>
+                                <button disabled={!resetPasswordValue} onClick={copyResetPassword}>{resetPasswordCopied ? text.copied : text.copyPassword}</button>
+                                <button
+                                  className="primary"
+                                  disabled={updatingUserId === `password:${selectedUser.id}` || !resetPasswordValue || !resetPasswordConfirm}
+                                  onClick={resetSelectedUserPassword}
+                                >
+                                  {updatingUserId === `password:${selectedUser.id}` ? text.loading : text.resetPassword}
+                                </button>
+                              </div>
+                            </>
+                          ) : <p className="muted">{text.resetOwnPasswordHint}</p>}
+                        </section>
+                      </>
+                    </aside>
                   ) : null}
-                  <button onClick={() => updateUser(selectedUser.id, { is_active: !selectedUser.is_active })}>
-                    {selectedUser.is_active ? text.disabled : text.active}
-                  </button>
                 </div>
-              </div>
-            ) : null}
+              </>
+            ) : <p className="muted">{text.noUserManagePermission}</p>}
           </section>
         ) : null}
         {adminSection === "problems" ? (

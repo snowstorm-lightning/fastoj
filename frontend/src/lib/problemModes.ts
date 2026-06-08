@@ -715,7 +715,8 @@ export function getProblemMode(problem?: AnyProblem | null) {
     }),
   );
   const isAcmPrimary = problem?.mode === "acm";
-  const supportsAcm = isAcmPrimary || ((problem?.mode === "function" || problem?.mode === "both") && sampleSupportsAcm);
+  const hasSampleMetadata = Array.isArray(problem?.sample_testcases);
+  const supportsAcm = isAcmPrimary || (problem?.mode === "both" && (!hasSampleMetadata || sampleSupportsAcm));
   return {
     defaultMode: functionSpec ? "function" as JudgeMode : "acm" as JudgeMode,
     supportsFunction,

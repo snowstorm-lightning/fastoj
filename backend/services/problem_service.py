@@ -54,8 +54,6 @@ class ProblemService:
             normalized_mode = str(problem.mode or "").lower()
             if normalized_mode in {"acm", "both"}:
                 supports_acm = cls._has_io_view(metadata, "acm") or normalized_mode == "acm"
-            elif normalized_mode == "function":
-                supports_acm = cls._has_io_view(metadata, "acm")
             elif supports_function:
                 supports_acm = cls._has_io_view(metadata, "acm")
         return {
@@ -278,14 +276,10 @@ class ProblemService:
         metadata = self._io_metadata(testcase)
         acm_view = metadata.get("acm") if isinstance(metadata.get("acm"), dict) else {}
         function_view = metadata.get("function") if isinstance(metadata.get("function"), dict) else {}
-        selected_display = display_mode or "acm"
-        display_supports_acm = selected_display == "acm"
         supports_function = bool(self._function_signature(problem))
-        selected_function_view = (
-            function_view if function_view else {"input": str(testcase.input), "output": str(testcase.output)}
-            if supports_function
-            else {}
-        )
+        selected_function_view = function_view
+        if not selected_function_view and supports_function:
+            selected_function_view = {"input": str(testcase.input), "output": str(testcase.output)}
         return SampleTestCase(
             input=input_value,
             output=output_value,
@@ -296,13 +290,13 @@ class ProblemService:
                 output_value,
                 locale,
             ),
-            acm_input=str(acm_view.get("input")) if display_supports_acm and acm_view.get("input") is not None else None,
+            acm_input=str(acm_view.get("input")) if acm_view.get("input") is not None else None,
             acm_output=str(acm_view.get("output")) if acm_view.get("output") is not None else None,
             function_input=str(selected_function_view.get("input"))
-            if display_supports_acm is False and selected_function_view.get("input") is not None
+            if selected_function_view.get("input") is not None
             else None,
             function_output=str(selected_function_view.get("output"))
-            if display_supports_acm is False and selected_function_view.get("output") is not None
+            if selected_function_view.get("output") is not None
             else None,
             display_mode=display_mode,
         )

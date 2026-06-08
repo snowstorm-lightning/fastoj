@@ -65,7 +65,7 @@ def test_seed_catalog_descriptions_focus_on_problem_meaning_not_platform_contrac
         problem = item["problem"]
         description = problem["description"]
 
-        assert problem["mode"] == "function"
+        assert problem["mode"] == "both"
         assert problem["function_signature"] not in description
         assert len(description.split("\n\n")) >= 2
         for fragment in banned_fragments:
@@ -160,6 +160,7 @@ def test_seed_function_testcases_have_acm_and_function_views():
     for item in PROBLEMS_DATA:
         if item["problem"]["slug"] not in FUNCTION_SIGNATURES:
             continue
+        assert item["problem"]["mode"] == "both"
         for index, testcase in enumerate(_expanded_testcases(item)):
             metadata = testcase.get("io_metadata")
             assert isinstance(metadata, dict), item["problem"]["slug"]
@@ -173,6 +174,16 @@ def test_seed_function_testcases_have_acm_and_function_views():
             assert function_view.get("output") is not None, (item["problem"]["slug"], index)
             assert acm_view.get("input") is not None, (item["problem"]["slug"], index)
             assert acm_view.get("output") is not None, (item["problem"]["slug"], index)
+
+
+def test_two_car_parking_lot_has_structured_acm_sample_view():
+    item = next(problem for problem in PROBLEMS_DATA if problem["problem"]["slug"] == "two-car-parking-lot")
+    sample = _expanded_testcases(item)[0]
+    acm_view = sample["io_metadata"]["acm"]
+
+    assert acm_view["generated_format"] == "structured-acm"
+    assert acm_view["input"] == "3 3\nA.a\n##.\nB.b"
+    assert not acm_view["input"].startswith("[[")
 
 
 def test_seed_python_official_solutions_pass_all_seed_cases():

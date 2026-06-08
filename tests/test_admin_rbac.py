@@ -6,18 +6,22 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from backend.api.admin import (
+    CONTENT_PERMISSION_MANAGE_USERS,
     CONTENT_PERMISSION_MODERATE_DISCUSSIONS,
     CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS,
     ROLE_ADMIN,
     ROLE_CONTENT_ADMIN,
     ROLE_USER,
+    AdminPasswordReset,
     AdminUserUpdate,
     content_admin_permissions,
     has_content_permission,
     require_admin,
     require_content_permission,
+    reset_user_password,
     update_user,
 )
+from backend.core.security import verify_password
 from backend.core.time import utc_now
 from backend.models import User
 
@@ -34,11 +38,18 @@ class FakeQuery:
             value = getattr(right, "value", None)
             if field_name is None:
                 continue
+            if str(right) == "true":
+                value = True
+            elif str(right) == "false":
+                value = False
             self.items = [item for item in self.items if str(getattr(item, field_name)) == str(value)]
         return self
 
     def first(self):
         return self.items[0] if self.items else None
+
+    def count(self):
+        return len(self.items)
 
 
 class FakeSession:
@@ -51,6 +62,9 @@ class FakeSession:
 
     def commit(self):
         self.committed = True
+
+    def refresh(self, _user):
+        pass
 
 
 def _user(role: str = ROLE_USER, permissions: list[str] | None = None) -> User:
@@ -134,3 +148,108 @@ def test_content_admin_permissions_require_content_admin_role():
 def test_unknown_content_admin_permission_is_rejected():
     with pytest.raises(ValidationError):
         AdminUserUpdate(role=ROLE_CONTENT_ADMIN, content_admin_permissions=["delete_everything"])
+
+
+def test_content_admin_cannot_disable_highest_admin():
+    target = _user(ROLE_ADMIN)
+    actor = _user(ROLE_CONTENT_ADMIN, [CONTENT_PERMISSION_MANAGE_USERS])
+    db = FakeSession([target, actor])
+
+    with pytest.raises(HTTPException) as exc_info:
+        update_user(str(target.id), AdminUserUpdate(is_active=False), db, actor)
+
+    assert exc_info.value.status_code == 403
+    assert target.is_active is True
+    assert db.committed is False
+
+
+def test_content_admin_cannot_change_user_role_or_permissions():
+    target = _user(ROLE_USER)
+    actor = _user(ROLE_CONTENT_ADMIN, [CONTENT_PERMISSION_MANAGE_USERS])
+    db = FakeSession([target, actor])
+
+    with pytest.raises(HTTPException) as exc_info:
+        update_user(str(target.id), AdminUserUpdate(role=ROLE_CONTENT_ADMIN), db, actor)
+
+    assert exc_info.value.status_code == 403
+    assert target.role == ROLE_USER
+    assert db.committed is False
+
+
+def test_content_admin_cannot_manage_elevated_accounts():
+    target = _user(ROLE_CONTENT_ADMIN, [CONTENT_PERMISSION_UPDATE_OWN_PROBLEMS])
+    actor = _user(ROLE_CONTENT_ADMIN, [CONTENT_PERMISSION_MANAGE_USERS])
+    db = FakeSession([target, actor])
+
+    with pytest.raises(HTTPException) as exc_info:
+        update_user(str(target.id), AdminUserUpdate(is_active=False), db, actor)
+
+    assert exc_info.value.status_code == 403
+    assert target.is_active is True
+    assert db.committed is False
+
+
+def test_admin_cannot_remove_last_active_admin():
+    admin = _user(ROLE_ADMIN)
+    db = FakeSession([admin])
+
+    with pytest.raises(HTTPException) as exc_info:
+        update_user(str(admin.id), AdminUserUpdate(is_active=False), db, admin)
+
+    assert exc_info.value.status_code == 400
+    assert admin.is_active is True
+    assert db.committed is False
+
+
+def test_admin_cannot_downgrade_self():
+    admin = _user(ROLE_ADMIN)
+    other_admin = _user(ROLE_ADMIN)
+    db = FakeSession([admin, other_admin])
+
+    with pytest.raises(HTTPException) as exc_info:
+        update_user(str(admin.id), AdminUserUpdate(role=ROLE_USER), db, admin)
+
+    assert exc_info.value.status_code == 400
+    assert admin.role == ROLE_ADMIN
+    assert db.committed is False
+
+
+def test_admin_can_reset_user_password_and_invalidate_tokens():
+    target = _user(ROLE_USER)
+    target.password_hash = "old"
+    target.token_version = 4
+    db = FakeSession([target])
+
+    response = reset_user_password(str(target.id), AdminPasswordReset(new_password="newpassword"), db, _user(ROLE_ADMIN))
+
+    assert response == {"success": True}
+    assert verify_password("newpassword", target.password_hash)
+    assert target.token_version == 5
+    assert db.committed is True
+
+
+def test_admin_reset_password_rejects_self():
+    admin = _user(ROLE_ADMIN)
+    db = FakeSession([admin])
+
+    with pytest.raises(HTTPException) as exc_info:
+        reset_user_password(str(admin.id), AdminPasswordReset(new_password="newpassword"), db, admin)
+
+    assert exc_info.value.status_code == 400
+    assert db.committed is False
+
+
+def test_content_admin_cannot_reset_user_password():
+    target = _user(ROLE_USER)
+    db = FakeSession([target])
+
+    with pytest.raises(HTTPException) as exc_info:
+        reset_user_password(
+            str(target.id),
+            AdminPasswordReset(new_password="newpassword"),
+            db,
+            _user(ROLE_CONTENT_ADMIN, [CONTENT_PERMISSION_MANAGE_USERS]),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert db.committed is False

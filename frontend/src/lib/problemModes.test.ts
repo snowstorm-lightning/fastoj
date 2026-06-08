@@ -102,6 +102,33 @@ describe("problem mode metadata", () => {
     expect(buildStarter(generated, "python", "function")).toContain("def echo_value");
   });
 
+  it("keeps dual-mode list items ACM capable before detail samples are loaded", () => {
+    const generated = {
+      ...twoSum,
+      slug: "agent-dual-list-item",
+      mode: "both",
+      function_signature: "def echo_value(value: int) -> int",
+    };
+    const mode = getProblemMode(generated);
+
+    expect(mode.supportsFunction).toBe(true);
+    expect(mode.supportsAcm).toBe(true);
+  });
+
+  it("does not expose ACM for function-only problems even when stale ACM metadata exists", () => {
+    const generated = {
+      ...twoSum,
+      slug: "agent-function-only",
+      mode: "function",
+      function_signature: "def echo_value(value: int) -> int",
+      sample_testcases: [{ input: "1", output: "1", acm_input: "1", acm_output: "1" }],
+    };
+    const mode = getProblemMode(generated);
+
+    expect(mode.supportsFunction).toBe(true);
+    expect(mode.supportsAcm).toBe(false);
+  });
+
   it("builds dynamic function starters for the selected language", () => {
     const generated = {
       ...twoSum,
