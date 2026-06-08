@@ -115,10 +115,16 @@ export function AICopilotPanel({
       <div className="copilot-actions">
         <button title={localeText(locale, { zh: "解释最近一次判题结果", en: "Explain latest judge result" })} onClick={onExplain} disabled={disabled || !submission}>{localeText(locale, { zh: "解释", en: "Explain" })}</button>
         <button title={localeText(locale, { zh: "审查最近一次提交代码", en: "Review latest submitted code" })} onClick={onReview} disabled={disabled || !submission}>{localeText(locale, { zh: "审查", en: "Review" })}</button>
-        <button title={localeText(locale, { zh: "轻提示", en: "Light hint" })} onClick={() => onHint(1)} disabled={disabled}>{localeText(locale, { zh: "提示 1", en: "Hint 1" })}</button>
-        <button title={localeText(locale, { zh: "方向提示", en: "Directional hint" })} onClick={() => onHint(2)} disabled={disabled}>{localeText(locale, { zh: "提示 2", en: "Hint 2" })}</button>
-        <button title={localeText(locale, { zh: "强提示", en: "Strong hint" })} onClick={() => onHint(3)} disabled={disabled}>{localeText(locale, { zh: "提示 3", en: "Hint 3" })}</button>
       </div>
+
+      <details className="copilot-hint-actions">
+        <summary>{localeText(locale, { zh: "AI 提示", en: "AI hints" })}</summary>
+        <div className="copilot-actions">
+          <button title={localeText(locale, { zh: "轻提示", en: "Light hint" })} onClick={() => onHint(1)} disabled={disabled}>{localeText(locale, { zh: "轻提示", en: "Light hint" })}</button>
+          <button title={localeText(locale, { zh: "方向提示", en: "Directional hint" })} onClick={() => onHint(2)} disabled={disabled}>{localeText(locale, { zh: "方向提示", en: "Directional hint" })}</button>
+          <button title={localeText(locale, { zh: "重提示", en: "Strong hint" })} onClick={() => onHint(3)} disabled={disabled}>{localeText(locale, { zh: "重提示", en: "Strong hint" })}</button>
+        </div>
+      </details>
 
       <section className="ai-chat-box">
         <h3>{localeText(locale, { zh: "AI 对话", en: "AI Chat" })}</h3>

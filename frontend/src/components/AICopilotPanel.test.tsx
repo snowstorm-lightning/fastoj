@@ -21,7 +21,7 @@ test("renders AI copilot controls", () => {
     />,
   );
   expect(screen.getByLabelText("AI Judge Copilot")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Hint 1" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Light hint" })).toBeEnabled();
 });
 
 test("keeps public case diff out of the AI copilot", () => {

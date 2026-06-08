@@ -278,44 +278,14 @@ describe("API error formatting", () => {
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         success: true,
-        data: {
-          id: "comment-2",
-          problem_id: "problem-1",
-          user_id: "user-1",
-          author: "alice",
-          body: "Nested reply",
-          parent_id: "comment-1",
-          like_count: 1,
-          liked_by_me: true,
-          reply_count: 0,
-          can_delete: true,
-          is_deleted: false,
-          is_template: false,
-          replies: [],
-          created_at: "2026-06-07T00:00:00Z",
-        },
+        data: { liked: true, like_count: 1 },
       }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         success: true,
-        data: {
-          id: "comment-2",
-          problem_id: "problem-1",
-          user_id: "user-1",
-          author: "alice",
-          body: "Nested reply",
-          parent_id: "comment-1",
-          like_count: 0,
-          liked_by_me: false,
-          reply_count: 0,
-          can_delete: true,
-          is_deleted: false,
-          is_template: false,
-          replies: [],
-          created_at: "2026-06-07T00:00:00Z",
-        },
+        data: { liked: false, like_count: 0 },
       }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -337,9 +307,9 @@ describe("API error formatting", () => {
     });
     expect(reply.parent_id).toBe("comment-1");
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/problems/problem-1/discussions/comment-2/like");
-    expect(liked.liked_by_me).toBe(true);
+    expect(liked).toEqual({ liked: true, like_count: 1 });
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "DELETE" });
-    expect(unliked.like_count).toBe(0);
+    expect(unliked).toEqual({ liked: false, like_count: 0 });
     expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/v1/problems/problem-1/discussions/comment-2");
 
     fetchMock.mockRestore();

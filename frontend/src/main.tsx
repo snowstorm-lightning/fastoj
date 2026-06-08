@@ -167,7 +167,7 @@ const TrainingGraph = React.lazy(() =>
 );
 
 type View = "library" | "workbench" | "graph" | "auth" | "settings" | "admin";
-type DetailTab = "cases" | "solution" | "judge" | "trail" | "discussion";
+type DetailTab = "cases" | "hint" | "solution" | "judge" | "trail" | "discussion";
 type AuthMode = "login" | "register";
 type LibraryLayout = "card" | "list";
 type AppTheme = "light" | "dark";
@@ -285,7 +285,7 @@ const DEFAULT_LEFT_PANEL_WIDTH = 390;
 const DEFAULT_RIGHT_PANEL_WIDTH = 430;
 const DEFAULT_EDITOR_HEIGHT = 390;
 const DEFAULT_AGENT_LEFT_DRAWER_WIDTH = 300;
-const DEFAULT_AGENT_RIGHT_DRAWER_WIDTH = 540;
+const DEFAULT_AGENT_RIGHT_DRAWER_WIDTH = 460;
 const SIDE_PANEL_SNAP_WIDTH = 88;
 const SIDE_PANEL_DRAG_MIN = 56;
 const AGENT_DRAWER_RAIL_WIDTH = 30;
@@ -326,6 +326,26 @@ function ResetTemplateIcon() {
     <svg className="reset-template-icon" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M5.4 9.2a7.2 7.2 0 1 1 1.2 6.9" />
       <path d="M5.4 9.2H2.2V6" />
+    </svg>
+  );
+}
+
+function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
+  return (
+    <svg className="password-eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2.6 12s3.4-6 9.4-6 9.4 6 9.4 6-3.4 6-9.4 6-9.4-6-9.4-6Z" />
+      <circle cx="12" cy="12" r="2.8" />
+      {visible ? <path d="M4.8 20.2 19.2 3.8" /> : null}
+    </svg>
+  );
+}
+
+function ThumbUpIcon({ active }: { active: boolean }) {
+  return (
+    <svg className="discussion-like-icon" viewBox="0 0 24 24" aria-hidden="true" data-active={active ? "true" : "false"}>
+      <path d="M7 10.5v9" />
+      <path d="M7 19.5H4.8A1.8 1.8 0 0 1 3 17.7v-5.4a1.8 1.8 0 0 1 1.8-1.8H7" />
+      <path d="M7 11l4.6-7.1c.42-.65 1.42-.48 1.6.27.28 1.17.16 2.4-.34 3.49L12 9.5h6.4a2.1 2.1 0 0 1 2.05 2.57l-1.28 5.6a2.7 2.7 0 0 1-2.63 2.1H10.1A3.1 3.1 0 0 1 7 16.67V11Z" />
     </svg>
   );
 }
@@ -1389,6 +1409,7 @@ function Workspace({
   const [aiModel, setAiModel] = useState<AIModelProfile>(() => (localStorage.getItem("fastoj.aiModel") as AIModelProfile | null) ?? "default");
   const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("fastoj.leftOpen") !== "false");
   const [rightOpen, setRightOpen] = useState(() => localStorage.getItem("fastoj.rightOpen") !== "false");
+  const [headerCollapsed, setHeaderCollapsed] = useState(() => localStorage.getItem("fastoj.workbenchHeaderCollapsed") === "true");
   const [leftWidth, setLeftWidth] = useState(() => Number(localStorage.getItem("fastoj.leftWidth") ?? DEFAULT_LEFT_PANEL_WIDTH));
   const [rightWidth, setRightWidth] = useState(() => Number(localStorage.getItem("fastoj.rightWidth") ?? DEFAULT_RIGHT_PANEL_WIDTH));
   const [editorHeight, setEditorHeight] = useState(() => clamp(Number(localStorage.getItem("fastoj.editorHeight") ?? DEFAULT_EDITOR_HEIGHT), EDITOR_MIN_HEIGHT, EDITOR_MAX_HEIGHT));
@@ -1438,6 +1459,7 @@ function Workspace({
 
   useEffect(() => { localStorage.setItem("fastoj.leftOpen", String(leftOpen)); }, [leftOpen]);
   useEffect(() => { localStorage.setItem("fastoj.rightOpen", String(rightOpen)); }, [rightOpen]);
+  useEffect(() => { localStorage.setItem("fastoj.workbenchHeaderCollapsed", String(headerCollapsed)); }, [headerCollapsed]);
   useEffect(() => { localStorage.setItem("fastoj.leftWidth", String(leftWidth)); }, [leftWidth]);
   useEffect(() => { localStorage.setItem("fastoj.rightWidth", String(rightWidth)); }, [rightWidth]);
   useEffect(() => { localStorage.setItem("fastoj.editorHeight", String(editorHeight)); }, [editorHeight]);
@@ -1839,19 +1861,41 @@ function Workspace({
   } as React.CSSProperties;
 
   return (
-    <main className={`workbench-page ${leftOpen ? "" : "left-collapsed"} ${rightOpen ? "" : "right-collapsed"} ${resizing ? "is-resizing" : ""}`} style={gridStyle}>
-      <section className="workbench-header">
+    <main className={`workbench-page ${headerCollapsed ? "header-collapsed" : ""} ${leftOpen ? "" : "left-collapsed"} ${rightOpen ? "" : "right-collapsed"} ${resizing ? "is-resizing" : ""}`} style={gridStyle}>
+      <section className={`workbench-header ${headerCollapsed ? "collapsed" : ""}`}>
         <button className="icon-button" title={text.backLibrary} onClick={onBackToLibrary}><IconGlyph>{"<"}</IconGlyph></button>
-        <div>
-          <p className="eyebrow">{text.workbench}</p>
+        <div className="workbench-title-block">
+          {!headerCollapsed ? <p className="eyebrow">{text.workbench}</p> : null}
           <h1>{displayProblem?.title ?? text.loadingProblem}</h1>
-          <div className="chips">
-            {problem ? <span className={`difficulty ${problem.difficulty.toLowerCase()}`}>{localizeDifficulty(problem.difficulty, locale)}</span> : null}
-            {problem?.tags.map((tag) => <span key={tag}>{localizeTag(tag, locale)}</span>)}
-            {problem ? <span>{problem.time_limit}ms / {problem.memory_limit}MB</span> : null}
-          </div>
+          {!headerCollapsed ? (
+            <div className="chips">
+              {problem ? <span className={`difficulty ${problem.difficulty.toLowerCase()}`}>{localizeDifficulty(problem.difficulty, locale)}</span> : null}
+              {problem?.tags.map((tag) => <span key={tag}>{localizeTag(tag, locale)}</span>)}
+              {problem ? <span>{problem.time_limit}ms / {problem.memory_limit}MB</span> : null}
+            </div>
+          ) : null}
         </div>
-        <StatusBadge submission={submission} locale={locale} />
+        <div className="workbench-header-actions">
+          <StatusBadge submission={submission} locale={locale} />
+          <button
+            type="button"
+            className="icon-button workbench-header-toggle tip"
+            data-tip={
+              headerCollapsed
+                ? localeText(locale, { zh: "展开题目头部", en: "Expand problem header" })
+                : localeText(locale, { zh: "收起题目头部", en: "Collapse problem header" })
+            }
+            aria-label={
+              headerCollapsed
+                ? localeText(locale, { zh: "展开题目头部", en: "Expand problem header" })
+                : localeText(locale, { zh: "收起题目头部", en: "Collapse problem header" })
+            }
+            aria-pressed={headerCollapsed}
+            onClick={() => setHeaderCollapsed((value) => !value)}
+          >
+            <IconGlyph>{headerCollapsed ? "v" : "^"}</IconGlyph>
+          </button>
+        </div>
       </section>
 
       <section className="workbench-grid">
@@ -2037,6 +2081,7 @@ function DetailDock({
     <section className="detail-dock statement-detail-dock judge-region">
       <div className="tabs" role="tablist" aria-label={localeText(locale, { zh: "题目详情", en: "Problem details" })}>
         <TabButton tab="cases" active={detailTab} onClick={setDetailTab}>{text.publicCases}</TabButton>
+        <TabButton tab="hint" active={detailTab} onClick={setDetailTab}>{text.officialHint}</TabButton>
         <TabButton tab="solution" active={detailTab} onClick={setDetailTab}>{text.solution}</TabButton>
         <TabButton tab="judge" active={detailTab} onClick={setDetailTab}>{text.judge}</TabButton>
         <TabButton tab="trail" active={detailTab} onClick={setDetailTab}>{text.trail}</TabButton>
@@ -2044,6 +2089,7 @@ function DetailDock({
       </div>
       <div className="detail-panel">
         {detailTab === "cases" ? <SampleCases problem={problem} locale={locale} /> : null}
+        {detailTab === "hint" ? <ProblemGuidance problem={problem} locale={locale} /> : null}
         {detailTab === "solution" ? <OfficialSolution problem={problem} solution={solution} locale={locale} /> : null}
         {detailTab === "judge" ? (
           <Suspense fallback={<LazySurface className="timeline" label={localeText(locale, { zh: "正在加载判题记录...", en: "Loading judge timeline..." })} />}>
@@ -2267,8 +2313,17 @@ function DiscussionItem({
       {deleted ? <p>{labels.deleted}</p> : <MarkdownBlock value={post.body} className="discussion-markdown" />}
       {!deleted ? (
         <div className="discussion-actions">
-          <button type="button" className={post.liked_by_me ? "active" : ""} disabled={busyId === post.id} onClick={() => onLikeToggle(post)}>
-            {post.liked_by_me ? labels.unlike : labels.like} {post.like_count ? post.like_count : ""}
+          <button
+            type="button"
+            className={`discussion-like-button tip ${post.liked_by_me ? "active" : ""}`}
+            aria-label={post.liked_by_me ? labels.unlike : labels.like}
+            aria-pressed={post.liked_by_me}
+            data-tip={post.liked_by_me ? labels.unlike : labels.like}
+            disabled={busyId === post.id}
+            onClick={() => onLikeToggle(post)}
+          >
+            <ThumbUpIcon active={post.liked_by_me} />
+            {post.like_count ? <span className="discussion-like-count">{post.like_count}</span> : null}
           </button>
           <button type="button" onClick={() => onReplyStart(post.id)}>{labels.reply}</button>
           {canDelete ? <button type="button" className="danger-text" disabled={busyId === post.id} onClick={() => onDelete(post)}>{labels.delete}</button> : null}
@@ -2387,7 +2442,11 @@ function DiscussionPanel({
       const updated = post.liked_by_me
         ? await api.unlikeDiscussion(problemId, post.id)
         : await api.likeDiscussion(problemId, post.id);
-      setDiscussionCache((items) => updateDiscussionInTree(items, post.id, () => updated));
+      setDiscussionCache((items) => updateDiscussionInTree(items, post.id, (current) => ({
+        ...current,
+        liked_by_me: updated.liked,
+        like_count: updated.like_count,
+      })));
     } catch (likeError) {
       if (isUnauthorized(likeError)) {
         localStorage.removeItem("fastoj.jwt");
@@ -2545,6 +2604,8 @@ const ADMIN_TEXT_BY_LOCALE = {
     copyPassword: "复制密码",
     copied: "已复制",
     copyPasswordFailed: "复制失败，请手动选择临时密码。",
+    showPassword: "显示密码",
+    hidePassword: "隐藏密码",
     resetPasswordHelp: "管理员重置后，请通过站外方式把临时密码告知用户。用户登录后可在账号设置中改为自己的密码。",
     resetOwnPasswordHint: "请在右上角账号设置中修改自己的密码。",
     passwordMismatch: "两次输入的密码不一致。",
@@ -2687,6 +2748,8 @@ const ADMIN_TEXT_BY_LOCALE = {
     copyPassword: "Copy password",
     copied: "Copied",
     copyPasswordFailed: "Copy failed. Select the temporary password manually.",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
     resetPasswordHelp: "After reset, share the temporary password outside FastOJ. The user can change it in account settings after login.",
     resetOwnPasswordHint: "Use the account settings in the top-right corner to change your own password.",
     passwordMismatch: "The two passwords do not match.",
@@ -3464,6 +3527,10 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const [resetPasswordValue, setResetPasswordValue] = useState("");
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
   const [resetPasswordCopied, setResetPasswordCopied] = useState(false);
+  const [resetPasswordMessage, setResetPasswordMessage] = useState("");
+  const [resetPasswordMessageType, setResetPasswordMessageType] = useState<"error" | "success">("error");
+  const [showResetPasswordValue, setShowResetPasswordValue] = useState(false);
+  const [showResetPasswordConfirm, setShowResetPasswordConfirm] = useState(false);
   const [problemSearch, setProblemSearch] = useState("");
   const [problemDifficultyFilter, setProblemDifficultyFilter] = useState("");
   const [problemVisibilityFilter, setProblemVisibilityFilter] = useState("");
@@ -3631,6 +3698,10 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     setResetPasswordValue("");
     setResetPasswordConfirm("");
     setResetPasswordCopied(false);
+    setResetPasswordMessage("");
+    setResetPasswordMessageType("error");
+    setShowResetPasswordValue(false);
+    setShowResetPasswordConfirm(false);
     setUserActionMessage("");
   }, [selectedUserId]);
 
@@ -3747,6 +3818,8 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     setResetPasswordValue(password);
     setResetPasswordConfirm(password);
     setResetPasswordCopied(false);
+    setResetPasswordMessage("");
+    setResetPasswordMessageType("error");
   }
 
   async function copyResetPassword() {
@@ -3754,31 +3827,43 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     try {
       await navigator.clipboard?.writeText(resetPasswordValue);
       setResetPasswordCopied(true);
+      setResetPasswordMessage("");
     } catch {
-      setUserActionMessage(text.copyPasswordFailed);
+      setResetPasswordMessageType("error");
+      setResetPasswordMessage(text.copyPasswordFailed);
     }
   }
 
   async function resetSelectedUserPassword() {
     if (!selectedUser || !canResetUserPasswords || selectedUser.id === currentUser?.id) return;
     if (resetPasswordValue.length < 8) {
-      setUserActionMessage(text.passwordTooShort);
+      setResetPasswordMessageType("error");
+      setResetPasswordMessage(text.passwordTooShort);
       return;
     }
     if (resetPasswordValue !== resetPasswordConfirm) {
-      setUserActionMessage(text.passwordMismatch);
+      setResetPasswordMessageType("error");
+      setResetPasswordMessage(text.passwordMismatch);
       return;
     }
     const confirmed = window.confirm(text.confirmResetPassword.replace("{username}", selectedUser.username));
     if (!confirmed) return;
     setUpdatingUserId(`password:${selectedUser.id}`);
     setUserActionMessage("");
+    setResetPasswordMessage("");
     try {
       await api.adminResetUserPassword(selectedUser.id, resetPasswordValue);
-      setUserActionMessage(text.resetPasswordSuccess);
+      setResetPasswordMessageType("success");
+      setResetPasswordMessage(text.resetPasswordSuccess);
       await overviewQuery.refetch();
     } catch (error) {
-      setUserActionMessage(error instanceof Error ? error.message : text.userResetFailed);
+      setResetPasswordMessageType("error");
+      if (error instanceof ApiError && error.status === 422) {
+        setResetPasswordMessage(text.passwordTooShort);
+      } else {
+        const message = error instanceof Error ? error.message : text.userResetFailed;
+        setResetPasswordMessage(message);
+      }
     } finally {
       setUpdatingUserId(null);
     }
@@ -5203,16 +5288,71 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
                           {canResetUserPasswords && selectedUser.id !== currentUser?.id ? (
                             <>
                               <p className="muted">{text.resetPasswordHelp}</p>
+                              {resetPasswordMessage ? (
+                                <p className={`admin-password-feedback ${resetPasswordMessageType}`}>{resetPasswordMessage}</p>
+                              ) : null}
                               <div className="admin-password-grid">
-                                <label>{text.newPassword}<input type="password" value={resetPasswordValue} onChange={(event) => { setResetPasswordValue(event.target.value); setResetPasswordCopied(false); }} autoComplete="new-password" /></label>
-                                <label>{text.confirmNewPassword}<input type="password" value={resetPasswordConfirm} onChange={(event) => setResetPasswordConfirm(event.target.value)} autoComplete="new-password" /></label>
+                                <div className="admin-password-field">
+                                  <label className="admin-password-label" htmlFor={`reset-password-${selectedUser.id}`}>{text.newPassword}</label>
+                                  <span className="password-input-wrap">
+                                    <input
+                                      id={`reset-password-${selectedUser.id}`}
+                                      type={showResetPasswordValue ? "text" : "password"}
+                                      value={resetPasswordValue}
+                                      onChange={(event) => {
+                                        setResetPasswordValue(event.target.value);
+                                        setResetPasswordCopied(false);
+                                        setResetPasswordMessage("");
+                                      }}
+                                      autoComplete="new-password"
+                                    />
+                                    <button
+                                      type="button"
+                                      className="password-visibility-button"
+                                      aria-label={showResetPasswordValue ? text.hidePassword : text.showPassword}
+                                      aria-pressed={showResetPasswordValue}
+                                      title={showResetPasswordValue ? text.hidePassword : text.showPassword}
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => setShowResetPasswordValue((value) => !value)}
+                                    >
+                                      <PasswordVisibilityIcon visible={showResetPasswordValue} />
+                                    </button>
+                                  </span>
+                                </div>
+                                <div className="admin-password-field">
+                                  <label className="admin-password-label" htmlFor={`reset-password-confirm-${selectedUser.id}`}>{text.confirmNewPassword}</label>
+                                  <span className="password-input-wrap">
+                                    <input
+                                      id={`reset-password-confirm-${selectedUser.id}`}
+                                      type={showResetPasswordConfirm ? "text" : "password"}
+                                      value={resetPasswordConfirm}
+                                      onChange={(event) => {
+                                        setResetPasswordConfirm(event.target.value);
+                                        setResetPasswordMessage("");
+                                      }}
+                                      autoComplete="new-password"
+                                    />
+                                    <button
+                                      type="button"
+                                      className="password-visibility-button"
+                                      aria-label={showResetPasswordConfirm ? text.hidePassword : text.showPassword}
+                                      aria-pressed={showResetPasswordConfirm}
+                                      title={showResetPasswordConfirm ? text.hidePassword : text.showPassword}
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => setShowResetPasswordConfirm((value) => !value)}
+                                    >
+                                      <PasswordVisibilityIcon visible={showResetPasswordConfirm} />
+                                    </button>
+                                  </span>
+                                </div>
                               </div>
                               <div className="agent-actions">
-                                <button onClick={fillGeneratedPassword}>{text.generatePassword}</button>
-                                <button disabled={!resetPasswordValue} onClick={copyResetPassword}>{resetPasswordCopied ? text.copied : text.copyPassword}</button>
+                                <button type="button" onClick={fillGeneratedPassword}>{text.generatePassword}</button>
+                                <button type="button" disabled={!resetPasswordValue} onClick={copyResetPassword}>{resetPasswordCopied ? text.copied : text.copyPassword}</button>
                                 <button
+                                  type="button"
                                   className="primary"
-                                  disabled={updatingUserId === `password:${selectedUser.id}` || !resetPasswordValue || !resetPasswordConfirm}
+                                  disabled={updatingUserId === `password:${selectedUser.id}`}
                                   onClick={resetSelectedUserPassword}
                                 >
                                   {updatingUserId === `password:${selectedUser.id}` ? text.loading : text.resetPassword}

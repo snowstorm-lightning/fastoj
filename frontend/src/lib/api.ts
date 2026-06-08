@@ -182,6 +182,10 @@ export type AgentSession = {
   created_at: string;
   updated_at: string;
 };
+export type DiscussionLikeResult = {
+  liked: boolean;
+  like_count: number;
+};
 export type ProblemDraftUpdatePayload = {
   title?: string;
   slug?: string;
@@ -649,15 +653,21 @@ export const api = {
       body: JSON.stringify({ body, ...(parentId ? { parent_id: parentId } : {}) }),
     }, (data: any) => problemDiscussionSchema.parse(data.data));
   },
-  async likeDiscussion(problemId: string, discussionId: string): Promise<ProblemDiscussion> {
+  async likeDiscussion(problemId: string, discussionId: string): Promise<DiscussionLikeResult> {
     return request(`/api/v1/problems/${problemId}/discussions/${discussionId}/like`, {
       method: "POST",
-    }, (data: any) => problemDiscussionSchema.parse(data.data ?? data));
+    }, (data: any) => ({
+      liked: Boolean((data.data ?? data).liked),
+      like_count: Number((data.data ?? data).like_count ?? 0),
+    }));
   },
-  async unlikeDiscussion(problemId: string, discussionId: string): Promise<ProblemDiscussion> {
+  async unlikeDiscussion(problemId: string, discussionId: string): Promise<DiscussionLikeResult> {
     return request(`/api/v1/problems/${problemId}/discussions/${discussionId}/like`, {
       method: "DELETE",
-    }, (data: any) => problemDiscussionSchema.parse(data.data ?? data));
+    }, (data: any) => ({
+      liked: Boolean((data.data ?? data).liked),
+      like_count: Number((data.data ?? data).like_count ?? 0),
+    }));
   },
   async deleteDiscussion(problemId: string, discussionId: string) {
     return request(`/api/v1/problems/${problemId}/discussions/${discussionId}`, {
