@@ -528,9 +528,9 @@ FastOJ 已包含 GitHub Actions：
 
 - `.github/workflows/ci.yml`：在 PR 和 `master` 推送时运行后端 lint/test、
   前端 build/test。
-- `.github/workflows/deploy.yml`：在 GitHub Actions 里构建 API、worker 和
-  judge 镜像，推送到 GHCR，然后用 `ubuntu` 用户 SSH 到腾讯云服务器，拉取镜像
-  并重启容器。
+- `.github/workflows/deploy.yml`：在 GitHub Actions 里构建 API 和 worker
+  镜像，推送到腾讯云 TCR；judge 运行时镜像只在需要时用稳定 tag 构建。随后用
+  `ubuntu` 用户 SSH 到腾讯云服务器，只拉取 API/worker 镜像并重启容器。
 
 本机和服务器都使用 `.env` 作为运行时环境文件名。本机从 `.env.example` 复制出
 `.env`；服务器从 `.env.prod.example` 复制到 `/opt/projects/fastoj/.env` 并填写真实密钥。

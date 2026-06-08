@@ -563,9 +563,10 @@ FastOJ includes GitHub Actions for pull-request checks and Tencent Cloud
 deployment:
 
 - `.github/workflows/ci.yml` runs backend lint/tests and frontend build/tests.
-- `.github/workflows/deploy.yml` builds API, worker, and judge images in GitHub
-  Actions, pushes them to GHCR, then SSHes to the Tencent Cloud server as
-  `ubuntu` to pull and restart containers.
+- `.github/workflows/deploy.yml` builds API and worker images in GitHub
+  Actions, pushes them to Tencent Cloud TCR, builds the stable judge runtime
+  image only when needed, then SSHes to the Tencent Cloud server as `ubuntu` to
+  pull API/worker images and restart containers.
 
 Use `.env` as the runtime environment filename in both places. Locally, copy
 `.env.example` to `.env`; on the server, copy `.env.prod.example` to

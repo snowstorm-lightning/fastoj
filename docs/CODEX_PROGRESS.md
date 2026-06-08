@@ -1,5 +1,14 @@
 # Codex Progress
 
+## 2026-06-08 Tencent TCR Deploy Pull Optimization
+
+- [x] Switched the deploy workflow from GHCR to Tencent Cloud TCR defaults, using `TCR_USERNAME`/`TCR_PASSWORD`, optional `TCR_REGISTRY`, and optional `TCR_NAMESPACE`.
+- [x] Kept API and worker images on per-commit tags while splitting judge runtime onto stable `FASTOJ_JUDGE_IMAGE_TAG=py311-node24-torch271`.
+- [x] Changed judge image publishing so the stable judge runtime is built only when the registry tag is missing, `Dockerfile.judge` changes, or the manual `build_judge` workflow input is selected.
+- [x] Changed server deployment to pull only `api` and `worker` during normal deploys; `judge-runtime` is pulled and restarted only when the workflow built judge or the server lacks the stable image.
+- [x] Updated production Compose, `.env.prod.example`, deployment docs, and README deployment summaries for the TCR flow.
+- [x] Verification passed: `docker compose config -q`; `docker compose --env-file .env.prod.example -f docker-compose.prod.yml config -q`; `uv run ruff check .`; `uv run pytest` (236 passed, 2 existing FastAPI `regex` warnings); `cd frontend && npm run build` (existing large chunk warnings); `cd frontend && npm test` (10 files / 44 tests); `docker compose up --build -d api`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps` reported API, worker, PostgreSQL, and Redis healthy with judge-runtime running.
+
 ## 2026-06-08 User Management And Account Recovery
 
 - [x] Added admin-assisted password reset: `POST /api/v1/admin/users/{user_id}/reset-password` hashes a temporary password and increments `users.token_version`; self-service password changes also increment the version.

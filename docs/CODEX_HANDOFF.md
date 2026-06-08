@@ -1,10 +1,19 @@
 # Codex Handoff
 
-Updated: 2026-06-07
+Updated: 2026-06-08
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-06-08 Tencent TCR Deploy Pull Optimization
+
+- Deploy workflow now defaults to Tencent Cloud TCR (`ccr.ccs.tencentyun.com`) instead of GHCR and uses `TCR_USERNAME`/`TCR_PASSWORD`, optional `TCR_REGISTRY`, and optional `TCR_NAMESPACE`.
+- API and worker images still get per-commit and `latest` tags. Judge runtime now uses stable `FASTOJ_JUDGE_IMAGE_TAG=py311-node24-torch271` and is built only when the tag is missing, `Dockerfile.judge` changed, or manual workflow input `build_judge` is selected.
+- Production Compose points API/worker `JUDGE_CONTAINER_IMAGE` and `judge-runtime.image` at the stable judge tag, with `pull_policy: missing` for `judge-runtime`.
+- Normal server deploys now run `docker compose pull api worker` and `up api worker`; `judge-runtime` is pulled and restarted only when the workflow built judge or the server does not have the stable image yet.
+- Updated `.env.prod.example`, `docs/DEPLOYMENT.md`, `README.md`, and `README.zh-CN.md` with TCR setup and manual judge-runtime update commands.
+- Verification passed: `docker compose config -q`; `docker compose --env-file .env.prod.example -f docker-compose.prod.yml config -q`; `uv run ruff check .`; `uv run pytest` (236 passed, 2 existing FastAPI `regex` warnings); `cd frontend && npm run build` (existing large chunk warnings); `cd frontend && npm test` (10 files / 44 tests); `docker compose up --build -d api`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps` reported API, worker, PostgreSQL, and Redis healthy with judge-runtime running.
 
 ## 2026-06-08 User Management And Account Recovery
 

@@ -2,16 +2,22 @@ name: Build and Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      build_judge:
+        description: Build and push the stable judge runtime image
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - master
 
 permissions:
   contents: read
-  packages: write
 
 env:
-  REGISTRY: ghcr.io
+  REGISTRY: ${{ vars.TCR_REGISTRY || 'ccr.ccs.tencentyun.com' }}
+  JUDGE_IMAGE_TAG: ${{ vars.FASTOJ_JUDGE_IMAGE_TAG || 'py311-node24-torch271' }}
   DEPLOY_USER: ubuntu
   DEPLOY_PORT: ${{ secrets.TENCENT_PORT || '22' }}
   DEPLOY_PATH: ${{ vars.TENCENT_DEPLOY_PATH || '/opt/projects/fastoj' }}
@@ -67,27 +73,60 @@ jobs:
     needs: quality
 
     outputs:
-      image_owner: ${{ steps.image.outputs.owner }}
+      image_namespace: ${{ steps.image.outputs.namespace }}
+      judge_built: ${{ steps.judge.outputs.build }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Resolve image owner
+      - name: Resolve image namespace
         id: image
+        env:
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
         run: |
-          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
-          echo "owner=${owner}" >> "${GITHUB_OUTPUT}"
+          namespace="${TCR_NAMESPACE:-${GITHUB_REPOSITORY_OWNER}}"
+          namespace="$(echo "${namespace}" | tr '[:upper:]' '[:lower:]')"
+          echo "namespace=${namespace}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
+      - name: Log in to Tencent TCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+
+      - name: Decide whether to build judge image
+        id: judge
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          REQUESTED_BUILD_JUDGE: ${{ inputs.build_judge || 'false' }}
+        run: |
+          image="${REGISTRY}/${{ steps.image.outputs.namespace }}/fastoj-judge:${JUDGE_IMAGE_TAG}"
+          build_judge="false"
+
+          if [ "${REQUESTED_BUILD_JUDGE}" = "true" ]; then
+            build_judge="true"
+          fi
+
+          if ! docker buildx imagetools inspect "${image}" >/dev/null 2>&1; then
+            build_judge="true"
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            if [ -z "${GITHUB_EVENT_BEFORE}" ] || [ "${GITHUB_EVENT_BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+              build_judge="true"
+            elif git diff --name-only "${GITHUB_EVENT_BEFORE}" "${GITHUB_SHA}" -- Dockerfile.judge | grep -q .; then
+              build_judge="true"
+            fi
+          fi
+
+          echo "build=${build_judge}" >> "${GITHUB_OUTPUT}"
 
       - name: Build and push API image
         uses: docker/build-push-action@v6
@@ -97,8 +136,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-api:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-api:latest
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.namespace }}/fastoj-api:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.namespace }}/fastoj-api:latest
 
       - name: Build and push worker image
         uses: docker/build-push-action@v6
@@ -108,10 +147,11 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-worker:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-worker:latest
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.namespace }}/fastoj-worker:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.namespace }}/fastoj-worker:latest
 
       - name: Build and push judge image
+        if: steps.judge.outputs.build == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -119,8 +159,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-judge:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ steps.image.outputs.owner }}/fastoj-judge:latest
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.namespace }}/fastoj-judge:${{ env.JUDGE_IMAGE_TAG }}
 
   deploy:
     name: Deploy to Tencent Cloud
@@ -153,32 +192,40 @@ jobs:
           scp -i ~/.ssh/tencent -P "${DEPLOY_PORT}" docker-compose.prod.yml \
             "${DEPLOY_USER}@${TENCENT_HOST}:${DEPLOY_PATH}/docker-compose.yml"
 
-      - name: Log in to GHCR on server when needed
+      - name: Log in to Tencent TCR on server
         env:
-          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
-          GHCR_READ_USER: ${{ secrets.GHCR_READ_USER }}
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
           TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
         run: |
-          if [ -n "${GHCR_READ_TOKEN}" ]; then
-            ghcr_user="${GHCR_READ_USER:-${{ github.repository_owner }}}"
-            printf '%s' "${GHCR_READ_TOKEN}" | ssh -i ~/.ssh/tencent -p "${DEPLOY_PORT}" \
-              "${DEPLOY_USER}@${TENCENT_HOST}" "docker login '${REGISTRY}' -u '${ghcr_user}' --password-stdin"
-          else
-            echo "GHCR_READ_TOKEN is not set; assuming images are public or the server is already logged in."
-          fi
+          test -n "${TCR_USERNAME}"
+          test -n "${TCR_PASSWORD}"
+          printf '%s' "${TCR_PASSWORD}" | ssh -i ~/.ssh/tencent -p "${DEPLOY_PORT}" \
+            "${DEPLOY_USER}@${TENCENT_HOST}" "docker login '${REGISTRY}' -u '${TCR_USERNAME}' --password-stdin"
 
       - name: Pull images and restart services
         env:
           TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
-          IMAGE_OWNER: ${{ needs.build.outputs.image_owner }}
+          IMAGE_NAMESPACE: ${{ needs.build.outputs.image_namespace }}
           IMAGE_TAG: ${{ github.sha }}
+          JUDGE_BUILT: ${{ needs.build.outputs.judge_built }}
         run: |
           ssh -i ~/.ssh/tencent -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${TENCENT_HOST}" "
             set -e
             cd '${DEPLOY_PATH}'
             test -f .env || { echo 'Missing ${DEPLOY_PATH}/.env on server' >&2; exit 1; }
-            FASTOJ_IMAGE_REGISTRY='${REGISTRY}' FASTOJ_IMAGE_OWNER='${IMAGE_OWNER}' FASTOJ_IMAGE_TAG='${IMAGE_TAG}' docker compose -f docker-compose.yml pull
-            FASTOJ_IMAGE_REGISTRY='${REGISTRY}' FASTOJ_IMAGE_OWNER='${IMAGE_OWNER}' FASTOJ_IMAGE_TAG='${IMAGE_TAG}' docker compose -f docker-compose.yml up -d --remove-orphans
+            export FASTOJ_IMAGE_REGISTRY='${REGISTRY}'
+            export FASTOJ_IMAGE_OWNER='${IMAGE_NAMESPACE}'
+            export FASTOJ_IMAGE_TAG='${IMAGE_TAG}'
+            export FASTOJ_JUDGE_IMAGE_TAG='${JUDGE_IMAGE_TAG}'
+            judge_image=\"${REGISTRY}/${IMAGE_NAMESPACE}/fastoj-judge:${JUDGE_IMAGE_TAG}\"
+            docker compose -f docker-compose.yml pull api worker
+            if [ '${JUDGE_BUILT}' = 'true' ] || ! docker image inspect \"\${judge_image}\" >/dev/null 2>&1; then
+              docker compose -f docker-compose.yml pull judge-runtime
+              docker compose -f docker-compose.yml up -d --remove-orphans judge-runtime api worker
+            else
+              docker compose -f docker-compose.yml up -d --remove-orphans api worker
+            fi
             docker image prune -f
             docker compose -f docker-compose.yml ps
           "
