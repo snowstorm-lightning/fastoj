@@ -9,7 +9,7 @@ FastOJ 的 AI 不是简单把数据库里的所有信息发给模型。它的核
 1. 学习者侧：
    - 提交解释：为什么失败、可能原因、下一步建议。
    - 代码审查：复杂度、边界风险、I/O 格式问题。
-   - 渐进提示：按 level 给提示。
+   - 渐进提示：按轻提示、方向提示、重提示三个强度给动态提示。
    - 对话：围绕当前提交上下文继续问。
 2. 管理员侧：
    - 生成题目草稿。
@@ -43,13 +43,18 @@ AIService 构造提交上下文时只遍历公开 testcase result。隐藏 resul
 
 `AIService` 对不同能力设置了不同规则：
 
-- explain/review 使用当前提交上下文。
-- hint 使用题目上下文、语言和当前代码，但不使用隐藏用例。
+- explain/review 使用当前提交上下文，但产品语义不同：explain 面向最近一次 verdict，解释失败原因、可疑区域和下一步；review 面向代码审查，检查算法思路、复杂度、边界和 I/O 风险。
+- hint 使用题目上下文、语言和当前代码，但不使用隐藏用例。前端显示为“轻提示 / 方向提示 / 重提示”，强度逐级增加。
 - chat 明确加规则：只使用公开 testcase details、不暴露隐藏用例、不返回完整 AC 解法。
 
 chat 的 rules 在 [backend/ai/service.py:62](../../backend/ai/service.py#L62)，hint 的 rules 在 [backend/ai/service.py:90](../../backend/ai/service.py#L90)。
 
 即使模型返回字段不稳定，AIService 也会做 schema 兼容和兜底解析，例如 `_parse_explain`、`_parse_review`、`_parse_chat`，避免前端直接渲染不可控结构。
+
+注意区分两类“提示”：
+
+- **官方提示**：题目作者写好的固定内容，显示在工作台左侧题目详情中，类似 LeetCode 的 hint。它来自题目数据，不调用 AI，也不依赖用户当前代码。
+- **AI 提示**：学习者在右侧 AI 判题助手里主动请求的动态内容。它会结合当前题目、语言和代码，但仍然不能看到隐藏用例。
 
 ## 出题 Agent 流程
 

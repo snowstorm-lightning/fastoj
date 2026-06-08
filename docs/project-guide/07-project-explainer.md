@@ -15,11 +15,11 @@
 
 ## 60 秒英文项目介绍
 
-FastOJ is an AI-assisted online judge for algorithm practice. It provides a LeetCode-like workflow with a React and TypeScript frontend, a FastAPI backend, PostgreSQL persistence, Redis Streams for asynchronous judging, and Docker-based sandbox execution for untrusted user code. The core flow is that a user submits code from the workbench, the API creates a submission, pushes a judge task to Redis, a worker consumes it, runs the code in a restricted Docker container, stores testcase results, and streams progress back through WebSocket with polling as a fallback. The project also includes AI features for hints, explanations, code review, original problem authoring, and imported-problem drafting. The safety boundary is explicit: hidden testcase inputs, expected outputs, actual outputs, and imported raw source material are not exposed to normal users or learner-side AI prompts.
+FastOJ is an AI-assisted online judge for algorithm practice. It provides a LeetCode-like workflow with a React and TypeScript frontend, a FastAPI backend, PostgreSQL persistence, Redis Streams for asynchronous judging, and Docker-based sandbox execution for untrusted user code. The core flow is that a user submits code from the workbench, the API creates a submission, pushes a judge task to Redis, a worker consumes it, runs the code in a restricted Docker container, stores testcase results, and streams progress back through WebSocket with polling as a fallback. The workbench separates fixed learning material from personalized assistance: the left detail dock holds examples, official hints, solutions, judge history, submission trail, and discussion, while the right AI copilot focuses on result explanation, code review, dynamic hints, and follow-up chat. The safety boundary is explicit: hidden testcase inputs, expected outputs, actual outputs, and imported raw source material are not exposed to normal users or learner-side AI prompts.
 
 ## 中文版本
 
-FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。前端用 React 和 TypeScript，后端用 FastAPI，数据存在 PostgreSQL，判题任务通过 Redis Streams 异步分发，Worker 用 Docker 沙箱执行不可信用户代码。用户在工作台提交代码后，API 创建提交记录并入队，Worker 消费任务、运行测试用例、写入结果，再通过 Redis Pub/Sub 和 WebSocket 把进度推回前端，同时前端保留 polling fallback。AI 部分支持提示、解释、代码审查、管理员原创出题和导入题目草稿；隐藏用例内容和导入原文不会进入普通用户 UI、日志或学习者侧 AI prompt。
+FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。前端用 React 和 TypeScript，后端用 FastAPI，数据存在 PostgreSQL，判题任务通过 Redis Streams 异步分发，Worker 用 Docker 沙箱执行不可信用户代码。用户在工作台提交代码后，API 创建提交记录并入队，Worker 消费任务、运行测试用例、写入结果，再通过 Redis Pub/Sub 和 WebSocket 把进度推回前端，同时前端保留 polling fallback。工作台把固定学习材料和个性化辅助分开：左侧详情区放公开用例、官方提示、题解、判题记录、提交轨迹和讨论，右侧 AI 判题助手负责解释结果、审查代码、动态提示和追问。隐藏用例内容和导入原文不会进入普通用户 UI、日志或学习者侧 AI prompt。
 
 ## 架构关键词
 
@@ -91,6 +91,7 @@ Admins paste external problem material into a separate import tab, optionally wi
 - **Reliability-aware queue**：Redis Streams、ack、retry、dead-letter、pending reclaim。
 - **Security boundary**：隐藏用例不进入普通 API、WebSocket、AI prompt。
 - **Mode abstraction**：Function mode 和 ACM mode 共用同一条判题管线。
+- **Learner-friendly workbench**：可折叠题头、可调整左右面板、固定官方提示和动态 AI 提示分工明确，减少练习时的信息噪音。
 - **AI with constraints**：AI 辅助解释、出题和导入，但 prompt 上下文和原始材料可见范围被明确限制。
 - **Extensible i18n**：前端 locale registry 和后端 dynamic locale validator 支持长期扩展，不把语言逻辑写成 `zh/en` 二分。
 - **Deployment-ready shape**：Docker Compose、本地/生产配置、GitHub Actions、部署文档。
