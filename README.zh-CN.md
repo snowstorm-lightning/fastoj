@@ -4,63 +4,62 @@
 
 在线体验：[fastoj.snowstormlightning.top](http://fastoj.snowstormlightning.top)
 
-FastOJ 是一个面向面试训练的 AI 辅助在线评测平台。它把 Docker 沙箱判题、
-Monaco 编程工作台、双语界面、实时提交状态和安全的 AI 解释整合在一起，让
-你可以在本地跑起一套接近 LeetCode 体验、但更容易改造和研究的 OJ 系统。
+FastOJ 是一个面向面试训练的全栈 AI 辅助在线评测平台。它把类 LeetCode 的学习
+体验和更接近生产系统的后端组合在一起：FastAPI、PostgreSQL、Redis Streams、
+Docker 沙箱判题、React/Monaco 编程工作台、双语界面、管理后台出题流程，以及
+严格隔离隐藏用例的 AI 反馈。
 
-如果你想下载一个能真实评测代码、能展示完整产品体验、还能安全接入 AI 的
-开源项目，FastOJ 值得一试。
+这个项目既可以直接作为本地可运行的刷题平台，也适合作为系统设计和 AI 产品工程
+样例来研究：判题队列、沙箱执行、异步 Worker、AI Provider 路由、管理后台和
+产品级前端交互都在同一个代码库里。
 
-## 为什么值得 Clone
+## 为什么有吸引力
 
-- **是真正的 OJ，不是玩具运行器。** 提交通过 Redis 队列进入 Judge Worker，
-  再由 Docker 沙箱执行；生产代码不会回退到宿主机 `subprocess`。
-- **函数模式和 ACM 模式同等重要。** 函数模式给学习者提供对应语言的 starter
-  frame；ACM 模式保留传统 stdin/stdout 训练方式。内置 108 道 seed 题现在每题
-  都带可展示、可执行的 Python 官方题解，并有更强的确定性隐藏用例覆盖。
-- **AI 能帮忙，但不泄露隐藏用例。** 提示、解释、代码审查和对话只使用判题
-  结果、用户代码、公开样例和安全的聚合摘要。隐藏用例输入、期望输出、实际
-  输出不会返回给用户，也不会发送给 AI 服务商。
-- **前端不是演示壳。** 页面支持浅色和深色两种主题；题库、卡片/列表布局、
-  三栏工作台、可编辑公开运行输入、官方解法生成期望输出、输出对比、判题
-  时间线、AI 侧栏、可展开查看历史代码的提交轨迹、服务端共享题目讨论、设置页、管理后台和知识图谱都已经
-  接入。
-- **适合做 AI Provider 实验。** AI 层使用 OpenAI-compatible profile，既能
-  接 DeepSeek 风格的托管 API，也能接本地 Qwen/llama.cpp 服务。
+- **真实判题链路。** 提交从 FastAPI 进入 Redis Streams，由带 parent/child
+  监督的 Judge Worker 消费，最后进入受限 Docker 沙箱执行；生产环境不会用宿主机
+  `subprocess` 跑不可信代码。
+- **函数模式和 ACM 模式并重。** 学习者可以写带 starter frame 的函数题，也可以
+  练传统 stdin/stdout；双模式草稿可以基于同一组逻辑 testcase 同步维护函数视图和
+  ACM 视图。
+- **AI 有用，但守住 OJ 边界。** 提示、失败解释、代码审查和对话只使用公开样例、
+  判题结果、用户代码和安全聚合信息。隐藏用例输入、期望输出、实际输出不会给用户，
+  也不会发送给模型服务商。
+- **前端是完整产品界面。** React UI 包含题库搜索、卡片/列表布局、Monaco 编辑器、
+  可调结果面板、输出 diff、判题时间线、AI Copilot、账号设置、共享讨论、React Flow
+  训练图谱和完整管理后台。
+- **管理后台覆盖真实内容运营。** 管理员可以生成原创草稿、导入外部题目材料、通过
+  SSE 查看 Agent 执行路径、用沙箱校验官方解法、管理用户和权限、编辑完整用例集、
+  重新校验草稿，并发布多语言官方题解。
+- **AI Provider 可替换。** 后端使用 OpenAI-compatible profile，既能接 DeepSeek
+  风格的托管 API，也能接本地 Qwen/llama.cpp `llama-server`。
+- **具备部署形态。** 本地和生产都使用 Docker Compose；GitHub Actions 构建
+  API/worker 镜像，推送到镜像仓库，服务器只拉镜像并重启服务。
+
+## 技术栈一览
+
+| 层级 | 技术 |
+| --- | --- |
+| 后端 API | Python 3.11+、FastAPI、Pydantic v2、SQLAlchemy 2.0、Alembic |
+| 数据与队列 | PostgreSQL 14+、Redis Streams、Redis Pub/Sub |
+| 判题运行时 | Python Docker SDK、Docker 沙箱容器、Worker watchdog、死信队列 |
+| 前端 | React、TypeScript、Vite、Tailwind CSS、Monaco Editor、TanStack Query、Zustand、Zod |
+| 富交互 UI | React Flow、Shiki、xterm、DOMPurify、marked、Pretext 文本测量 |
+| AI 层 | OpenAI-compatible HTTP Provider、DeepSeek profiles、本地 Qwen/llama.cpp profile |
+| 工具与 CI/CD | `uv`、`ruff`、`pytest`、`npm`、Vitest、Docker Compose、GitHub Actions、镜像仓库 |
 
 ## 产品体验
 
-1. **浅色 / 深色双主题和双语界面** - 顶部导航可直接切换浅色/深色主题和
-   中文/英文界面；登录用户的语言偏好会保存到账户，访客则按浏览器语言和
-   本地存储回退。题库、刷题工作台、图谱、登录注册和管理后台都会跟随主题
-   切换，适合白天浏览和夜间长时间训练。
+1. **双语和浅色/深色主题** - 顶部导航可以切换中文/英文和主题；登录用户的语言
+   偏好保存到账户，访客使用浏览器语言和本地存储。题库、工作台、图谱、登录注册
+   和管理后台都使用同一套主题系统。
 2. **题库页** - 搜索、标签/难度筛选、卡片和传统 OJ 列表切换、推荐练习入口。
-3. **编程工作台** - 阅读题面、在 Monaco 中写代码、编辑公开样例输入、对比
-   官方期望输出和自己的输出、提交完整判题，并观察状态从 pending 到 result；
-   如果代码运行错误，页面会给出判题反馈，右侧 AI 判题助手还会继续提供错误
-   原因、可疑代码区域、边界检查和下一步建议。提交轨迹可以展开查看当时提交的
-   代码，题目讨论会保存到后端并同步给其他用户。
-4. **AI Copilot** - 按当前界面语言请求渐进提示、失败解释、代码审查和上下文
-   对话。
-5. **训练图谱** - 浏览知识点节点，点击节点后回到题库并自动应用标签筛选。
-6. **管理后台** - 管理员后台包含出题 Agent、用户管理、题目管理和用例管理。
-   出题 Agent 生成的内容会先保存为草稿，管理员审核前不会发布；草稿校验失败时，
-   Agent 会在保存最终草稿前做有上限的自动修复尝试，管理员也可以手动编辑失败
-   草稿并保存后重新校验。管理员也可以通过单独的导入流程粘贴外部题目材料；
-   原始材料只在管理员草稿中可见，AI 会先重写并适配为平台草稿后再校验。
-   Agent 运行改为后台任务，并通过 SSE 实时推送进度到管理员页面；执行路径无需
-   刷新即可更新。管理员可以在执行路径面板里按摘要查看最近 Agent 运行，包括没有
-   生成草稿的失败导入；每个步骤点开后才显示经过截断/隐藏处理的输入、输出和错误
-   详情。
-   用户管理改为账号管理中心，可以搜索账号、查看角色/状态徽标、在详情面板编辑权限、
-   由最高管理员重置临时密码，并在服务端防止停用最后一个可用管理员。题目管理可以编辑题面、
-   slug、模式、函数签名、ACM 输入输出格式、时间/内存限制、可见性、官方题解
-   和完整用例，也可以重新校验或删除不再使用的题目。草稿支持同时发布为函数模式
-   和 ACM 模式；双模式可以为同一个逻辑样例保存 ACM stdin/stdout 与函数 JSON
-   两种展示/判题视图，并按可用的模式专用官方解法合同校验。出题 Agent 可以在同一个草稿中请求、校验、编辑并
-   发布多种编程语言的官方解法。草稿或正式题目审核时如果临时新增某个语言，也可以
-   让 AI 单独补全该语言的官方解法，再保存并重新校验。简单题可以使用更少用例，避免
-   为了数量重复堆隐藏用例。
+3. **编程工作台** - 阅读题面、在 Monaco 中写代码、编辑公开运行输入、对比官方
+   期望输出和自己的输出、提交隐藏用例评测，并实时观察状态。错误答案会把判题反馈、
+   diff、历史提交代码和 AI 后续分析放在同一个工作流里。
+4. **AI Copilot** - 按当前界面语言请求渐进提示、失败解释、代码审查和上下文对话。
+5. **训练图谱** - 使用 React Flow 浏览知识点节点，点击后回到题库并自动应用标签筛选。
+6. **管理后台** - 在一个受保护工作区中管理题目、用例、用户、权限、AI 出题草稿、
+   题目导入、Agent 运行路径、官方解法和草稿发布。
 
 ## 页面展示
 
@@ -210,8 +209,7 @@ AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
 
 直接调用 DeepSeek 官方 OpenAI-compatible API 时使用 `deepseek-v4-pro` 或
-`deepseek-v4-flash`，不要加 `[1m]` 后缀；`[1m]` 是 Anthropic/Claude Code
-兼容集成场景里的模型名写法。
+`deepseek-v4-flash`。
 
 FastOJ 通过 `GET /api/v1/ai/profiles` 给前端模型选择器提供动态 profile
 列表。后端启动后会用短超时在后台检查 profile 可用性，并缓存 60 秒；普通用户
@@ -526,11 +524,13 @@ PowerShell：
 
 FastOJ 已包含 GitHub Actions：
 
-- `.github/workflows/ci.yml`：在 PR 和 `master` 推送时运行后端 lint/test、
-  前端 build/test。
+- `.github/workflows/ci.yml`：在包含代码或配置变更的 PR 和 `master` 推送时运行
+  后端 lint/test、前端 build/test；纯文档变更（`*.md`、`docs/**`、`specs/**`）
+  会被忽略。
 - `.github/workflows/deploy.yml`：在 GitHub Actions 里构建 API 和 worker
-  镜像，推送到腾讯云 TCR；judge 运行时镜像只在需要时用稳定 tag 构建。随后用
-  `ubuntu` 用户 SSH 到腾讯云服务器，只拉取 API/worker 镜像并重启容器。
+  镜像，推送到配置的镜像仓库；judge 运行时镜像只在需要时用稳定 tag 构建。随后用
+  `ubuntu` 用户 SSH 到服务器，只拉取 API/worker 镜像并重启容器。纯文档
+  `master` 推送不会触发部署。
 
 本机和服务器都使用 `.env` 作为运行时环境文件名。本机从 `.env.example` 复制出
 `.env`；服务器从 `.env.prod.example` 复制到 `/opt/projects/fastoj/.env` 并填写真实密钥。
@@ -603,35 +603,52 @@ flowchart LR
   API --> AI[OpenAI-compatible AI Provider]
 ```
 
-核心技术栈：
+关键链路：
+
+- **运行和提交：** API 持久化提交记录，把判题任务写入 Redis Streams，并快速返回
+  状态；Worker 再在 Docker 沙箱中执行用户代码。
+- **实时反馈：** Worker 事件通过 Redis 发布，再由 API 推送到浏览器；前端优先使用
+  WebSocket 状态更新，必要时回退到轮询。
+- **函数模式：** 服务层 wrapper 把 typed JSON 风格的函数输入转换成各语言可执行
+  harness；ACM 模式仍保留原始 stdin/stdout 执行。
+- **AI 辅助：** API 只用公开样例、判题结果、用户代码和安全摘要构造 prompt。隐藏
+  用例内容留在管理员专用接口之后，不进入学习者侧 AI prompt。
+- **管理端出题：** 草稿生成、题目导入、校验、修复尝试、官方题解和用例审核都经过
+  服务端角色检查。
+
+核心工程栈：
 
 - 后端：Python 3.11+、FastAPI、SQLAlchemy 2.0、Pydantic v2、Alembic、
   PostgreSQL、Redis Streams。
 - 判题：Docker 沙箱 Worker，支持异步队列、parent/child 任务 watchdog、
   active-task 标记、重试、死信队列和重复任务保护。
 - 前端：React、TypeScript、Vite、Tailwind CSS、Monaco Editor、TanStack
-  Query、Zustand、Zod、xterm、Shiki、React Flow、Pretext 文本测量。
-- 工具：`uv`、`ruff`、`pytest`、`npm`、Docker Compose。
+  Query、Zustand、Zod、xterm、Shiki、React Flow、DOMPurify、marked、Pretext
+  文本测量。
+- 工具：`uv`、`ruff`、`pytest`、`npm`、Vitest、Docker Compose、GitHub Actions、
+  镜像仓库。
 
 ## 项目结构
 
 ```text
 backend/
-  ai/          AI provider 配置、prompt、响应 schema
-  api/         FastAPI 路由
-  core/        设置、数据库、安全、日志
-  models/      SQLAlchemy 模型
-  schemas/     Pydantic API schema
-  services/    业务逻辑、判题、函数模式 wrapper
-  worker/      Judge Worker
+  ai/           AI provider 配置、prompt、响应 schema
+  api/          FastAPI 路由
+  core/         设置、数据库、安全、日志
+  models/       SQLAlchemy 模型
+  schemas/      Pydantic API schema
+  scripts/      seed、管理员、修复类工具
+  services/     业务逻辑、判题、函数模式 wrapper
+  worker/       Judge Worker
 frontend/
   src/
     components/
     lib/
     stores/
     main.tsx
-tests/         后端测试
-docs/          交接、验收和审计文档
+tests/          后端测试
+docs/           部署、交接、验收和项目导览文档
+specs/          产品和实现规划文档
 ```
 
 ## 质量门槛

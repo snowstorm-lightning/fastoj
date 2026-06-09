@@ -1,12 +1,28 @@
 # Codex Progress
 
-## 2026-06-08 Tencent TCR Deploy Pull Optimization
+## 2026-06-09 README Refresh
 
-- [x] Switched the deploy workflow from GHCR to Tencent Cloud TCR defaults, using `TCR_USERNAME`/`TCR_PASSWORD`, optional `TCR_REGISTRY`, and optional `TCR_NAMESPACE`.
+- [x] Reworked README and README.zh-CN opening sections to present FastOJ as a full-stack AI-assisted OJ with real judge, AI safety, admin operations, and deployable architecture.
+- [x] Added a prominent technology-stack table covering backend, queue/data, judge runtime, frontend, rich UI, AI providers, tooling, CI/CD, and container registry usage.
+- [x] Expanded the architecture section with concrete run/submit, realtime feedback, function-mode, AI-safety, and admin-authoring flows.
+- [x] Refreshed the project layout summary with `backend/scripts`, richer docs coverage, and `specs`.
+- [x] Generalized deployment wording and workflow names from provider-specific server language to generic server/container-registry language.
+
+## 2026-06-09 CI/CD Documentation-Only Skip
+
+- [x] Added GitHub Actions path filters so documentation-only changes do not trigger CI or deployment.
+- [x] CI now ignores PR and `master` push changes that only touch `*.md`, `docs/**`, or `specs/**`.
+- [x] Deploy now ignores `master` push changes that only touch `*.md`, `docs/**`, or `specs/**`; manual `workflow_dispatch` remains available.
+- [x] Updated README, Chinese README, and deployment docs to describe the skip behavior.
+
+## 2026-06-08 Registry Deploy Pull Optimization
+
+- [x] Switched the deploy workflow from GHCR to the configured registry defaults, using generic `REGISTRY_USERNAME`/`REGISTRY_PASSWORD`, optional `CONTAINER_REGISTRY`, and optional `REGISTRY_NAMESPACE`.
+- [x] Generalized deploy secrets and variables to `DEPLOY_*` and `REGISTRY_*` names.
 - [x] Kept API and worker images on per-commit tags while splitting judge runtime onto stable `FASTOJ_JUDGE_IMAGE_TAG=py311-node24-torch271`.
 - [x] Changed judge image publishing so the stable judge runtime is built only when the registry tag is missing, `Dockerfile.judge` changes, or the manual `build_judge` workflow input is selected.
 - [x] Changed server deployment to pull only `api` and `worker` during normal deploys; `judge-runtime` is pulled and restarted only when the workflow built judge or the server lacks the stable image.
-- [x] Updated production Compose, `.env.prod.example`, deployment docs, and README deployment summaries for the TCR flow.
+- [x] Updated production Compose, `.env.prod.example`, deployment docs, and README deployment summaries for the registry-backed deploy flow.
 - [x] Verification passed: `docker compose config -q`; `docker compose --env-file .env.prod.example -f docker-compose.prod.yml config -q`; `uv run ruff check .`; `uv run pytest` (236 passed, 2 existing FastAPI `regex` warnings); `cd frontend && npm run build` (existing large chunk warnings); `cd frontend && npm test` (10 files / 44 tests); `docker compose up --build -d api`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps` reported API, worker, PostgreSQL, and Redis healthy with judge-runtime running.
 
 ## 2026-06-08 User Management And Account Recovery
@@ -26,7 +42,7 @@
 
 ## 2026-06-07 Admin DeepSeek Pro Profile And Repair Budget
 
-- [x] Added an admin-only `deepseek-pro` AI profile using normal OpenAI-compatible model id `deepseek-v4-pro` without the Claude Code `[1m]` suffix.
+- [x] Added an admin-only `deepseek-pro` AI profile using the OpenAI-compatible model id `deepseek-v4-pro`.
 - [x] Kept regular user AI controls on the existing `default`/Flash path: `deepseek-pro` is hidden from normal `/ai/profiles` responses and rejected server-side for non-admin AI actions.
 - [x] Changed the admin Problem Agent default model selection to prefer `deepseek-pro` when available, while still allowing admins to choose Auto, DeepSeek Flash, or Qwen from the page.
 - [x] Added Pro-specific configuration knobs: `AI_DEEPSEEK_PRO_*`, `AI_DEEPSEEK_PRO_MAX_OUTPUT_TOKENS`, `AI_DEEPSEEK_PRO_TIMEOUT_SECONDS`, and `AI_AUTHORING_REPAIR_ATTEMPTS`.
@@ -137,10 +153,10 @@
 - [x] Clarified the workbench discussion tab as browser-local notes and disabled local posting while logged out.
 - [x] Verification passed: `uv run ruff check .`; `uv run pytest` (162 passed); `cd frontend && npm run build`; `cd frontend && npm test` (9 files / 26 tests); `docker compose config`; `docker compose up --build -d api worker`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps` reported API, worker, PostgreSQL, and Redis healthy.
 
-## 2026-06-01 CI/CD And Tencent Cloud Deployment Prep
+## 2026-06-01 CI/CD And Server Deployment Prep
 
 - [x] Added GitHub Actions CI for backend lint/tests and frontend build/tests on PRs and `master` pushes.
-- [x] Added a self-contained deploy workflow that runs the same quality gate, builds API/worker/judge images on GitHub Actions, pushes them to GHCR, SSHes as `ubuntu`, uploads the production Compose file, pulls images, and restarts services on Tencent Cloud.
+- [x] Added a self-contained deploy workflow that runs the same quality gate, builds API/worker/judge images on GitHub Actions, pushes them to GHCR, SSHes as `ubuntu`, uploads the production Compose file, pulls images, and restarts services on the server.
 - [x] Added `docker-compose.prod.yml` for server-side image-based deployment without source bind mounts.
 - [x] Kept `.env` as the only runtime environment filename for both local and server use; added `.env.prod.example` for `/opt/projects/fastoj/.env` and documented that `.env.dev` is optional and unnecessary for the normal local-plus-server flow.
 - [x] Updated local Compose to expose PostgreSQL, Redis, and API ports through `.env` variables while retaining loopback defaults.

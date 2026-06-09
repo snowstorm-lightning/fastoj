@@ -1,6 +1,6 @@
 # FastOJ CI/CD 部署流程
 
-目标：本机和腾讯云服务器尽量使用同一套 Docker Compose 拓扑。GitHub Actions
+目标：本机和服务器尽量使用同一套 Docker Compose 拓扑。GitHub Actions
 负责 build 镜像，服务器只负责 pull 镜像和重启容器。
 
 ## 环境文件
@@ -8,7 +8,7 @@
 运行时只使用 `.env` 这个文件名。
 
 - 本机：在仓库根目录把 `.env.example` 复制成 `.env`。
-- 腾讯云服务器：把 `.env.prod.example` 复制到 `/opt/projects/fastoj/.env`，再填真实生产值。
+- 服务器：把 `.env.prod.example` 复制到 `/opt/projects/fastoj/.env`，再填真实生产值。
 - 不要提交 `.env`；仓库已经忽略 `.env` 和 `.env.*`。
 - 常规“本机 + 一台服务器”流程不需要 `.env.dev`。只有你需要在同一台机器上频繁切换多套本地环境时，才考虑额外的 `.env.dev`。
 
@@ -53,39 +53,39 @@ npm run dev
 
 仓库现在有两个 workflow：
 
-- `.github/workflows/ci.yml`：PR 和 `master` 推送时运行后端 lint/test、前端 build/test。
-- `.github/workflows/deploy.yml`：构建 `api`、`worker` 业务镜像并推送到腾讯云 TCR；`judge` 运行时镜像使用稳定 tag，只在镜像不存在、`Dockerfile.judge` 变更或手动要求时构建。随后 workflow 会 SSH 到腾讯云服务器，上传生产 Compose 文件，只拉取业务镜像并重启服务。
+- `.github/workflows/ci.yml`：包含代码或配置变更的 PR 和 `master` 推送时运行后端 lint/test、前端 build/test；纯文档变更（`*.md`、`docs/**`、`specs/**`）会被忽略。
+- `.github/workflows/deploy.yml`：包含代码或配置变更的 `master` 推送，或手动运行 workflow 时，构建 `api`、`worker` 业务镜像并推送到配置的镜像仓库；`judge` 运行时镜像使用稳定 tag，只在镜像不存在、`Dockerfile.judge` 变更或手动要求时构建。随后 workflow 会 SSH 到服务器，上传生产 Compose 文件，只拉取业务镜像并重启服务。纯文档 `master` 推送不会触发部署。
 
 需要在 GitHub 仓库 Settings -> Secrets and variables -> Actions 里配置：
 
 ```text
-TENCENT_HOST              # 腾讯云服务器公网 IP 或域名
-TENCENT_SSH_PRIVATE_KEY   # 可以以 ubuntu 用户登录服务器的私钥
-TCR_USERNAME              # 腾讯云 TCR 登录用户名
-TCR_PASSWORD              # 腾讯云 TCR 登录密码或访问凭据
+DEPLOY_HOST              # 服务器公网 IP 或域名
+DEPLOY_SSH_PRIVATE_KEY   # 可以以 ubuntu 用户登录服务器的私钥
+REGISTRY_USERNAME        # 镜像仓库登录用户名
+REGISTRY_PASSWORD        # 镜像仓库登录密码或访问凭据
 ```
 
 可选 secrets：
 
 ```text
-TENCENT_PORT              # SSH 端口，默认 22
+DEPLOY_PORT              # SSH 端口，默认 22
 ```
 
 可选 repository variable：
 
 ```text
-TENCENT_DEPLOY_PATH       # 默认 /opt/projects/fastoj
-TCR_REGISTRY              # 默认 ccr.ccs.tencentyun.com
-TCR_NAMESPACE             # TCR 命名空间；默认使用小写 GitHub owner
+DEPLOY_PATH              # 默认 /opt/projects/fastoj
+CONTAINER_REGISTRY       # 默认 ccr.ccs.tencentyun.com
+REGISTRY_NAMESPACE       # 镜像仓库命名空间；默认使用小写 GitHub owner
 FASTOJ_JUDGE_IMAGE_TAG    # 默认 py311-node24-torch271
 ```
 
-TCR 命名空间建议显式配置为你的腾讯云镜像仓库命名空间。默认值只适合 GitHub owner
-刚好等于 TCR namespace 的情况。`FASTOJ_JUDGE_IMAGE_TAG` 是稳定运行时 tag，只有
+镜像仓库命名空间建议显式配置。默认值只适合 GitHub owner
+刚好等于镜像仓库 namespace 的情况。`FASTOJ_JUDGE_IMAGE_TAG` 是稳定运行时 tag，只有
 Python/Node/JDK/Go/NumPy/PyTorch 等判题运行环境变化时才需要调整或在手动运行
 workflow 时勾选 `build_judge`。
 
-## 腾讯云服务器准备
+## 服务器准备
 
 SSH 到服务器：
 
@@ -105,7 +105,7 @@ cd /opt/projects/fastoj
 
 ```text
 FASTOJ_IMAGE_REGISTRY=ccr.ccs.tencentyun.com
-FASTOJ_IMAGE_OWNER=你的 TCR 命名空间，必须小写
+FASTOJ_IMAGE_OWNER=你的镜像仓库命名空间，必须小写
 FASTOJ_IMAGE_TAG=latest
 FASTOJ_JUDGE_IMAGE_TAG=py311-node24-torch271
 POSTGRES_PASSWORD=足够长的随机数据库密码
@@ -140,7 +140,7 @@ openssl rand -hex 32
 ```
 
 第一次部署可以推送到 `master`，或者在 GitHub Actions 页面手动运行
-`Build and Deploy`。如果 TCR 中还没有稳定 judge 镜像，workflow 会自动构建；如果你
+`Build and Deploy`。如果镜像仓库中还没有稳定 judge 镜像，workflow 会自动构建；如果你
 只是想强制重建 judge 运行时，可以手动运行 workflow 并勾选 `build_judge`。
 workflow 会上传生产 Compose 文件并启动容器。
 
@@ -158,7 +158,7 @@ docker compose exec api uv run python -m backend.scripts.create_admin --username
 
 - `.env` 里保持 `FASTOJ_BIND=127.0.0.1`、`FASTOJ_PORT=8010`。
 - 在服务器上用 Nginx 或 Caddy 做 HTTPS 反向代理。
-- 腾讯云安全组只开放 `80`、`443` 和 SSH 端口。
+- 服务器防火墙或安全组只开放 `80`、`443` 和 SSH 端口。
 
 Caddy 示例：
 
@@ -169,7 +169,7 @@ fastoj.example.com {
 ```
 
 如果暂时不用反向代理，把 `FASTOJ_BIND=0.0.0.0`，保留 `FASTOJ_PORT=8010`，并在
-腾讯云安全组开放 `8010`。这适合临时验证，不建议作为正式公网部署。
+服务器防火墙或安全组开放 `8010`。这适合临时验证，不建议作为正式公网部署。
 
 ## 日常运维
 

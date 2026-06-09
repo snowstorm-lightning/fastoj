@@ -4,86 +4,76 @@ English | [简体中文](README.zh-CN.md)
 
 Live demo: [fastoj.snowstormlightning.top](http://fastoj.snowstormlightning.top)
 
-FastOJ is an AI-assisted online judge for interview practice. It combines strict
-Docker-based judging, a Monaco coding workbench, bilingual product UI, realtime
-submission status, and AI explanations that are grounded in public judging
-context instead of hidden tests.
+FastOJ is a full-stack, AI-assisted online judge for interview practice. It
+combines a LeetCode-style learner experience with a production-shaped backend:
+FastAPI, PostgreSQL, Redis Streams, Docker sandbox execution, a React/Monaco
+workbench, bilingual UI, admin authoring workflows, and AI feedback that is
+explicitly isolated from hidden tests.
 
-If you want a project that feels like a compact LeetCode-style training platform,
-but is still hackable enough to run locally, inspect, and extend, FastOJ is built
-for that.
+The project is designed to be useful in two ways: it is a runnable practice
+platform with a 108-problem seed catalog, and it is a compact systems project
+for studying judge pipelines, sandboxing, async workers, AI provider routing,
+and product-grade frontend workflows.
 
-## Why Clone It
+## Why It Stands Out
 
-- **Real OJ behavior, not a toy runner.** Submissions run through a Redis-backed
-  judge worker and Docker sandbox. Production code does not fall back to host
-  `subprocess` execution.
-- **Function mode and ACM mode are both first-class.** Function mode gives
-  learners a language-specific starter frame; ACM mode keeps classic stdin/stdout
-  practice available for every problem. The bundled 108-problem seed catalog now
-  ships executable Python official solutions and stronger deterministic hidden
-  coverage for every seeded problem.
-- **AI help is useful without leaking hidden cases.** Hints, explanations,
-  reviews, and chat use verdicts, user code, public samples, and safe aggregate
-  summaries. Hidden testcase input, expected output, and actual output are not
-  returned to users or sent to the AI provider.
-- **The frontend is a real product surface.** It supports both light and dark
-  themes, and includes a searchable problem library, card/list layouts, a
-  three-column workbench, editable public-run inputs with official-solution
-  expected output generation, output diffing, judge timeline, AI drawer,
-  expandable submission-code history, shared problem discussions, settings, admin screens with testcase
-  management, and a training graph.
-- **It is ready for provider experiments.** The AI layer uses an
-  OpenAI-compatible profile, with examples for hosted DeepSeek-style APIs and a
-  local Qwen/llama.cpp server.
+- **Real judge pipeline.** Submissions go from FastAPI to Redis Streams, then to
+  a worker supervised with parent/child task isolation, and finally into a
+  locked-down Docker sandbox. Production does not execute untrusted code with
+  host `subprocess`.
+- **Function mode and ACM mode.** Learners can solve starter-frame function
+  problems or classic stdin/stdout problems. Dual-mode drafts can keep both
+  views aligned from the same logical testcase metadata.
+- **AI that respects the OJ boundary.** Hints, explanations, reviews, and chat
+  use public samples, verdicts, user code, and safe aggregate details. Hidden
+  testcase input, expected output, and actual output are not exposed to users or
+  sent to model providers.
+- **A product frontend, not just forms.** The React UI includes a searchable
+  library, card/list layouts, Monaco editing, split result panels, output diffs,
+  judge timelines, AI copilot, account settings, shared discussions, a React Flow
+  training graph, and a full admin console.
+- **Admin-grade problem operations.** Administrators can generate original
+  drafts, import external problem material, stream Agent traces over SSE,
+  validate official solutions in the sandbox, manage users and permissions, edit
+  testcase sets, revalidate drafts, and publish multilingual official solutions.
+- **Provider-flexible AI.** The backend uses OpenAI-compatible profiles, with
+  documented routes for hosted DeepSeek-style APIs and local Qwen through
+  llama.cpp `llama-server`.
+- **Deployable shape.** Docker Compose is used locally and in production, GitHub
+  Actions builds API/worker images, a container registry stores images, and the
+  production server pulls images instead of building source.
+
+## Tech Stack at a Glance
+
+| Layer | Technologies |
+| --- | --- |
+| Backend API | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic |
+| Data and queue | PostgreSQL 14+, Redis Streams, Redis Pub/Sub |
+| Judge runtime | Python Docker SDK, Docker sandbox containers, worker watchdogs, dead-letter handling |
+| Frontend | React, TypeScript, Vite, Tailwind CSS, Monaco Editor, TanStack Query, Zustand, Zod |
+| Rich UI | React Flow, Shiki, xterm, DOMPurify, marked, Pretext text measurement |
+| AI layer | OpenAI-compatible HTTP providers, DeepSeek profiles, local Qwen/llama.cpp profile |
+| Tooling and CI/CD | `uv`, `ruff`, `pytest`, `npm`, Vitest, Docker Compose, GitHub Actions, container registry |
 
 ## Product Tour
 
-1. **Light/dark themes and bilingual UI** - switch themes and Chinese/English
-   from the top navigation; signed-in language preference is saved on the
-   account, while guests fall back to browser language and local storage. The
-   library, workbench, graph, auth flow, and admin console all follow the
-   selected theme for daytime browsing and longer night sessions.
+1. **Bilingual light/dark interface** - switch English/Chinese and theme from the
+   top navigation. Signed-in language preference is stored on the account;
+   guests use browser language plus local storage. The library, workbench,
+   graph, auth flow, and admin console follow the same theme system.
 2. **Problem library** - search, filter by tag/difficulty, switch between visual
    cards and a dense OJ-style list, and jump into recommended practice.
-3. **Workbench** - read the statement, edit in Monaco, run editable public
-   inputs, compare official expected output with your output, submit for full
-   judging, and watch status move from pending to result. When code is wrong,
-   the page shows judge feedback and the right-side AI judge assistant continues
-   with likely causes, suspicious code regions, boundary checks, and next steps.
-   Submission history entries expand to show the submitted code, and problem
-   discussions are shared through the backend instead of local browser storage.
+3. **Coding workbench** - read the statement, code in Monaco, edit public-run
+   inputs, compare official expected output with your output, submit for hidden
+   judging, and watch realtime status. Wrong answers keep the judge feedback,
+   diff view, submission code, and AI follow-up in one place.
 4. **AI Copilot** - request progressive hints, failed-submission explanations,
    code review, and contextual chat in the active UI language.
-5. **Training graph** - browse knowledge nodes and return to the library with the
-   corresponding tag filter applied.
-6. **Admin console** - the admin surface includes the problem-authoring Agent,
-   user management, problem management, and testcase management. AI-generated
-   content is saved as a draft until an administrator approves it; validation
-   failures can trigger bounded AI repair attempts before the final draft is
-   saved, and admins can manually edit failed drafts, save, and revalidate them.
-   Admins can also import pasted external problem material through a separate
-   workflow; the source text stays admin-only while AI rewrites and adapts the
-   draft before validation. Agent runs execute in the background and stream
-   progress to the admin console over SSE, so the execution trace updates
-   without refreshing. Runs are shown as a summary-first trace, including failed
-   imports that never created a draft; step input/output/error details expand on
-   demand with long or code-like fields safely abbreviated.
-   User management is an account center with searchable user rows, status and
-   role badges, detail-side permission editing, admin password reset, and
-   server-side safeguards against disabling the last active administrator.
-   Problem management covers statements, slug, mode, function signature, ACM formats, limits, visibility,
-   official solutions, full testcase sets, revalidation, and deleting retired
-   problems. Drafts can publish dual-mode problems that support both function
-   and ACM practice; dual mode can store separate ACM stdin/stdout and function
-   JSON views for the same logical sample, and validation runs the available
-   mode-specific official solution contracts. The authoring Agent can request,
-   validate, edit, and
-   publish official solutions for multiple programming languages from the same
-   draft. When an extra language is added during draft or formal-problem review,
-   admins can ask AI to fill that single official solution before saving and
-   revalidating. Simple drafts are allowed to use fewer cases when extra hidden
-   cases would only duplicate coverage.
+5. **Training graph** - browse topic nodes built with React Flow and return to
+   the library with the matching tag filter applied.
+6. **Admin console** - manage problems, testcase sets, users, permissions, AI
+   authoring drafts, import workflows, Agent run traces, official solutions, and
+   draft publication from one protected workspace.
 
 ## Page Showcase
 
@@ -238,8 +228,7 @@ AI_QWEN_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 ```
 
 For normal OpenAI-compatible DeepSeek API calls, use `deepseek-v4-pro` or
-`deepseek-v4-flash` directly. Do not add the `[1m]` suffix unless you are using
-DeepSeek through its Anthropic/Claude Code compatibility integration.
+`deepseek-v4-flash` directly.
 
 FastOJ exposes `GET /api/v1/ai/profiles` for the frontend model selector. The
 API checks the configured profiles in the background with a short timeout and
@@ -559,14 +548,17 @@ ignores `.env` and `.env.*`; `.env.example` contains safe placeholders only.
 
 ## CI/CD Deployment
 
-FastOJ includes GitHub Actions for pull-request checks and Tencent Cloud
-deployment:
+FastOJ includes GitHub Actions for pull-request checks and server deployment:
 
-- `.github/workflows/ci.yml` runs backend lint/tests and frontend build/tests.
+- `.github/workflows/ci.yml` runs backend lint/tests and frontend build/tests
+  for pull requests and `master` pushes that include code or configuration
+  changes. Documentation-only changes (`*.md`, `docs/**`, `specs/**`) are
+  ignored.
 - `.github/workflows/deploy.yml` builds API and worker images in GitHub
-  Actions, pushes them to Tencent Cloud TCR, builds the stable judge runtime
-  image only when needed, then SSHes to the Tencent Cloud server as `ubuntu` to
-  pull API/worker images and restart containers.
+  Actions, pushes them to the configured container registry, builds the stable
+  judge runtime image only when needed, then SSHes to the server as `ubuntu` to
+  pull API/worker images and restart containers. Documentation-only `master`
+  pushes do not trigger deployment.
 
 Use `.env` as the runtime environment filename in both places. Locally, copy
 `.env.example` to `.env`; on the server, copy `.env.prod.example` to
@@ -655,36 +647,56 @@ flowchart LR
   API --> AI[OpenAI-compatible AI Provider]
 ```
 
-Core stack:
+Key flows:
+
+- **Run and submit:** the API persists submissions, enqueues judge work in Redis
+  Streams, and returns fast status while the worker executes code in Docker.
+- **Realtime feedback:** worker events are published through Redis and surfaced
+  to the browser through WebSocket-first status updates, with polling fallback
+  where needed.
+- **Function mode:** service wrappers convert typed JSON-style function inputs
+  into executable language-specific harnesses, while ACM mode keeps raw
+  stdin/stdout execution available.
+- **AI assistance:** the API builds prompts from public samples, verdicts, user
+  code, and safe summaries. Hidden testcase content remains behind admin-only
+  routes and is excluded from learner-side AI prompts.
+- **Admin authoring:** draft generation, imports, validation, repair attempts,
+  official solutions, and testcase review all run behind server-side role checks.
+
+Core engineering stack:
 
 - Backend: Python 3.11+, FastAPI, SQLAlchemy 2.0, Pydantic v2, Alembic,
   PostgreSQL, Redis Streams.
 - Judge: Docker sandbox worker with async queueing, parent/child task watchdog,
   active-task markers, retries, dead-letter handling, and duplicate-task
   protection.
-- Frontend: React, TypeScript, Vite, Tailwind CSS, Monaco Editor, TanStack Query,
-  Zustand, Zod, xterm, Shiki, React Flow, Pretext text measurement.
-- Tooling: `uv`, `ruff`, `pytest`, `npm`, Docker Compose.
+- Frontend: React, TypeScript, Vite, Tailwind CSS, Monaco Editor, TanStack
+  Query, Zustand, Zod, xterm, Shiki, React Flow, DOMPurify, marked, and Pretext
+  text measurement.
+- Tooling: `uv`, `ruff`, `pytest`, `npm`, Vitest, Docker Compose, GitHub
+  Actions, container registry.
 
 ## Project Layout
 
 ```text
 backend/
-  ai/          AI provider config, prompts, response schemas
-  api/         FastAPI routes
-  core/        settings, database, security, logging
-  models/      SQLAlchemy models
-  schemas/     Pydantic API schemas
-  services/    business logic, judging, function wrappers
-  worker/      judge worker
+  ai/           AI provider config, prompts, response schemas
+  api/          FastAPI routes
+  core/         settings, database, security, logging
+  models/       SQLAlchemy models
+  schemas/      Pydantic API schemas
+  scripts/      seed/admin/repair utilities
+  services/     business logic, judging, function wrappers
+  worker/       judge worker
 frontend/
   src/
     components/
     lib/
     stores/
     main.tsx
-tests/         backend tests
-docs/          handoff, acceptance, and audit notes
+tests/          backend tests
+docs/           deployment, handoff, acceptance, and project-guide notes
+specs/          product and implementation planning notes
 ```
 
 ## Quality Gate

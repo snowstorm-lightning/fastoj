@@ -1,18 +1,33 @@
 # Codex Handoff
 
-Updated: 2026-06-08
+Updated: 2026-06-09
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
 
-## 2026-06-08 Tencent TCR Deploy Pull Optimization
+## 2026-06-09 README Refresh
 
-- Deploy workflow now defaults to Tencent Cloud TCR (`ccr.ccs.tencentyun.com`) instead of GHCR and uses `TCR_USERNAME`/`TCR_PASSWORD`, optional `TCR_REGISTRY`, and optional `TCR_NAMESPACE`.
+- README and README.zh-CN now open with a clearer full-stack product pitch, real judge pipeline, AI safety boundary, admin operations, provider-flexible AI, and deployable architecture.
+- Added a technology-stack table that explicitly names FastAPI, Pydantic, SQLAlchemy, PostgreSQL, Redis Streams/PubSub, Docker SDK/sandbox, React, TypeScript, Vite, Tailwind CSS, Monaco, TanStack Query, Zustand, Zod, React Flow, Shiki, xterm, DOMPurify, marked, Pretext, OpenAI-compatible providers, DeepSeek/Qwen profiles, uv, ruff, pytest, Vitest, Docker Compose, GitHub Actions, and container registry usage.
+- Expanded the README architecture section with concrete run/submit, realtime feedback, function-mode, AI-safety, and admin-authoring flows.
+- Refreshed the README project layout summary to include `backend/scripts`, deployment/project-guide docs, and `specs`.
+- Deployment wording and workflow names now use generic server/container-registry language instead of provider-specific server language.
+
+## 2026-06-09 CI/CD Documentation-Only Skip
+
+- CI now skips PRs and `master` pushes when every changed path is documentation: `*.md`, `docs/**`, or `specs/**`.
+- Deploy now skips `master` pushes with only those documentation paths. Manual `workflow_dispatch` deploys still work.
+- README, README.zh-CN, and `docs/DEPLOYMENT.md` describe the new skip behavior.
+
+## 2026-06-08 Registry Deploy Pull Optimization
+
+- Deploy workflow now defaults to the configured registry (`ccr.ccs.tencentyun.com` by default) instead of GHCR and uses generic `REGISTRY_USERNAME`/`REGISTRY_PASSWORD`, optional `CONTAINER_REGISTRY`, and optional `REGISTRY_NAMESPACE`.
+- Deploy workflow now uses generic `DEPLOY_*` server secrets and variables.
 - API and worker images still get per-commit and `latest` tags. Judge runtime now uses stable `FASTOJ_JUDGE_IMAGE_TAG=py311-node24-torch271` and is built only when the tag is missing, `Dockerfile.judge` changed, or manual workflow input `build_judge` is selected.
 - Production Compose points API/worker `JUDGE_CONTAINER_IMAGE` and `judge-runtime.image` at the stable judge tag, with `pull_policy: missing` for `judge-runtime`.
 - Normal server deploys now run `docker compose pull api worker` and `up api worker`; `judge-runtime` is pulled and restarted only when the workflow built judge or the server does not have the stable image yet.
-- Updated `.env.prod.example`, `docs/DEPLOYMENT.md`, `README.md`, and `README.zh-CN.md` with TCR setup and manual judge-runtime update commands.
+- Updated `.env.prod.example`, `docs/DEPLOYMENT.md`, `README.md`, and `README.zh-CN.md` with registry setup and manual judge-runtime update commands.
 - Verification passed: `docker compose config -q`; `docker compose --env-file .env.prod.example -f docker-compose.prod.yml config -q`; `uv run ruff check .`; `uv run pytest` (236 passed, 2 existing FastAPI `regex` warnings); `cd frontend && npm run build` (existing large chunk warnings); `cd frontend && npm test` (10 files / 44 tests); `docker compose up --build -d api`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps` reported API, worker, PostgreSQL, and Redis healthy with judge-runtime running.
 
 ## 2026-06-08 User Management And Account Recovery
@@ -36,7 +51,7 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - Recent failed problem imports were model/schema failures, not judge failures. The latest failed `problem_import` runs ended with `AI provider returned JSON without a problem draft object`, and the model steps returned short or empty payloads before validation failed.
 - The running container had both `default` and `deepseek` resolving to `deepseek-v4-flash` with `AI_MAX_OUTPUT_TOKENS=1200`. For full problem import/draft JSON, model strength and output budget are the immediate bottlenecks; the current 30000-character raw-material limit is far below 1M context.
 - Added admin-only profile `deepseek-pro`, configured through `AI_DEEPSEEK_PRO_BASE_URL`, `AI_DEEPSEEK_PRO_API_KEY`, `AI_DEEPSEEK_PRO_MODEL=deepseek-v4-pro`, `AI_DEEPSEEK_PRO_TIMEOUT_SECONDS=120`, and `AI_DEEPSEEK_PRO_MAX_OUTPUT_TOKENS=4000`.
-- The implementation uses the normal OpenAI-compatible DeepSeek model id `deepseek-v4-pro` without `[1m]`; `[1m]` is only for the Anthropic/Claude Code compatibility naming path.
+- The implementation uses the normal OpenAI-compatible DeepSeek model id `deepseek-v4-pro`.
 - Regular user AI controls do not receive `deepseek-pro`, and non-admin AI actions passing that profile are rejected with 403. The admin Problem Agent defaults to `deepseek-pro` when available and still allows selecting other profiles.
 - Authoring repair attempts are now configurable through `AI_AUTHORING_REPAIR_ATTEMPTS`, defaulting to 4 repair attempts plus the initial generation attempt. Runtime clamping keeps it between 0 and 8 repair attempts; do not make it unlimited because each attempt is a full model call.
 - Verification passed: `uv run ruff check .`; `uv run pytest` (200 passed, existing FastAPI `regex` warnings); `cd frontend && npm test` (10 files / 38 tests); `cd frontend && npm run build` (existing large chunk warnings); `docker compose up --build -d api`; health check at `http://127.0.0.1:8010/api/v1/health`.
@@ -144,14 +159,14 @@ Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static fronte
 - The workbench discussion tab is now labeled as browser-local notes, safely handles corrupt local storage, and disables local posting while logged out. There is still no shared server-backed discussion model/API.
 - Verification passed: `uv run ruff check .`; `uv run pytest` (162 passed); `cd frontend && npm run build`; `cd frontend && npm test` (9 files / 26 tests); `docker compose config`; `docker compose up --build -d api worker`; API health at `http://127.0.0.1:8010/api/v1/health`; `docker compose ps` reported API, worker, PostgreSQL, and Redis healthy.
 
-## 2026-06-01 CI/CD And Tencent Cloud Deployment Prep
+## 2026-06-01 CI/CD And Server Deployment Prep
 
 - GitHub Actions now has `.github/workflows/ci.yml` for backend lint/tests and frontend build/tests on PRs and `master` pushes.
-- `.github/workflows/deploy.yml` now runs a quality gate, builds API/worker/judge images in GitHub Actions, pushes them to GHCR, SSHes to the Tencent Cloud server as `ubuntu`, uploads `docker-compose.prod.yml`, pulls images, and restarts services.
+- `.github/workflows/deploy.yml` now runs a quality gate, builds API/worker/judge images in GitHub Actions, pushes them to GHCR, SSHes to the server as `ubuntu`, uploads `docker-compose.prod.yml`, pulls images, and restarts services.
 - Production deployment uses `/opt/projects/fastoj/.env` plus `docker-compose.prod.yml`; the server no longer needs to build source locally during normal deploys.
 - Local and server runtime configuration intentionally use the same filename, `.env`. Local `.env` comes from `.env.example`; server `.env` comes from `.env.prod.example`. `.env.dev` is not required for the normal local-plus-server workflow.
 - Local Compose now exposes PostgreSQL, Redis, and API ports through `.env` variables (`POSTGRES_PORT`, `REDIS_PORT`, `FASTOJ_PORT`) with loopback defaults.
-- Chinese deployment steps live in `docs/DEPLOYMENT.md`, including required GitHub secrets, Tencent Cloud server preparation, first seed/admin commands, and reverse-proxy guidance.
+- Chinese deployment steps live in `docs/DEPLOYMENT.md`, including required GitHub secrets, server preparation, first seed/admin commands, and reverse-proxy guidance.
 - Docker Compose config validation passed for local `.env.example` and production `.env.prod.example`; production Compose was tightened to avoid passing unrelated `.env` keys into containers.
 
 ## 2026-05-29 Account-Backed Locale Preference

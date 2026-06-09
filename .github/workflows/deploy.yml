@@ -11,16 +11,20 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "specs/**"
 
 permissions:
   contents: read
 
 env:
-  REGISTRY: ${{ vars.TCR_REGISTRY || 'ccr.ccs.tencentyun.com' }}
+  REGISTRY: ${{ vars.CONTAINER_REGISTRY || 'ccr.ccs.tencentyun.com' }}
   JUDGE_IMAGE_TAG: ${{ vars.FASTOJ_JUDGE_IMAGE_TAG || 'py311-node24-torch271' }}
   DEPLOY_USER: ubuntu
-  DEPLOY_PORT: ${{ secrets.TENCENT_PORT || '22' }}
-  DEPLOY_PATH: ${{ vars.TENCENT_DEPLOY_PATH || '/opt/projects/fastoj' }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+  DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/projects/fastoj' }}
 
 jobs:
   quality:
@@ -85,21 +89,21 @@ jobs:
       - name: Resolve image namespace
         id: image
         env:
-          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+          REGISTRY_NAMESPACE: ${{ vars.REGISTRY_NAMESPACE }}
         run: |
-          namespace="${TCR_NAMESPACE:-${GITHUB_REPOSITORY_OWNER}}"
+          namespace="${REGISTRY_NAMESPACE:-${GITHUB_REPOSITORY_OWNER}}"
           namespace="$(echo "${namespace}" | tr '[:upper:]' '[:lower:]')"
           echo "namespace=${namespace}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Tencent TCR
+      - name: Log in to container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.TCR_USERNAME }}
-          password: ${{ secrets.TCR_PASSWORD }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Decide whether to build judge image
         id: judge
@@ -162,7 +166,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ steps.image.outputs.namespace }}/fastoj-judge:${{ env.JUDGE_IMAGE_TAG }}
 
   deploy:
-    name: Deploy to Tencent Cloud
+    name: Deploy to server
     runs-on: ubuntu-latest
     needs: build
     environment: production
@@ -173,44 +177,44 @@ jobs:
 
       - name: Configure SSH
         env:
-          TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
-          TENCENT_SSH_PRIVATE_KEY: ${{ secrets.TENCENT_SSH_PRIVATE_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
         run: |
-          test -n "${TENCENT_HOST}"
-          test -n "${TENCENT_SSH_PRIVATE_KEY}"
+          test -n "${DEPLOY_HOST}"
+          test -n "${DEPLOY_SSH_PRIVATE_KEY}"
           install -m 700 -d ~/.ssh
-          printf '%s\n' "${TENCENT_SSH_PRIVATE_KEY}" > ~/.ssh/tencent
-          chmod 600 ~/.ssh/tencent
-          ssh-keyscan -p "${DEPLOY_PORT}" "${TENCENT_HOST}" >> ~/.ssh/known_hosts
+          printf '%s\n' "${DEPLOY_SSH_PRIVATE_KEY}" > ~/.ssh/fastoj_deploy
+          chmod 600 ~/.ssh/fastoj_deploy
+          ssh-keyscan -p "${DEPLOY_PORT}" "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
 
       - name: Upload production compose file
         env:
-          TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          ssh -i ~/.ssh/tencent -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${TENCENT_HOST}" \
+          ssh -i ~/.ssh/fastoj_deploy -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "sudo mkdir -p '${DEPLOY_PATH}' && sudo chown '${DEPLOY_USER}:${DEPLOY_USER}' '${DEPLOY_PATH}'"
-          scp -i ~/.ssh/tencent -P "${DEPLOY_PORT}" docker-compose.prod.yml \
-            "${DEPLOY_USER}@${TENCENT_HOST}:${DEPLOY_PATH}/docker-compose.yml"
+          scp -i ~/.ssh/fastoj_deploy -P "${DEPLOY_PORT}" docker-compose.prod.yml \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/docker-compose.yml"
 
-      - name: Log in to Tencent TCR on server
+      - name: Log in to container registry on server
         env:
-          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
-          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
-          TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          test -n "${TCR_USERNAME}"
-          test -n "${TCR_PASSWORD}"
-          printf '%s' "${TCR_PASSWORD}" | ssh -i ~/.ssh/tencent -p "${DEPLOY_PORT}" \
-            "${DEPLOY_USER}@${TENCENT_HOST}" "docker login '${REGISTRY}' -u '${TCR_USERNAME}' --password-stdin"
+          test -n "${REGISTRY_USERNAME}"
+          test -n "${REGISTRY_PASSWORD}"
+          printf '%s' "${REGISTRY_PASSWORD}" | ssh -i ~/.ssh/fastoj_deploy -p "${DEPLOY_PORT}" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "docker login '${REGISTRY}' -u '${REGISTRY_USERNAME}' --password-stdin"
 
       - name: Pull images and restart services
         env:
-          TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           IMAGE_NAMESPACE: ${{ needs.build.outputs.image_namespace }}
           IMAGE_TAG: ${{ github.sha }}
           JUDGE_BUILT: ${{ needs.build.outputs.judge_built }}
         run: |
-          ssh -i ~/.ssh/tencent -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${TENCENT_HOST}" "
+          ssh -i ~/.ssh/fastoj_deploy -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" "
             set -e
             cd '${DEPLOY_PATH}'
             test -f .env || { echo 'Missing ${DEPLOY_PATH}/.env on server' >&2; exit 1; }
