@@ -115,11 +115,11 @@ _DETAILS: dict[str, list[str]] = {
     "search-a-2d-matrix-ii": [
         "The row and column ordering lets you discard a row or column after each comparison. The question is only whether the target value appears at least once.",
     ],
-    "intersection-of-two-linked-lists": [
-        "In this array model, two lists intersect when they share the same suffix of values. Return the first value in that shared suffix, or null if no shared suffix exists.",
+  "intersection-of-two-linked-lists": [
+        "The function receives headA and headB. Sample arrays are used to build lists; intersection means the two lists share the same tail nodes. Return the first shared node, or null if no shared node exists.",
     ],
-    "reverse-linked-list": [
-        "The array lists node values from head to tail. Reversing the list means returning those values from tail to head.",
+  "reverse-linked-list": [
+        "The function receives the head node. Reverse next pointers and return the new head; sample arrays only display values from head to tail.",
     ],
     "palindrome-linked-list": [
         "The list is a palindrome when reading the node values from head to tail gives the same sequence as reading them from tail to head.",
@@ -127,8 +127,8 @@ _DETAILS: dict[str, list[str]] = {
     "linked-list-cycle": [
         "The pos value tells where the tail points back into the list. A pos of -1 means the tail points nowhere and the list has no cycle.",
     ],
-    "linked-list-cycle-ii": [
-        "When a cycle exists, the entry is the first node reached again by following next pointers from the head. In this array model, that entry is exactly the pos index.",
+  "linked-list-cycle-ii": [
+        "When a cycle exists, the entry is the first node reached again by following next pointers from the head. The platform displays the returned node as the sample pos index.",
     ],
     "merge-two-sorted-lists": [
         "Both input lists are already sorted in nondecreasing order. Preserve all values from both lists and produce one nondecreasing sequence.",
@@ -154,8 +154,8 @@ _DETAILS: dict[str, list[str]] = {
     "lru-cache": [
         "An LRU cache evicts the least recently used key when it needs room for a new key. Both a successful get and a put make that key the most recently used.",
     ],
-    "binary-tree-inorder-traversal": [
-        "The tree is represented as a level-order array with null placeholders. Inorder traversal visits the left subtree, then the current node, then the right subtree.",
+  "binary-tree-inorder-traversal": [
+        "The function receives root. The level-order array with null placeholders is only the sample display and construction format. Inorder traversal visits the left subtree, then the current node, then the right subtree.",
     ],
     "maximum-depth-of-binary-tree": [
         "Depth counts nodes on the longest path from the root down to a leaf. An empty tree has depth 0.",

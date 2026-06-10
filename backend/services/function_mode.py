@@ -221,6 +221,44 @@ class ParsedSignature:
     return_type: str
 
 
+@dataclass(frozen=True)
+class NodeFunctionProfile:
+    function_name: str
+    kind: str
+
+
+NODE_FUNCTION_PROFILES: dict[str, NodeFunctionProfile] = {
+    "add-two-numbers": NodeFunctionProfile("addTwoNumbers", "two_lists_to_list"),
+    "intersection-of-two-linked-lists": NodeFunctionProfile("getIntersectionNode", "intersection_node_value"),
+    "reverse-linked-list": NodeFunctionProfile("reverseList", "list_to_list"),
+    "palindrome-linked-list": NodeFunctionProfile("isPalindrome", "list_to_bool"),
+    "linked-list-cycle": NodeFunctionProfile("hasCycle", "cycle_to_bool"),
+    "linked-list-cycle-ii": NodeFunctionProfile("detectCycle", "cycle_to_index"),
+    "merge-two-sorted-lists": NodeFunctionProfile("mergeTwoLists", "two_lists_to_list"),
+    "remove-nth-node-from-end-of-list": NodeFunctionProfile("removeNthFromEnd", "list_int_to_list"),
+    "swap-nodes-in-pairs": NodeFunctionProfile("swapPairs", "list_to_list"),
+    "reverse-nodes-in-k-group": NodeFunctionProfile("reverseKGroup", "list_int_to_list"),
+    "copy-list-with-random-pointer": NodeFunctionProfile("copyRandomList", "random_to_random"),
+    "sort-list": NodeFunctionProfile("sortList", "list_to_list"),
+    "merge-k-sorted-lists": NodeFunctionProfile("mergeKLists", "list_array_to_list"),
+    "binary-tree-inorder-traversal": NodeFunctionProfile("inorderTraversal", "tree_to_vector"),
+    "maximum-depth-of-binary-tree": NodeFunctionProfile("maxDepth", "tree_to_scalar"),
+    "invert-binary-tree": NodeFunctionProfile("invertTree", "tree_to_tree"),
+    "symmetric-tree": NodeFunctionProfile("isSymmetric", "tree_to_scalar"),
+    "diameter-of-binary-tree": NodeFunctionProfile("diameterOfBinaryTree", "tree_to_scalar"),
+    "binary-tree-level-order-traversal": NodeFunctionProfile("levelOrder", "tree_to_matrix"),
+    "convert-sorted-array-to-binary-search-tree": NodeFunctionProfile("sortedArrayToBST", "array_to_tree"),
+    "validate-binary-search-tree": NodeFunctionProfile("isValidBST", "tree_to_scalar"),
+    "kth-smallest-element-in-a-bst": NodeFunctionProfile("kthSmallest", "tree_int_to_scalar"),
+    "binary-tree-right-side-view": NodeFunctionProfile("rightSideView", "tree_to_vector"),
+    "flatten-binary-tree-to-linked-list": NodeFunctionProfile("flatten", "flatten_tree"),
+    "construct-binary-tree-from-preorder-and-inorder-traversal": NodeFunctionProfile("buildTree", "two_arrays_to_tree"),
+    "path-sum-iii": NodeFunctionProfile("pathSum", "tree_int_to_scalar"),
+    "lowest-common-ancestor-of-a-binary-tree": NodeFunctionProfile("lowestCommonAncestor", "tree_lca_to_value"),
+    "binary-tree-maximum-path-sum": NodeFunctionProfile("maxPathSum", "tree_to_scalar"),
+}
+
+
 CPP_HELPERS = r"""
 #include <bits/stdc++.h>
 using namespace std;
@@ -2465,6 +2503,1681 @@ int main(void) {{
 """
 
 
+PYTHON_NODE_HELPERS = r"""
+class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+
+
+class Node:
+    def __init__(self, x=0, next=None, random=None):
+        self.val = x
+        self.next = next
+        self.random = random
+
+
+class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+"""
+
+
+def _strip_python_future_annotations(code: str) -> str:
+    return "\n".join(
+        line
+        for line in code.splitlines()
+        if line.strip() != "from __future__ import annotations"
+    ).strip()
+
+
+def _wrap_node_python(code: str, profile: NodeFunctionProfile) -> str:
+    function_name = profile.function_name
+    kind = profile.kind
+    user_code = _strip_python_future_annotations(code)
+    return f"""{PYTHON_NODE_HELPERS}
+
+{user_code}
+
+if __name__ == "__main__":
+    import json
+    import sys
+    from collections import deque
+
+    def _fastoj_json(line):
+        return json.loads(line) if line else None
+
+    def _fastoj_lines(raw):
+        return [line.strip() for line in raw.splitlines() if line.strip()]
+
+    def _fastoj_build_list(values):
+        dummy = ListNode()
+        tail = dummy
+        nodes = []
+        for value in values:
+            node = ListNode(value)
+            nodes.append(node)
+            tail.next = node
+            tail = node
+        return dummy.next, nodes
+
+    def _fastoj_list_values(head):
+        values = []
+        seen = set()
+        while head is not None and id(head) not in seen:
+            seen.add(id(head))
+            values.append(head.val)
+            head = head.next
+        return values
+
+    def _fastoj_build_cycle(values, pos):
+        head, nodes = _fastoj_build_list(values)
+        if nodes and 0 <= pos < len(nodes):
+            nodes[-1].next = nodes[pos]
+        return head, nodes
+
+    def _fastoj_node_index(nodes, target):
+        for index, node in enumerate(nodes):
+            if node is target:
+                return index
+        return -1
+
+    def _fastoj_build_intersection(left_values, right_values):
+        index = 1
+        while index <= len(left_values) and index <= len(right_values) and left_values[-index] == right_values[-index]:
+            index += 1
+        shared_count = index - 1
+        if shared_count >= 4:
+            shared_count -= 1
+        shared_values = left_values[len(left_values) - shared_count:] if shared_count else []
+        shared_head, _ = _fastoj_build_list(shared_values)
+
+        def attach(prefix):
+            prefix_head, prefix_nodes = _fastoj_build_list(prefix)
+            if prefix_nodes:
+                prefix_nodes[-1].next = shared_head
+                return prefix_head
+            return shared_head
+
+        return attach(left_values[: len(left_values) - len(shared_values)]), attach(right_values[: len(right_values) - len(shared_values)])
+
+    def _fastoj_build_random(values):
+        nodes = [Node(item[0]) for item in values]
+        for index, item in enumerate(values):
+            if index + 1 < len(nodes):
+                nodes[index].next = nodes[index + 1]
+            random_index = item[1] if len(item) > 1 else None
+            if random_index is not None:
+                nodes[index].random = nodes[random_index]
+        return nodes[0] if nodes else None
+
+    def _fastoj_random_values(head):
+        nodes = []
+        index_by_id = {{}}
+        current = head
+        while current is not None and id(current) not in index_by_id:
+            index_by_id[id(current)] = len(nodes)
+            nodes.append(current)
+            current = current.next
+        return [[node.val, index_by_id.get(id(node.random)) if node.random is not None else None] for node in nodes]
+
+    def _fastoj_build_tree(values):
+        if not values or values[0] is None:
+            return None
+        root = TreeNode(values[0])
+        queue = deque([root])
+        cursor = 1
+        while queue and cursor < len(values):
+            node = queue.popleft()
+            if cursor < len(values):
+                value = values[cursor]
+                cursor += 1
+                if value is not None:
+                    node.left = TreeNode(value)
+                    queue.append(node.left)
+            if cursor < len(values):
+                value = values[cursor]
+                cursor += 1
+                if value is not None:
+                    node.right = TreeNode(value)
+                    queue.append(node.right)
+        return root
+
+    def _fastoj_tree_values(root):
+        if root is None:
+            return []
+        values = []
+        queue = deque([root])
+        while queue:
+            node = queue.popleft()
+            if node is None:
+                values.append(None)
+                continue
+            values.append(node.val)
+            queue.append(node.left)
+            queue.append(node.right)
+        while values and values[-1] is None:
+            values.pop()
+        return values
+
+    def _fastoj_find_tree_node(root, value):
+        if root is None:
+            return None
+        queue = deque([root])
+        while queue:
+            node = queue.popleft()
+            if node.val == value:
+                return node
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        return None
+
+    def _fastoj_right_chain_values(root):
+        values = []
+        seen = set()
+        while root is not None and id(root) not in seen:
+            seen.add(id(root))
+            values.append(root.val)
+            root = root.right
+        return values
+
+    def _fastoj_format(value):
+        if isinstance(value, bool):
+            return str(value).lower()
+        if value is None:
+            return "null"
+        if isinstance(value, (list, tuple, dict)):
+            return json.dumps(value, separators=(",", ":"))
+        return str(value)
+
+    raw = sys.stdin.read().strip()
+    lines = _fastoj_lines(raw)
+    kind = {kind!r}
+    func = globals().get({function_name!r})
+    if not callable(func) and "Solution" in globals():
+        candidate = getattr(Solution(), {function_name!r}, None)
+        if callable(candidate):
+            func = candidate
+    if not callable(func):
+        raise NameError("Expected function {function_name}")
+
+    if kind == "list_to_list":
+        head, _nodes = _fastoj_build_list(_fastoj_json(lines[0]))
+        print(json.dumps(_fastoj_list_values(func(head)), separators=(",", ":")))
+    elif kind == "two_lists_to_list":
+        left, _ = _fastoj_build_list(_fastoj_json(lines[0]))
+        right, _ = _fastoj_build_list(_fastoj_json(lines[1]))
+        print(json.dumps(_fastoj_list_values(func(left, right)), separators=(",", ":")))
+    elif kind == "list_int_to_list":
+        head, _ = _fastoj_build_list(_fastoj_json(lines[0]))
+        print(json.dumps(_fastoj_list_values(func(head, int(lines[1]))), separators=(",", ":")))
+    elif kind == "list_array_to_list":
+        heads = [_fastoj_build_list(values)[0] for values in _fastoj_json(lines[0])]
+        print(json.dumps(_fastoj_list_values(func(heads)), separators=(",", ":")))
+    elif kind == "list_to_bool":
+        head, _ = _fastoj_build_list(_fastoj_json(lines[0]))
+        print(str(bool(func(head))).lower())
+    elif kind == "cycle_to_bool":
+        head, _nodes = _fastoj_build_cycle(_fastoj_json(lines[0]), int(lines[1]))
+        print(str(bool(func(head))).lower())
+    elif kind == "cycle_to_index":
+        head, nodes = _fastoj_build_cycle(_fastoj_json(lines[0]), int(lines[1]))
+        print(_fastoj_node_index(nodes, func(head)))
+    elif kind == "intersection_node_value":
+        head_a, head_b = _fastoj_build_intersection(_fastoj_json(lines[0]), _fastoj_json(lines[1]))
+        result = func(head_a, head_b)
+        print("null" if result is None else result.val)
+    elif kind == "random_to_random":
+        head = _fastoj_build_random(_fastoj_json(lines[0]))
+        print(json.dumps(_fastoj_random_values(func(head)), separators=(",", ":")))
+    elif kind in ("tree_to_vector", "tree_to_matrix"):
+        root = _fastoj_build_tree(_fastoj_json(lines[0]))
+        print(_fastoj_format(func(root)))
+    elif kind == "tree_to_scalar":
+        root = _fastoj_build_tree(_fastoj_json(lines[0]))
+        print(_fastoj_format(func(root)))
+    elif kind == "tree_to_tree":
+        root = _fastoj_build_tree(_fastoj_json(lines[0]))
+        print(json.dumps(_fastoj_tree_values(func(root)), separators=(",", ":")))
+    elif kind == "array_to_tree":
+        print(json.dumps(_fastoj_tree_values(func(_fastoj_json(lines[0]))), separators=(",", ":")))
+    elif kind == "two_arrays_to_tree":
+        print(json.dumps(_fastoj_tree_values(func(_fastoj_json(lines[0]), _fastoj_json(lines[1]))), separators=(",", ":")))
+    elif kind == "tree_int_to_scalar":
+        root = _fastoj_build_tree(_fastoj_json(lines[0]))
+        print(_fastoj_format(func(root, int(lines[1]))))
+    elif kind == "flatten_tree":
+        root = _fastoj_build_tree(_fastoj_json(lines[0]))
+        result = func(root)
+        print(json.dumps(_fastoj_right_chain_values(root if result is None else result), separators=(",", ":")))
+    elif kind == "tree_lca_to_value":
+        root = _fastoj_build_tree(_fastoj_json(lines[0]))
+        result = func(root, _fastoj_find_tree_node(root, int(lines[1])), _fastoj_find_tree_node(root, int(lines[2])))
+        print("null" if result is None else result.val)
+    else:
+        raise ValueError(f"Unsupported node function profile: {{kind}}")
+"""
+
+
+NODE_CPP_HELPERS = r"""
+struct ListNode {
+    int val;
+    ListNode *next;
+    ListNode() : val(0), next(nullptr) {}
+    ListNode(int x) : val(x), next(nullptr) {}
+    ListNode(int x, ListNode *next) : val(x), next(next) {}
+};
+
+class Node {
+public:
+    int val;
+    Node* next;
+    Node* random;
+    Node(int _val) : val(_val), next(nullptr), random(nullptr) {}
+};
+
+struct TreeNode {
+    int val;
+    TreeNode *left;
+    TreeNode *right;
+    TreeNode() : val(0), left(nullptr), right(nullptr) {}
+    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+    TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+};
+
+pair<ListNode*, vector<ListNode*>> buildList(const vector<int>& values) {
+    ListNode dummy;
+    ListNode* tail = &dummy;
+    vector<ListNode*> nodes;
+    for (int value : values) {
+        auto* node = new ListNode(value);
+        nodes.push_back(node);
+        tail->next = node;
+        tail = node;
+    }
+    return {dummy.next, nodes};
+}
+
+vector<int> listValues(ListNode* head) {
+    vector<int> values;
+    unordered_set<ListNode*> seen;
+    while (head && !seen.count(head)) {
+        seen.insert(head);
+        values.push_back(head->val);
+        head = head->next;
+    }
+    return values;
+}
+
+pair<ListNode*, vector<ListNode*>> buildCycleList(const vector<int>& values, int pos) {
+    auto built = buildList(values);
+    if (!built.second.empty() && pos >= 0 && pos < (int)built.second.size()) built.second.back()->next = built.second[pos];
+    return built;
+}
+
+int nodeIndex(const vector<ListNode*>& nodes, ListNode* target) {
+    for (int i = 0; i < (int)nodes.size(); ++i) if (nodes[i] == target) return i;
+    return -1;
+}
+
+pair<ListNode*, ListNode*> buildIntersectionLists(const vector<int>& leftValues, const vector<int>& rightValues) {
+    int suffix = 0;
+    while (suffix < (int)leftValues.size() && suffix < (int)rightValues.size()
+        && leftValues[leftValues.size() - suffix - 1] == rightValues[rightValues.size() - suffix - 1]) suffix++;
+    if (suffix >= 4) suffix--;
+    vector<int> sharedValues(leftValues.end() - suffix, leftValues.end());
+    auto shared = buildList(sharedValues).first;
+    auto attach = [&](const vector<int>& values) {
+        auto built = buildList(values);
+        if (!built.second.empty()) {
+            built.second.back()->next = shared;
+            return built.first;
+        }
+        return shared;
+    };
+    return {attach(vector<int>(leftValues.begin(), leftValues.end() - suffix)), attach(vector<int>(rightValues.begin(), rightValues.end() - suffix))};
+}
+
+Node* buildRandomList(const vector<vector<optional<int>>>& values) {
+    vector<Node*> nodes;
+    for (const auto& item : values) nodes.push_back(new Node(item.empty() || !item[0] ? 0 : *item[0]));
+    for (int i = 0; i < (int)nodes.size(); ++i) {
+        if (i + 1 < (int)nodes.size()) nodes[i]->next = nodes[i + 1];
+        if (values[i].size() > 1 && values[i][1]) nodes[i]->random = nodes[*values[i][1]];
+    }
+    return nodes.empty() ? nullptr : nodes[0];
+}
+
+vector<vector<optional<int>>> randomValues(Node* head) {
+    vector<Node*> nodes;
+    unordered_map<Node*, int> index;
+    for (Node* current = head; current && !index.count(current); current = current->next) {
+        index[current] = (int)nodes.size();
+        nodes.push_back(current);
+    }
+    vector<vector<optional<int>>> result;
+    for (Node* node : nodes) {
+        result.push_back({node->val, node->random ? optional<int>(index[node->random]) : nullopt});
+    }
+    return result;
+}
+
+TreeNode* buildTree(const vector<optional<int>>& values) {
+    if (values.empty() || !values[0]) return nullptr;
+    auto* root = new TreeNode(*values[0]);
+    queue<TreeNode*> nodes;
+    nodes.push(root);
+    size_t cursor = 1;
+    while (!nodes.empty() && cursor < values.size()) {
+        TreeNode* node = nodes.front();
+        nodes.pop();
+        if (cursor < values.size() && values[cursor]) {
+            node->left = new TreeNode(*values[cursor]);
+            nodes.push(node->left);
+        }
+        cursor++;
+        if (cursor < values.size() && values[cursor]) {
+            node->right = new TreeNode(*values[cursor]);
+            nodes.push(node->right);
+        }
+        cursor++;
+    }
+    return root;
+}
+
+vector<optional<int>> treeValues(TreeNode* root) {
+    if (!root) return {};
+    vector<optional<int>> values;
+    queue<TreeNode*> nodes;
+    nodes.push(root);
+    while (!nodes.empty()) {
+        TreeNode* node = nodes.front();
+        nodes.pop();
+        if (!node) {
+            values.push_back(nullopt);
+            continue;
+        }
+        values.push_back(node->val);
+        nodes.push(node->left);
+        nodes.push(node->right);
+    }
+    while (!values.empty() && !values.back()) values.pop_back();
+    return values;
+}
+
+TreeNode* findTreeNode(TreeNode* root, int value) {
+    if (!root) return nullptr;
+    queue<TreeNode*> nodes;
+    nodes.push(root);
+    while (!nodes.empty()) {
+        TreeNode* node = nodes.front();
+        nodes.pop();
+        if (node->val == value) return node;
+        if (node->left) nodes.push(node->left);
+        if (node->right) nodes.push(node->right);
+    }
+    return nullptr;
+}
+
+vector<int> rightChainValues(TreeNode* root) {
+    vector<int> values;
+    unordered_set<TreeNode*> seen;
+    while (root && !seen.count(root)) {
+        seen.insert(root);
+        values.push_back(root->val);
+        root = root->right;
+    }
+    return values;
+}
+"""
+
+
+def _wrap_node_cpp(code: str, profile: NodeFunctionProfile) -> str:
+    name = profile.function_name
+    kind = profile.kind
+    kind_literal = json.dumps(kind)
+    return f"""{DYNAMIC_CPP_HELPERS}
+{NODE_CPP_HELPERS}
+
+{code.rstrip()}
+
+int main() {{
+    string raw((istreambuf_iterator<char>(cin)), istreambuf_iterator<char>());
+    raw = trimCopy(raw);
+    vector<string> lines;
+    string line;
+    stringstream ss(raw);
+    while (getline(ss, line)) if (!trimCopy(line).empty()) lines.push_back(trimCopy(line));
+    Solution solver;
+    string kind = {kind_literal};
+    if (kind == "list_to_list") {{
+        auto built = buildList(parseIntVector(lines[0]));
+        cout << formatIntVector(listValues(solver.{name}(built.first))) << "\\n";
+    }} else if (kind == "two_lists_to_list") {{
+        auto left = buildList(parseIntVector(lines[0]));
+        auto right = buildList(parseIntVector(lines[1]));
+        cout << formatIntVector(listValues(solver.{name}(left.first, right.first))) << "\\n";
+    }} else if (kind == "list_int_to_list") {{
+        auto built = buildList(parseIntVector(lines[0]));
+        cout << formatIntVector(listValues(solver.{name}(built.first, stoi(lines[1])))) << "\\n";
+    }} else if (kind == "list_array_to_list") {{
+        vector<ListNode*> lists;
+        for (const auto& values : parseIntMatrix(lines[0])) lists.push_back(buildList(values).first);
+        cout << formatIntVector(listValues(solver.{name}(lists))) << "\\n";
+    }} else if (kind == "list_to_bool") {{
+        auto built = buildList(parseIntVector(lines[0]));
+        cout << (solver.{name}(built.first) ? "true" : "false") << "\\n";
+    }} else if (kind == "cycle_to_bool") {{
+        auto built = buildCycleList(parseIntVector(lines[0]), stoi(lines[1]));
+        cout << (solver.{name}(built.first) ? "true" : "false") << "\\n";
+    }} else if (kind == "cycle_to_index") {{
+        auto built = buildCycleList(parseIntVector(lines[0]), stoi(lines[1]));
+        cout << nodeIndex(built.second, solver.{name}(built.first)) << "\\n";
+    }} else if (kind == "intersection_node_value") {{
+        auto built = buildIntersectionLists(parseIntVector(lines[0]), parseIntVector(lines[1]));
+        auto* result = solver.{name}(built.first, built.second);
+        cout << (result ? to_string(result->val) : string("null")) << "\\n";
+    }} else if (kind == "random_to_random") {{
+        cout << formatMatrix(randomValues(solver.{name}(buildRandomList(parseOptionalIntMatrix(lines[0])))), formatOptionalIntVector) << "\\n";
+    }} else if (kind == "tree_to_vector") {{
+        cout << formatIntVector(solver.{name}(buildTree(parseOptionalIntVector(lines[0])))) << "\\n";
+    }} else if (kind == "tree_to_matrix") {{
+        cout << formatMatrix(solver.{name}(buildTree(parseOptionalIntVector(lines[0]))), formatIntVector) << "\\n";
+    }} else if (kind == "tree_to_scalar") {{
+        auto result = solver.{name}(buildTree(parseOptionalIntVector(lines[0])));
+        if constexpr (is_same_v<decltype(result), bool>) cout << (result ? "true" : "false") << "\\n";
+        else cout << result << "\\n";
+    }} else if (kind == "tree_to_tree") {{
+        cout << formatOptionalIntVector(treeValues(solver.{name}(buildTree(parseOptionalIntVector(lines[0]))))) << "\\n";
+    }} else if (kind == "array_to_tree") {{
+        cout << formatOptionalIntVector(treeValues(solver.{name}(parseIntVector(lines[0])))) << "\\n";
+    }} else if (kind == "two_arrays_to_tree") {{
+        cout << formatOptionalIntVector(treeValues(solver.{name}(parseIntVector(lines[0]), parseIntVector(lines[1])))) << "\\n";
+    }} else if (kind == "tree_int_to_scalar") {{
+        cout << solver.{name}(buildTree(parseOptionalIntVector(lines[0])), stoi(lines[1])) << "\\n";
+    }} else if (kind == "flatten_tree") {{
+        auto* root = buildTree(parseOptionalIntVector(lines[0]));
+        solver.{name}(root);
+        cout << formatIntVector(rightChainValues(root)) << "\\n";
+    }} else if (kind == "tree_lca_to_value") {{
+        auto* root = buildTree(parseOptionalIntVector(lines[0]));
+        auto* result = solver.{name}(root, findTreeNode(root, stoi(lines[1])), findTreeNode(root, stoi(lines[2])));
+        cout << (result ? to_string(result->val) : string("null")) << "\\n";
+    }}
+    return 0;
+}}
+"""
+
+
+NODE_JS_HELPERS = r"""
+class ListNode {
+  constructor(val = 0, next = null) {
+    this.val = val;
+    this.next = next;
+  }
+}
+
+class Node {
+  constructor(val = 0, next = null, random = null) {
+    this.val = val;
+    this.next = next;
+    this.random = random;
+  }
+}
+
+class TreeNode {
+  constructor(val = 0, left = null, right = null) {
+    this.val = val;
+    this.left = left;
+    this.right = right;
+  }
+}
+
+function buildList(values) {
+  const dummy = new ListNode();
+  let tail = dummy;
+  const nodes = [];
+  for (const value of values) {
+    const node = new ListNode(value);
+    nodes.push(node);
+    tail.next = node;
+    tail = node;
+  }
+  return [dummy.next, nodes];
+}
+
+function listValues(head) {
+  const values = [];
+  const seen = new Set();
+  while (head && !seen.has(head)) {
+    seen.add(head);
+    values.push(head.val);
+    head = head.next;
+  }
+  return values;
+}
+
+function buildCycleList(values, pos) {
+  const built = buildList(values);
+  const nodes = built[1];
+  if (nodes.length && pos >= 0 && pos < nodes.length) nodes[nodes.length - 1].next = nodes[pos];
+  return built;
+}
+
+function nodeIndex(nodes, target) {
+  return nodes.findIndex((node) => node === target);
+}
+
+function buildIntersectionLists(leftValues, rightValues) {
+  let suffix = 0;
+  while (
+    suffix < leftValues.length &&
+    suffix < rightValues.length &&
+    leftValues[leftValues.length - suffix - 1] === rightValues[rightValues.length - suffix - 1]
+  ) suffix += 1;
+  if (suffix >= 4) suffix -= 1;
+  const sharedValues = suffix ? leftValues.slice(leftValues.length - suffix) : [];
+  const [shared] = buildList(sharedValues);
+  const attach = (values) => {
+    const [head, nodes] = buildList(values);
+    if (nodes.length) {
+      nodes[nodes.length - 1].next = shared;
+      return head;
+    }
+    return shared;
+  };
+  return [attach(leftValues.slice(0, leftValues.length - suffix)), attach(rightValues.slice(0, rightValues.length - suffix))];
+}
+
+function buildRandomList(values) {
+  const nodes = values.map(([value]) => new Node(value));
+  values.forEach((item, index) => {
+    if (index + 1 < nodes.length) nodes[index].next = nodes[index + 1];
+    if (item[1] !== null && item[1] !== undefined) nodes[index].random = nodes[item[1]];
+  });
+  return nodes[0] || null;
+}
+
+function randomValues(head) {
+  const nodes = [];
+  const index = new Map();
+  for (let current = head; current && !index.has(current); current = current.next) {
+    index.set(current, nodes.length);
+    nodes.push(current);
+  }
+  return nodes.map((node) => [node.val, node.random ? index.get(node.random) : null]);
+}
+
+function buildTree(values) {
+  if (!values.length || values[0] === null || values[0] === undefined) return null;
+  const root = new TreeNode(values[0]);
+  const queue = [root];
+  let cursor = 1;
+  while (queue.length && cursor < values.length) {
+    const node = queue.shift();
+    if (cursor < values.length && values[cursor] !== null && values[cursor] !== undefined) {
+      node.left = new TreeNode(values[cursor]);
+      queue.push(node.left);
+    }
+    cursor += 1;
+    if (cursor < values.length && values[cursor] !== null && values[cursor] !== undefined) {
+      node.right = new TreeNode(values[cursor]);
+      queue.push(node.right);
+    }
+    cursor += 1;
+  }
+  return root;
+}
+
+function treeValues(root) {
+  if (!root) return [];
+  const values = [];
+  const queue = [root];
+  while (queue.length) {
+    const node = queue.shift();
+    if (!node) {
+      values.push(null);
+      continue;
+    }
+    values.push(node.val);
+    queue.push(node.left);
+    queue.push(node.right);
+  }
+  while (values.length && values[values.length - 1] === null) values.pop();
+  return values;
+}
+
+function findTreeNode(root, value) {
+  const queue = root ? [root] : [];
+  while (queue.length) {
+    const node = queue.shift();
+    if (node.val === value) return node;
+    if (node.left) queue.push(node.left);
+    if (node.right) queue.push(node.right);
+  }
+  return null;
+}
+
+function rightChainValues(root) {
+  const values = [];
+  const seen = new Set();
+  while (root && !seen.has(root)) {
+    seen.add(root);
+    values.push(root.val);
+    root = root.right;
+  }
+  return values;
+}
+
+function format(value) {
+  if (typeof value === 'boolean') return String(value);
+  if (value === null || value === undefined) return 'null';
+  if (Array.isArray(value) || typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+"""
+
+
+def _wrap_node_js(code: str, profile: NodeFunctionProfile, *, typescript: bool = False) -> str:
+    name = profile.function_name
+    kind = profile.kind
+    prefix = "// @ts-nocheck\n" if typescript else ""
+    return f"""{prefix}{NODE_JS_HELPERS}
+
+{code.rstrip()}
+
+const fs = require('fs');
+const raw = fs.readFileSync(0, 'utf8').trim();
+const lines = raw.split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean);
+const solver = typeof Solution !== 'undefined' ? new Solution() : null;
+const fn = solver && typeof solver.{name} === 'function' ? solver.{name}.bind(solver) : globalThis.{name};
+if (typeof fn !== 'function') throw new Error('Expected function: {name}');
+const kind = {kind!r};
+
+if (kind === 'list_to_list') {{
+  const [head] = buildList(JSON.parse(lines[0]));
+  console.log(JSON.stringify(listValues(fn(head))));
+}} else if (kind === 'two_lists_to_list') {{
+  const [left] = buildList(JSON.parse(lines[0]));
+  const [right] = buildList(JSON.parse(lines[1]));
+  console.log(JSON.stringify(listValues(fn(left, right))));
+}} else if (kind === 'list_int_to_list') {{
+  const [head] = buildList(JSON.parse(lines[0]));
+  console.log(JSON.stringify(listValues(fn(head, Number(lines[1])))));
+}} else if (kind === 'list_array_to_list') {{
+  const lists = JSON.parse(lines[0]).map((values) => buildList(values)[0]);
+  console.log(JSON.stringify(listValues(fn(lists))));
+}} else if (kind === 'list_to_bool') {{
+  const [head] = buildList(JSON.parse(lines[0]));
+  console.log(String(Boolean(fn(head))));
+}} else if (kind === 'cycle_to_bool') {{
+  const [head] = buildCycleList(JSON.parse(lines[0]), Number(lines[1]));
+  console.log(String(Boolean(fn(head))));
+}} else if (kind === 'cycle_to_index') {{
+  const [head, nodes] = buildCycleList(JSON.parse(lines[0]), Number(lines[1]));
+  console.log(String(nodeIndex(nodes, fn(head))));
+}} else if (kind === 'intersection_node_value') {{
+  const [headA, headB] = buildIntersectionLists(JSON.parse(lines[0]), JSON.parse(lines[1]));
+  const result = fn(headA, headB);
+  console.log(result ? String(result.val) : 'null');
+}} else if (kind === 'random_to_random') {{
+  console.log(JSON.stringify(randomValues(fn(buildRandomList(JSON.parse(lines[0]))))));
+}} else if (kind === 'tree_to_vector' || kind === 'tree_to_matrix') {{
+  console.log(format(fn(buildTree(JSON.parse(lines[0])))));
+}} else if (kind === 'tree_to_scalar') {{
+  console.log(format(fn(buildTree(JSON.parse(lines[0])))));
+}} else if (kind === 'tree_to_tree') {{
+  console.log(JSON.stringify(treeValues(fn(buildTree(JSON.parse(lines[0]))))));
+}} else if (kind === 'array_to_tree') {{
+  console.log(JSON.stringify(treeValues(fn(JSON.parse(lines[0])))));
+}} else if (kind === 'two_arrays_to_tree') {{
+  console.log(JSON.stringify(treeValues(fn(JSON.parse(lines[0]), JSON.parse(lines[1])))));
+}} else if (kind === 'tree_int_to_scalar') {{
+  console.log(format(fn(buildTree(JSON.parse(lines[0])), Number(lines[1]))));
+}} else if (kind === 'flatten_tree') {{
+  const root = buildTree(JSON.parse(lines[0]));
+  const result = fn(root);
+  console.log(JSON.stringify(rightChainValues(result || root)));
+}} else if (kind === 'tree_lca_to_value') {{
+  const root = buildTree(JSON.parse(lines[0]));
+  const result = fn(root, findTreeNode(root, Number(lines[1])), findTreeNode(root, Number(lines[2])));
+  console.log(result ? String(result.val) : 'null');
+}}
+"""
+
+
+JAVA_NODE_CLASSES = r"""
+class ListNode {
+    int val;
+    ListNode next;
+    ListNode() {}
+    ListNode(int val) { this.val = val; }
+    ListNode(int val, ListNode next) { this.val = val; this.next = next; }
+}
+
+class Node {
+    int val;
+    Node next;
+    Node random;
+    Node(int val) { this.val = val; }
+}
+
+class TreeNode {
+    int val;
+    TreeNode left;
+    TreeNode right;
+    TreeNode() {}
+    TreeNode(int val) { this.val = val; }
+    TreeNode(int val, TreeNode left, TreeNode right) { this.val = val; this.left = left; this.right = right; }
+}
+"""
+
+
+JAVA_NODE_HELPERS = r"""
+    static class BuiltList {
+        ListNode head;
+        ArrayList<ListNode> nodes;
+        BuiltList(ListNode head, ArrayList<ListNode> nodes) { this.head = head; this.nodes = nodes; }
+    }
+
+    static BuiltList buildList(int[] values) {
+        ListNode dummy = new ListNode();
+        ListNode tail = dummy;
+        ArrayList<ListNode> nodes = new ArrayList<>();
+        for (int value : values) {
+            ListNode node = new ListNode(value);
+            nodes.add(node);
+            tail.next = node;
+            tail = node;
+        }
+        return new BuiltList(dummy.next, nodes);
+    }
+
+    static int[] listValues(ListNode head) {
+        ArrayList<Integer> values = new ArrayList<>();
+        HashSet<ListNode> seen = new HashSet<>();
+        while (head != null && !seen.contains(head)) {
+            seen.add(head);
+            values.add(head.val);
+            head = head.next;
+        }
+        int[] result = new int[values.size()];
+        for (int i = 0; i < values.size(); i++) result[i] = values.get(i);
+        return result;
+    }
+
+    static BuiltList buildCycleList(int[] values, int pos) {
+        BuiltList built = buildList(values);
+        if (!built.nodes.isEmpty() && pos >= 0 && pos < built.nodes.size()) built.nodes.get(built.nodes.size() - 1).next = built.nodes.get(pos);
+        return built;
+    }
+
+    static int nodeIndex(ArrayList<ListNode> nodes, ListNode target) {
+        for (int i = 0; i < nodes.size(); i++) if (nodes.get(i) == target) return i;
+        return -1;
+    }
+
+    static ListNode[] buildIntersectionLists(int[] leftValues, int[] rightValues) {
+        int suffix = 0;
+        while (suffix < leftValues.length && suffix < rightValues.length
+            && leftValues[leftValues.length - suffix - 1] == rightValues[rightValues.length - suffix - 1]) suffix++;
+        if (suffix >= 4) suffix--;
+        int[] sharedValues = java.util.Arrays.copyOfRange(leftValues, leftValues.length - suffix, leftValues.length);
+        ListNode shared = buildList(sharedValues).head;
+        return new ListNode[] {
+            attachShared(java.util.Arrays.copyOfRange(leftValues, 0, leftValues.length - suffix), shared),
+            attachShared(java.util.Arrays.copyOfRange(rightValues, 0, rightValues.length - suffix), shared)
+        };
+    }
+
+    static ListNode attachShared(int[] values, ListNode shared) {
+        BuiltList built = buildList(values);
+        if (!built.nodes.isEmpty()) {
+            built.nodes.get(built.nodes.size() - 1).next = shared;
+            return built.head;
+        }
+        return shared;
+    }
+
+    static Node buildRandomList(Integer[][] values) {
+        Node[] nodes = new Node[values.length];
+        for (int i = 0; i < values.length; i++) nodes[i] = new Node(values[i][0] == null ? 0 : values[i][0]);
+        for (int i = 0; i < values.length; i++) {
+            if (i + 1 < values.length) nodes[i].next = nodes[i + 1];
+            if (values[i].length > 1 && values[i][1] != null) nodes[i].random = nodes[values[i][1]];
+        }
+        return nodes.length == 0 ? null : nodes[0];
+    }
+
+    static Integer[][] randomValues(Node head) {
+        ArrayList<Node> nodes = new ArrayList<>();
+        IdentityHashMap<Node, Integer> index = new IdentityHashMap<>();
+        for (Node current = head; current != null && !index.containsKey(current); current = current.next) {
+            index.put(current, nodes.size());
+            nodes.add(current);
+        }
+        Integer[][] result = new Integer[nodes.size()][2];
+        for (int i = 0; i < nodes.size(); i++) {
+            Node node = nodes.get(i);
+            result[i][0] = node.val;
+            result[i][1] = node.random == null ? null : index.get(node.random);
+        }
+        return result;
+    }
+
+    static TreeNode buildTree(Integer[] values) {
+        if (values.length == 0 || values[0] == null) return null;
+        TreeNode root = new TreeNode(values[0]);
+        LinkedList<TreeNode> queue = new LinkedList<>();
+        queue.add(root);
+        int cursor = 1;
+        while (!queue.isEmpty() && cursor < values.length) {
+            TreeNode node = queue.remove();
+            if (cursor < values.length && values[cursor] != null) {
+                node.left = new TreeNode(values[cursor]);
+                queue.add(node.left);
+            }
+            cursor++;
+            if (cursor < values.length && values[cursor] != null) {
+                node.right = new TreeNode(values[cursor]);
+                queue.add(node.right);
+            }
+            cursor++;
+        }
+        return root;
+    }
+
+    static Integer[] treeValues(TreeNode root) {
+        if (root == null) return new Integer[0];
+        ArrayList<Integer> values = new ArrayList<>();
+        LinkedList<TreeNode> queue = new LinkedList<>();
+        queue.add(root);
+        while (!queue.isEmpty()) {
+            TreeNode node = queue.remove();
+            if (node == null) {
+                values.add(null);
+                continue;
+            }
+            values.add(node.val);
+            queue.add(node.left);
+            queue.add(node.right);
+        }
+        while (!values.isEmpty() && values.get(values.size() - 1) == null) values.remove(values.size() - 1);
+        return values.toArray(new Integer[0]);
+    }
+
+    static TreeNode findTreeNode(TreeNode root, int value) {
+        ArrayDeque<TreeNode> queue = new ArrayDeque<>();
+        if (root != null) queue.add(root);
+        while (!queue.isEmpty()) {
+            TreeNode node = queue.remove();
+            if (node.val == value) return node;
+            if (node.left != null) queue.add(node.left);
+            if (node.right != null) queue.add(node.right);
+        }
+        return null;
+    }
+
+    static int[] rightChainValues(TreeNode root) {
+        ArrayList<Integer> values = new ArrayList<>();
+        HashSet<TreeNode> seen = new HashSet<>();
+        while (root != null && !seen.contains(root)) {
+            seen.add(root);
+            values.add(root.val);
+            root = root.right;
+        }
+        int[] result = new int[values.size()];
+        for (int i = 0; i < values.size(); i++) result[i] = values.get(i);
+        return result;
+    }
+"""
+
+
+def _wrap_node_java(code: str, profile: NodeFunctionProfile) -> str:
+    name = profile.function_name
+    kind = profile.kind
+    kind_literal = json.dumps(kind)
+    return f"""import java.io.*;
+import java.util.*;
+
+{JAVA_NODE_CLASSES}
+
+{code.rstrip()}
+
+class Main {{
+{DYNAMIC_JAVA_HELPERS}
+{JAVA_NODE_HELPERS}
+
+    public static void main(String[] args) throws Exception {{
+        Scanner scanner = new Scanner(System.in).useDelimiter("\\\\A");
+        String raw = scanner.hasNext() ? scanner.next().trim() : "";
+        ArrayList<String> lines = new ArrayList<>();
+        for (String line : raw.split("\\\\R")) if (!trim(line).isEmpty()) lines.add(trim(line));
+        Solution solver = new Solution();
+        String kind = {kind_literal};
+        if (kind.equals("list_to_list")) {{
+            BuiltList built = buildList(parseIntArray(lines.get(0)));
+            System.out.println(formatIntArray(listValues(solver.{name}(built.head))));
+        }} else if (kind.equals("two_lists_to_list")) {{
+            BuiltList left = buildList(parseIntArray(lines.get(0)));
+            BuiltList right = buildList(parseIntArray(lines.get(1)));
+            System.out.println(formatIntArray(listValues(solver.{name}(left.head, right.head))));
+        }} else if (kind.equals("list_int_to_list")) {{
+            BuiltList built = buildList(parseIntArray(lines.get(0)));
+            System.out.println(formatIntArray(listValues(solver.{name}(built.head, Integer.parseInt(lines.get(1)))));
+        }} else if (kind.equals("list_array_to_list")) {{
+            int[][] rawLists = parseIntMatrix(lines.get(0));
+            ListNode[] lists = new ListNode[rawLists.length];
+            for (int i = 0; i < rawLists.length; i++) lists[i] = buildList(rawLists[i]).head;
+            System.out.println(formatIntArray(listValues(solver.{name}(lists))));
+        }} else if (kind.equals("list_to_bool")) {{
+            BuiltList built = buildList(parseIntArray(lines.get(0)));
+            System.out.println(String.valueOf(solver.{name}(built.head)));
+        }} else if (kind.equals("cycle_to_bool")) {{
+            BuiltList built = buildCycleList(parseIntArray(lines.get(0)), Integer.parseInt(lines.get(1)));
+            System.out.println(String.valueOf(solver.{name}(built.head)));
+        }} else if (kind.equals("cycle_to_index")) {{
+            BuiltList built = buildCycleList(parseIntArray(lines.get(0)), Integer.parseInt(lines.get(1)));
+            System.out.println(nodeIndex(built.nodes, solver.{name}(built.head)));
+        }} else if (kind.equals("intersection_node_value")) {{
+            ListNode[] heads = buildIntersectionLists(parseIntArray(lines.get(0)), parseIntArray(lines.get(1)));
+            ListNode result = solver.{name}(heads[0], heads[1]);
+            System.out.println(result == null ? "null" : String.valueOf(result.val));
+        }} else if (kind.equals("random_to_random")) {{
+            System.out.println(formatIntegerMatrix(randomValues(solver.{name}(buildRandomList(parseIntegerMatrix(lines.get(0)))))));
+        }} else if (kind.equals("tree_to_vector")) {{
+            System.out.println(formatIntArray(solver.{name}(buildTree(parseIntegerArray(lines.get(0))))));
+        }} else if (kind.equals("tree_to_matrix")) {{
+            System.out.println(formatIntMatrix(solver.{name}(buildTree(parseIntegerArray(lines.get(0))))));
+        }} else if (kind.equals("tree_to_scalar")) {{
+            System.out.println(String.valueOf(solver.{name}(buildTree(parseIntegerArray(lines.get(0))))));
+        }} else if (kind.equals("tree_to_tree")) {{
+            System.out.println(formatIntegerArray(treeValues(solver.{name}(buildTree(parseIntegerArray(lines.get(0)))))));
+        }} else if (kind.equals("array_to_tree")) {{
+            System.out.println(formatIntegerArray(treeValues(solver.{name}(parseIntArray(lines.get(0))))));
+        }} else if (kind.equals("two_arrays_to_tree")) {{
+            System.out.println(formatIntegerArray(treeValues(solver.{name}(parseIntArray(lines.get(0)), parseIntArray(lines.get(1))))));
+        }} else if (kind.equals("tree_int_to_scalar")) {{
+            System.out.println(String.valueOf(solver.{name}(buildTree(parseIntegerArray(lines.get(0))), Integer.parseInt(lines.get(1)))));
+        }} else if (kind.equals("flatten_tree")) {{
+            TreeNode root = buildTree(parseIntegerArray(lines.get(0)));
+            solver.{name}(root);
+            System.out.println(formatIntArray(rightChainValues(root)));
+        }} else if (kind.equals("tree_lca_to_value")) {{
+            TreeNode root = buildTree(parseIntegerArray(lines.get(0)));
+            TreeNode result = solver.{name}(root, findTreeNode(root, Integer.parseInt(lines.get(1))), findTreeNode(root, Integer.parseInt(lines.get(2))));
+            System.out.println(result == null ? "null" : String.valueOf(result.val));
+        }}
+    }}
+}}
+"""
+
+
+GO_NODE_HELPERS = r"""
+type ListNode struct {
+	Val  int
+	Next *ListNode
+}
+
+type Node struct {
+	Val    int
+	Next   *Node
+	Random *Node
+}
+
+type TreeNode struct {
+	Val   int
+	Left  *TreeNode
+	Right *TreeNode
+}
+
+func buildList(values []int) (*ListNode, []*ListNode) {
+	dummy := &ListNode{}
+	tail := dummy
+	nodes := []*ListNode{}
+	for _, value := range values {
+		node := &ListNode{Val: value}
+		nodes = append(nodes, node)
+		tail.Next = node
+		tail = node
+	}
+	return dummy.Next, nodes
+}
+
+func listValues(head *ListNode) []int {
+	values := []int{}
+	seen := map[*ListNode]bool{}
+	for head != nil && !seen[head] {
+		seen[head] = true
+		values = append(values, head.Val)
+		head = head.Next
+	}
+	return values
+}
+
+func buildCycleList(values []int, pos int) (*ListNode, []*ListNode) {
+	head, nodes := buildList(values)
+	if len(nodes) > 0 && pos >= 0 && pos < len(nodes) {
+		nodes[len(nodes)-1].Next = nodes[pos]
+	}
+	return head, nodes
+}
+
+func nodeIndex(nodes []*ListNode, target *ListNode) int {
+	for index, node := range nodes {
+		if node == target {
+			return index
+		}
+	}
+	return -1
+}
+
+func buildIntersectionLists(leftValues []int, rightValues []int) (*ListNode, *ListNode) {
+	suffix := 0
+	for suffix < len(leftValues) && suffix < len(rightValues) && leftValues[len(leftValues)-suffix-1] == rightValues[len(rightValues)-suffix-1] {
+		suffix++
+	}
+	if suffix >= 4 {
+		suffix--
+	}
+	shared, _ := buildList(leftValues[len(leftValues)-suffix:])
+	attach := func(values []int) *ListNode {
+		head, nodes := buildList(values)
+		if len(nodes) > 0 {
+			nodes[len(nodes)-1].Next = shared
+			return head
+		}
+		return shared
+	}
+	return attach(leftValues[:len(leftValues)-suffix]), attach(rightValues[:len(rightValues)-suffix])
+}
+
+func buildRandomList(values [][]*int) *Node {
+	nodes := make([]*Node, len(values))
+	for index, item := range values {
+		value := 0
+		if len(item) > 0 && item[0] != nil {
+			value = *item[0]
+		}
+		nodes[index] = &Node{Val: value}
+	}
+	for index, item := range values {
+		if index+1 < len(nodes) {
+			nodes[index].Next = nodes[index+1]
+		}
+		if len(item) > 1 && item[1] != nil {
+			nodes[index].Random = nodes[*item[1]]
+		}
+	}
+	if len(nodes) == 0 {
+		return nil
+	}
+	return nodes[0]
+}
+
+func randomValues(head *Node) [][]*int {
+	nodes := []*Node{}
+	index := map[*Node]int{}
+	for current := head; current != nil; current = current.Next {
+		if _, exists := index[current]; exists {
+			break
+		}
+		index[current] = len(nodes)
+		nodes = append(nodes, current)
+	}
+	result := make([][]*int, len(nodes))
+	for i, node := range nodes {
+		value := node.Val
+		row := []*int{&value, nil}
+		if node.Random != nil {
+			randomIndex := index[node.Random]
+			row[1] = &randomIndex
+		}
+		result[i] = row
+	}
+	return result
+}
+
+func buildTree(values []*int) *TreeNode {
+	if len(values) == 0 || values[0] == nil {
+		return nil
+	}
+	root := &TreeNode{Val: *values[0]}
+	queue := []*TreeNode{root}
+	cursor := 1
+	for len(queue) > 0 && cursor < len(values) {
+		node := queue[0]
+		queue = queue[1:]
+		if cursor < len(values) && values[cursor] != nil {
+			node.Left = &TreeNode{Val: *values[cursor]}
+			queue = append(queue, node.Left)
+		}
+		cursor++
+		if cursor < len(values) && values[cursor] != nil {
+			node.Right = &TreeNode{Val: *values[cursor]}
+			queue = append(queue, node.Right)
+		}
+		cursor++
+	}
+	return root
+}
+
+func treeValues(root *TreeNode) []*int {
+	if root == nil {
+		return []*int{}
+	}
+	values := []*int{}
+	queue := []*TreeNode{root}
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		if node == nil {
+			values = append(values, nil)
+			continue
+		}
+		value := node.Val
+		values = append(values, &value)
+		queue = append(queue, node.Left, node.Right)
+	}
+	for len(values) > 0 && values[len(values)-1] == nil {
+		values = values[:len(values)-1]
+	}
+	return values
+}
+
+func findTreeNode(root *TreeNode, value int) *TreeNode {
+	queue := []*TreeNode{}
+	if root != nil {
+		queue = append(queue, root)
+	}
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		if node.Val == value {
+			return node
+		}
+		if node.Left != nil {
+			queue = append(queue, node.Left)
+		}
+		if node.Right != nil {
+			queue = append(queue, node.Right)
+		}
+	}
+	return nil
+}
+
+func rightChainValues(root *TreeNode) []int {
+	values := []int{}
+	seen := map[*TreeNode]bool{}
+	for root != nil && !seen[root] {
+		seen[root] = true
+		values = append(values, root.Val)
+		root = root.Right
+	}
+	return values
+}
+"""
+
+
+def _wrap_node_go(code: str, profile: NodeFunctionProfile) -> str:
+    name = _preferred_callable_name(code, profile.function_name)
+    kind = profile.kind
+    kind_literal = json.dumps(kind)
+    return f"""{DYNAMIC_GO_HELPERS}
+
+{GO_NODE_HELPERS}
+
+{_strip_go_package_and_imports(code)}
+
+func main() {{
+	rawBytes, _ := os.ReadFile("/dev/stdin")
+	raw := strings.TrimSpace(string(rawBytes))
+	lines := strings.Split(raw, "\\n")
+	for i := range lines {{
+		lines[i] = strings.TrimSpace(lines[i])
+	}}
+	kind := {kind_literal}
+	if kind == "list_to_list" {{
+		var values []int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		head, _ := buildList(values)
+		fmt.Println(fastojJSON(listValues({name}(head))))
+	}} else if kind == "two_lists_to_list" {{
+		var leftValues []int
+		var rightValues []int
+		_ = json.Unmarshal([]byte(lines[0]), &leftValues)
+		_ = json.Unmarshal([]byte(lines[1]), &rightValues)
+		left, _ := buildList(leftValues)
+		right, _ := buildList(rightValues)
+		fmt.Println(fastojJSON(listValues({name}(left, right))))
+	}} else if kind == "list_int_to_list" {{
+		var values []int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		head, _ := buildList(values)
+		n, _ := strconv.Atoi(lines[1])
+		fmt.Println(fastojJSON(listValues({name}(head, n))))
+	}} else if kind == "list_array_to_list" {{
+		var rawLists [][]int
+		_ = json.Unmarshal([]byte(lines[0]), &rawLists)
+		lists := make([]*ListNode, len(rawLists))
+		for i, values := range rawLists {{
+			lists[i], _ = buildList(values)
+		}}
+		fmt.Println(fastojJSON(listValues({name}(lists))))
+	}} else if kind == "list_to_bool" {{
+		var values []int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		head, _ := buildList(values)
+		fmt.Println(strconv.FormatBool({name}(head)))
+	}} else if kind == "cycle_to_bool" {{
+		var values []int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		pos, _ := strconv.Atoi(lines[1])
+		head, _ := buildCycleList(values, pos)
+		fmt.Println(strconv.FormatBool({name}(head)))
+	}} else if kind == "cycle_to_index" {{
+		var values []int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		pos, _ := strconv.Atoi(lines[1])
+		head, nodes := buildCycleList(values, pos)
+		fmt.Println(nodeIndex(nodes, {name}(head)))
+	}} else if kind == "intersection_node_value" {{
+		var leftValues []int
+		var rightValues []int
+		_ = json.Unmarshal([]byte(lines[0]), &leftValues)
+		_ = json.Unmarshal([]byte(lines[1]), &rightValues)
+		left, right := buildIntersectionLists(leftValues, rightValues)
+		result := {name}(left, right)
+		if result == nil {{ fmt.Println("null") }} else {{ fmt.Println(result.Val) }}
+	}} else if kind == "random_to_random" {{
+		var values [][]*int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		fmt.Println(fastojJSON(randomValues({name}(buildRandomList(values)))))
+	}} else if kind == "tree_to_vector" || kind == "tree_to_matrix" {{
+		var values []*int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		fmt.Println(fastojJSON({name}(buildTree(values))))
+	}} else if kind == "tree_to_scalar" {{
+		var values []*int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		fmt.Println(fmt.Sprint({name}(buildTree(values))))
+	}} else if kind == "tree_to_tree" {{
+		var values []*int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		fmt.Println(fastojJSON(treeValues({name}(buildTree(values)))))
+	}} else if kind == "array_to_tree" {{
+		var values []int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		fmt.Println(fastojJSON(treeValues({name}(values))))
+	}} else if kind == "two_arrays_to_tree" {{
+		var preorder []int
+		var inorder []int
+		_ = json.Unmarshal([]byte(lines[0]), &preorder)
+		_ = json.Unmarshal([]byte(lines[1]), &inorder)
+		fmt.Println(fastojJSON(treeValues({name}(preorder, inorder))))
+	}} else if kind == "tree_int_to_scalar" {{
+		var values []*int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		number, _ := strconv.Atoi(lines[1])
+		fmt.Println(fmt.Sprint({name}(buildTree(values), number)))
+	}} else if kind == "flatten_tree" {{
+		var values []*int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		root := buildTree(values)
+		{name}(root)
+		fmt.Println(fastojJSON(rightChainValues(root)))
+	}} else if kind == "tree_lca_to_value" {{
+		var values []*int
+		_ = json.Unmarshal([]byte(lines[0]), &values)
+		root := buildTree(values)
+		p, _ := strconv.Atoi(lines[1])
+		q, _ := strconv.Atoi(lines[2])
+		result := {name}(root, findTreeNode(root, p), findTreeNode(root, q))
+		if result == nil {{ fmt.Println("null") }} else {{ fmt.Println(result.Val) }}
+	}}
+}}
+"""
+
+
+C_NODE_HELPERS = r"""
+struct ListNode { int val; struct ListNode *next; };
+struct Node { int val; struct Node *next; struct Node *random; };
+struct TreeNode { int val; struct TreeNode *left; struct TreeNode *right; };
+
+typedef struct { struct ListNode *head; struct ListNode **nodes; int len; } BuiltList;
+
+BuiltList build_list(IntVec values) {
+    struct ListNode dummy = {0, NULL};
+    struct ListNode *tail = &dummy;
+    struct ListNode **nodes = malloc(sizeof(struct ListNode*) * (values.len > 0 ? values.len : 1));
+    for (int i = 0; i < values.len; i++) {
+        struct ListNode *node = malloc(sizeof(struct ListNode));
+        node->val = values.data[i];
+        node->next = NULL;
+        nodes[i] = node;
+        tail->next = node;
+        tail = node;
+    }
+    BuiltList result = { dummy.next, nodes, values.len };
+    return result;
+}
+
+IntVec list_values(struct ListNode *head) {
+    int capacity = 16;
+    int len = 0;
+    int *data = malloc(sizeof(int) * capacity);
+    struct ListNode **seen = malloc(sizeof(struct ListNode*) * capacity);
+    while (head) {
+        int duplicate = 0;
+        for (int i = 0; i < len; i++) if (seen[i] == head) duplicate = 1;
+        if (duplicate) break;
+        if (len == capacity) {
+            capacity *= 2;
+            data = realloc(data, sizeof(int) * capacity);
+            seen = realloc(seen, sizeof(struct ListNode*) * capacity);
+        }
+        seen[len] = head;
+        data[len++] = head->val;
+        head = head->next;
+    }
+    IntVec result = { data, len };
+    return result;
+}
+
+BuiltList build_cycle_list(IntVec values, int pos) {
+    BuiltList built = build_list(values);
+    if (built.len > 0 && pos >= 0 && pos < built.len) built.nodes[built.len - 1]->next = built.nodes[pos];
+    return built;
+}
+
+int node_index(BuiltList built, struct ListNode *target) {
+    for (int i = 0; i < built.len; i++) if (built.nodes[i] == target) return i;
+    return -1;
+}
+
+struct ListNode *attach_shared(IntVec values, int len, struct ListNode *shared) {
+    IntVec prefix = { values.data, len };
+    BuiltList built = build_list(prefix);
+    if (built.len > 0) {
+        built.nodes[built.len - 1]->next = shared;
+        return built.head;
+    }
+    return shared;
+}
+
+void build_intersection_lists(IntVec left, IntVec right, struct ListNode **head_a, struct ListNode **head_b) {
+    int suffix = 0;
+    while (suffix < left.len && suffix < right.len && left.data[left.len - suffix - 1] == right.data[right.len - suffix - 1]) suffix++;
+    if (suffix >= 4) suffix--;
+    IntVec shared_values = { left.data + left.len - suffix, suffix };
+    struct ListNode *shared = build_list(shared_values).head;
+    *head_a = attach_shared(left, left.len - suffix, shared);
+    *head_b = attach_shared(right, right.len - suffix, shared);
+}
+
+struct Node *build_random_list(NullableIntMatrix values) {
+    struct Node **nodes = malloc(sizeof(struct Node*) * (values.rows > 0 ? values.rows : 1));
+    for (int i = 0; i < values.rows; i++) {
+        nodes[i] = malloc(sizeof(struct Node));
+        nodes[i]->val = values.is_null[i][0] ? 0 : values.data[i][0];
+        nodes[i]->next = NULL;
+        nodes[i]->random = NULL;
+    }
+    for (int i = 0; i < values.rows; i++) {
+        if (i + 1 < values.rows) nodes[i]->next = nodes[i + 1];
+        if (values.cols[i] > 1 && !values.is_null[i][1]) nodes[i]->random = nodes[values.data[i][1]];
+    }
+    return values.rows ? nodes[0] : NULL;
+}
+
+NullableIntMatrix random_values(struct Node *head) {
+    int capacity = 16;
+    int rows = 0;
+    struct Node **nodes = malloc(sizeof(struct Node*) * capacity);
+    for (struct Node *cur = head; cur; cur = cur->next) {
+        int duplicate = 0;
+        for (int i = 0; i < rows; i++) if (nodes[i] == cur) duplicate = 1;
+        if (duplicate) break;
+        if (rows == capacity) {
+            capacity *= 2;
+            nodes = realloc(nodes, sizeof(struct Node*) * capacity);
+        }
+        nodes[rows++] = cur;
+    }
+    int **data = malloc(sizeof(int*) * (rows > 0 ? rows : 1));
+    int **is_null = malloc(sizeof(int*) * (rows > 0 ? rows : 1));
+    int *cols = malloc(sizeof(int) * (rows > 0 ? rows : 1));
+    for (int i = 0; i < rows; i++) {
+        data[i] = malloc(sizeof(int) * 2);
+        is_null[i] = calloc(2, sizeof(int));
+        cols[i] = 2;
+        data[i][0] = nodes[i]->val;
+        is_null[i][0] = 0;
+        data[i][1] = 0;
+        is_null[i][1] = 1;
+        if (nodes[i]->random) {
+            for (int j = 0; j < rows; j++) if (nodes[j] == nodes[i]->random) {
+                data[i][1] = j;
+                is_null[i][1] = 0;
+            }
+        }
+    }
+    NullableIntMatrix result = { data, is_null, rows, cols };
+    return result;
+}
+
+struct TreeNode *build_tree(NullableIntVec values) {
+    if (values.len == 0 || values.is_null[0]) return NULL;
+    struct TreeNode *root = malloc(sizeof(struct TreeNode));
+    root->val = values.data[0];
+    root->left = NULL;
+    root->right = NULL;
+    struct TreeNode **queue = malloc(sizeof(struct TreeNode*) * values.len);
+    int head = 0, tail = 0, cursor = 1;
+    queue[tail++] = root;
+    while (head < tail && cursor < values.len) {
+        struct TreeNode *node = queue[head++];
+        if (cursor < values.len && !values.is_null[cursor]) {
+            node->left = malloc(sizeof(struct TreeNode));
+            node->left->val = values.data[cursor];
+            node->left->left = NULL;
+            node->left->right = NULL;
+            queue[tail++] = node->left;
+        }
+        cursor++;
+        if (cursor < values.len && !values.is_null[cursor]) {
+            node->right = malloc(sizeof(struct TreeNode));
+            node->right->val = values.data[cursor];
+            node->right->left = NULL;
+            node->right->right = NULL;
+            queue[tail++] = node->right;
+        }
+        cursor++;
+    }
+    return root;
+}
+
+NullableIntVec tree_values(struct TreeNode *root) {
+    if (!root) {
+        NullableIntVec empty = { NULL, NULL, 0 };
+        return empty;
+    }
+    int capacity = 32;
+    int len = 0;
+    int *data = malloc(sizeof(int) * capacity);
+    int *is_null = malloc(sizeof(int) * capacity);
+    struct TreeNode **queue = malloc(sizeof(struct TreeNode*) * capacity);
+    int head = 0, tail = 0;
+    queue[tail++] = root;
+    while (head < tail) {
+        struct TreeNode *node = queue[head++];
+        if (len == capacity || tail + 2 >= capacity) {
+            capacity *= 2;
+            data = realloc(data, sizeof(int) * capacity);
+            is_null = realloc(is_null, sizeof(int) * capacity);
+            queue = realloc(queue, sizeof(struct TreeNode*) * capacity);
+        }
+        if (!node) {
+            data[len] = 0;
+            is_null[len++] = 1;
+            continue;
+        }
+        data[len] = node->val;
+        is_null[len++] = 0;
+        queue[tail++] = node->left;
+        queue[tail++] = node->right;
+    }
+    while (len > 0 && is_null[len - 1]) len--;
+    NullableIntVec result = { data, is_null, len };
+    return result;
+}
+
+struct TreeNode *find_tree_node(struct TreeNode *root, int value) {
+    if (!root) return NULL;
+    struct TreeNode **queue = malloc(sizeof(struct TreeNode*) * 4096);
+    int head = 0, tail = 0;
+    queue[tail++] = root;
+    while (head < tail) {
+        struct TreeNode *node = queue[head++];
+        if (node->val == value) return node;
+        if (node->left) queue[tail++] = node->left;
+        if (node->right) queue[tail++] = node->right;
+    }
+    return NULL;
+}
+
+IntVec right_chain_values(struct TreeNode *root) {
+    int capacity = 16;
+    int len = 0;
+    int *data = malloc(sizeof(int) * capacity);
+    struct TreeNode **seen = malloc(sizeof(struct TreeNode*) * capacity);
+    while (root) {
+        int duplicate = 0;
+        for (int i = 0; i < len; i++) if (seen[i] == root) duplicate = 1;
+        if (duplicate) break;
+        if (len == capacity) {
+            capacity *= 2;
+            data = realloc(data, sizeof(int) * capacity);
+            seen = realloc(seen, sizeof(struct TreeNode*) * capacity);
+        }
+        seen[len] = root;
+        data[len++] = root->val;
+        root = root->right;
+    }
+    IntVec result = { data, len };
+    return result;
+}
+"""
+
+
+def _wrap_node_c(code: str, profile: NodeFunctionProfile) -> str:
+    name = profile.function_name
+    kind = profile.kind
+    kind_literal = json.dumps(kind)
+    return f"""{C_HELPERS}
+
+{C_NODE_HELPERS}
+
+{code.rstrip()}
+
+int main(void) {{
+    char raw[65536];
+    size_t n = fread(raw, 1, sizeof(raw) - 1, stdin);
+    raw[n] = '\\0';
+    char *lines[32] = {{0}};
+    int line_count = 0;
+    char *cursor = strtok(raw, "\\r\\n");
+    while (cursor && line_count < 32) {{
+        lines[line_count++] = cursor;
+        cursor = strtok(NULL, "\\r\\n");
+    }}
+    const char *kind = {kind_literal};
+    if (strcmp(kind, "list_to_list") == 0) {{
+        BuiltList built = build_list(parse_int_vec(lines[0]));
+        IntVec values = list_values({name}(built.head));
+        print_int_array(values.data, values.len);
+    }} else if (strcmp(kind, "two_lists_to_list") == 0) {{
+        BuiltList left = build_list(parse_int_vec(lines[0]));
+        BuiltList right = build_list(parse_int_vec(lines[1]));
+        IntVec values = list_values({name}(left.head, right.head));
+        print_int_array(values.data, values.len);
+    }} else if (strcmp(kind, "list_int_to_list") == 0) {{
+        BuiltList built = build_list(parse_int_vec(lines[0]));
+        IntVec values = list_values({name}(built.head, atoi(lines[1])));
+        print_int_array(values.data, values.len);
+    }} else if (strcmp(kind, "list_array_to_list") == 0) {{
+        IntMatrix matrix = parse_int_matrix(lines[0]);
+        struct ListNode **lists = malloc(sizeof(struct ListNode*) * (matrix.rows > 0 ? matrix.rows : 1));
+        for (int i = 0; i < matrix.rows; i++) {{
+            IntVec row = {{ matrix.data[i], matrix.cols[i] }};
+            lists[i] = build_list(row).head;
+        }}
+        IntVec values = list_values({name}(lists, matrix.rows));
+        print_int_array(values.data, values.len);
+    }} else if (strcmp(kind, "list_to_bool") == 0) {{
+        BuiltList built = build_list(parse_int_vec(lines[0]));
+        printf("%s\\n", {name}(built.head) ? "true" : "false");
+    }} else if (strcmp(kind, "cycle_to_bool") == 0) {{
+        BuiltList built = build_cycle_list(parse_int_vec(lines[0]), atoi(lines[1]));
+        printf("%s\\n", {name}(built.head) ? "true" : "false");
+    }} else if (strcmp(kind, "cycle_to_index") == 0) {{
+        BuiltList built = build_cycle_list(parse_int_vec(lines[0]), atoi(lines[1]));
+        printf("%d\\n", node_index(built, {name}(built.head)));
+    }} else if (strcmp(kind, "intersection_node_value") == 0) {{
+        struct ListNode *head_a = NULL;
+        struct ListNode *head_b = NULL;
+        build_intersection_lists(parse_int_vec(lines[0]), parse_int_vec(lines[1]), &head_a, &head_b);
+        struct ListNode *result = {name}(head_a, head_b);
+        if (result) printf("%d\\n", result->val); else printf("null\\n");
+    }} else if (strcmp(kind, "random_to_random") == 0) {{
+        NullableIntMatrix values = random_values({name}(build_random_list(parse_nullable_int_matrix(lines[0]))));
+        print_nullable_int_matrix(values.data, values.is_null, values.rows, values.cols);
+    }} else if (strcmp(kind, "tree_to_vector") == 0) {{
+        int result_len = 0;
+        int *result = {name}(build_tree(parse_nullable_int_vec(lines[0])), &result_len);
+        print_int_array(result, result_len);
+    }} else if (strcmp(kind, "tree_to_matrix") == 0) {{
+        int result_len = 0;
+        int *result_cols = NULL;
+        int **result = {name}(build_tree(parse_nullable_int_vec(lines[0])), &result_len, &result_cols);
+        print_int_matrix(result, result_len, result_cols);
+    }} else if (strcmp(kind, "tree_to_scalar") == 0) {{
+        int result = {name}(build_tree(parse_nullable_int_vec(lines[0])));
+        if (strcmp("{name}", "isSymmetric") == 0 || strcmp("{name}", "isValidBST") == 0) printf("%s\\n", result ? "true" : "false");
+        else printf("%d\\n", result);
+    }} else if (strcmp(kind, "tree_to_tree") == 0) {{
+        NullableIntVec values = tree_values({name}(build_tree(parse_nullable_int_vec(lines[0]))));
+        print_nullable_int_array(values.data, values.is_null, values.len);
+    }} else if (strcmp(kind, "array_to_tree") == 0) {{
+        IntVec nums = parse_int_vec(lines[0]);
+        NullableIntVec values = tree_values({name}(nums.data, nums.len));
+        print_nullable_int_array(values.data, values.is_null, values.len);
+    }} else if (strcmp(kind, "two_arrays_to_tree") == 0) {{
+        IntVec preorder = parse_int_vec(lines[0]);
+        IntVec inorder = parse_int_vec(lines[1]);
+        NullableIntVec values = tree_values({name}(preorder.data, preorder.len, inorder.data, inorder.len));
+        print_nullable_int_array(values.data, values.is_null, values.len);
+    }} else if (strcmp(kind, "tree_int_to_scalar") == 0) {{
+        printf("%d\\n", {name}(build_tree(parse_nullable_int_vec(lines[0])), atoi(lines[1])));
+    }} else if (strcmp(kind, "flatten_tree") == 0) {{
+        struct TreeNode *root = build_tree(parse_nullable_int_vec(lines[0]));
+        {name}(root);
+        IntVec values = right_chain_values(root);
+        print_int_array(values.data, values.len);
+    }} else if (strcmp(kind, "tree_lca_to_value") == 0) {{
+        struct TreeNode *root = build_tree(parse_nullable_int_vec(lines[0]));
+        struct TreeNode *result = {name}(root, find_tree_node(root, atoi(lines[1])), find_tree_node(root, atoi(lines[2])));
+        if (result) printf("%d\\n", result->val); else printf("null\\n");
+    }}
+    return 0;
+}}
+"""
+
+
 def wrap_function_submission(
     code: str,
     language: str,
@@ -2472,6 +4185,21 @@ def wrap_function_submission(
     function_signature: str | None = None,
 ) -> str:
     """Wrap a user function body in a stdin/stdout harness for judge execution."""
+    node_profile = NODE_FUNCTION_PROFILES.get(problem_slug)
+    if node_profile:
+        if language == "python":
+            return _wrap_node_python(code, node_profile)
+        if language == "cpp":
+            return _wrap_node_cpp(code, node_profile)
+        if language in {"javascript", "typescript"}:
+            return _wrap_node_js(code, node_profile, typescript=language == "typescript")
+        if language == "java":
+            return _wrap_node_java(code, node_profile)
+        if language == "golang":
+            return _wrap_node_go(code, node_profile)
+        if language == "c":
+            return _wrap_node_c(code, node_profile)
+
     signature = function_signature or FUNCTION_SIGNATURES.get(problem_slug)
     if signature:
         if language == "python":

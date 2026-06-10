@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import json
 import re
+import sys
+from contextlib import redirect_stdout
 from copy import deepcopy
+from io import StringIO
 from typing import Any
 
-from backend.scripts.seed_official_solutions import official_function_for_slug
+from backend.scripts.seed_official_solutions import (
+    official_function_for_slug,
+    official_solution_for_slug,
+)
 from backend.services.acm_views import build_acm_view
+from backend.services.function_mode import NODE_FUNCTION_PROFILES, wrap_function_submission
 from backend.services.problem_modes import FUNCTION_SIGNATURES
 
 DESIGN_SLUGS = {
@@ -167,6 +174,20 @@ def _format_value(value: Any, annotation: str, nested: bool = False) -> str:
 
 def _expected_output(slug: str, input_data: str) -> str:
     signature = FUNCTION_SIGNATURES[slug]
+    if slug in NODE_FUNCTION_PROFILES:
+        official = official_solution_for_slug(slug)
+        if official is None:
+            raise KeyError(f"Missing official solution for {slug}")
+        wrapped = wrap_function_submission(official.code, "python", slug, signature)
+        old_stdin = sys.stdin
+        output = StringIO()
+        try:
+            sys.stdin = StringIO(input_data)
+            with redirect_stdout(output):
+                exec(wrapped, {"__name__": "__main__"})
+        finally:
+            sys.stdin = old_stdin
+        return output.getvalue().strip()
     params = _params_from_signature(signature)
     args = _load_args(input_data, params)
     result = official_function_for_slug(slug)(*deepcopy(args))

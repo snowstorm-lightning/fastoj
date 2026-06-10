@@ -1,5 +1,14 @@
 # Codex Progress
 
+## 2026-06-10 Hot100 Node Function Mode And Workbench Layout
+
+- [x] Migrated seeded Hot 100 linked-list and binary-tree function signatures to LeetCode-style node entrypoints such as `reverseList(head)`, `maxDepth(root)`, and `lowestCommonAncestor(root, p, q)`.
+- [x] Added structured node-function profiles and wrappers for Python, C++, Java, JavaScript, TypeScript, Go, and C while preserving the stored JSON testcase contract.
+- [x] Updated seed official Python solutions, statement wording, localized frontend descriptions, and starter generation so node class comments appear in the editor and sample displays show `head = [...]` / `root = [...]`.
+- [x] Tightened the collapsed workbench header and changed the editor/result split sizing so the result panel can shrink and the divider can be dragged farther downward.
+- [x] Ran content normalization in the API container: `docker compose exec -T api uv run python -m backend.scripts.seed_data` reported `created 0 missing problems and normalized 108 existing problems`.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (248 passed, 2 existing FastAPI `regex` warnings); `cd frontend && npm run build` (existing Vite large chunk warnings); `cd frontend && npm test` (10 files / 46 tests).
+
 ## 2026-06-09 README Refresh
 
 - [x] Reworked README and README.zh-CN opening sections to present FastOJ as a full-stack AI-assisted OJ with real judge, AI safety, admin operations, and deployable architecture.

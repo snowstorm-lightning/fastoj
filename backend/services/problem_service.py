@@ -32,7 +32,7 @@ class ProblemService:
 
     @staticmethod
     def _function_signature(problem: Problem) -> str | None:
-        return problem.function_signature or FUNCTION_SIGNATURES.get(str(problem.slug))
+        return FUNCTION_SIGNATURES.get(str(problem.slug)) or problem.function_signature
 
     @staticmethod
     def _has_io_view(metadata: dict[str, Any], mode: str) -> bool:

@@ -607,12 +607,17 @@ Full deployment steps are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 The bundled seed data is now large enough for sustained interview practice:
 
 - **Hot 100 interview track:** all 100 canonical Hot 100 problems, using
-  original FastOJ statements and deterministic ACM input/output for linked-list,
-  tree, design, and multi-answer tasks.
+  original FastOJ statements and deterministic cases for linked-list, tree,
+  design, and multi-answer tasks.
 - **Function-mode classics:** Two Sum, Add Two Numbers, Longest Substring
   Without Repeating Characters, Valid Parentheses, Alien Dictionary, and
   Two-Car Parking Lot include starter frames, and every seeded problem now has a
   displayable, executable Python official solution.
+- **LeetCode-style node tasks:** Hot 100 linked-list and binary-tree function
+  starters expose `head`, `root`, `p`, and `q` node objects across Python, C++,
+  Java, JavaScript, TypeScript, Go, and C. Stored testcase input/output remains
+  JSON arrays; the judge wrapper converts those arrays to nodes and serializes
+  returned nodes back to the public sample format.
 - **Expanded deterministic cases:** seed import gives each problem at least two
   public cases plus category-sensitive hidden coverage: 30+ hidden cases for
   ordinary array/string/DP/graph/tree/list problems, 20+ for design and AI/ML
@@ -655,7 +660,8 @@ Key flows:
   to the browser through WebSocket-first status updates, with polling fallback
   where needed.
 - **Function mode:** service wrappers convert typed JSON-style function inputs
-  into executable language-specific harnesses, while ACM mode keeps raw
+  into executable language-specific harnesses, including node-object adapters
+  for seeded linked-list and binary-tree tasks, while ACM mode keeps raw
   stdin/stdout execution available.
 - **AI assistance:** the API builds prompts from public samples, verdicts, user
   code, and safe summaries. Hidden testcase content remains behind admin-only

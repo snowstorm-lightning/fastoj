@@ -569,10 +569,14 @@ FastOJ 已包含 GitHub Actions：
 种子数据已经扩展到可以支撑持续刷题：
 
 - **Hot 100 面试题：** 覆盖 100 道 canonical Hot 100 题，链表、二叉树、设计题和
-  多答案题都使用 FastOJ 自写题面与确定性的 ACM 输入输出。
+  多答案题都使用 FastOJ 自写题面与确定性用例。
 - **经典函数题：** Two Sum、Add Two Numbers、Longest Substring Without
   Repeating Characters、Valid Parentheses、Alien Dictionary、Two-Car Parking Lot
   带 starter frame；现在所有 seed 题都有可展示、可执行的 Python 官方题解。
+- **LeetCode 风格节点题：** Hot 100 链表和二叉树函数模式在 Python、C++、
+  Java、JavaScript、TypeScript、Go、C 中暴露 `head`、`root`、`p`、`q`
+  等节点对象。底层 testcase 输入输出仍保存为 JSON 数组；判题 wrapper 负责把
+  数组构造成节点，并把返回节点序列化回公开示例格式。
 - **确定性增强用例：** seed 导入时每题至少包含两个公开用例，并按题型扩展隐藏
   覆盖：普通数组/字符串/DP/图/树/链表题至少 30 个隐藏用例，设计类和 AI/ML 题至少
   20 个，高输出组合题至少 15 个。
@@ -610,7 +614,8 @@ flowchart LR
 - **实时反馈：** Worker 事件通过 Redis 发布，再由 API 推送到浏览器；前端优先使用
   WebSocket 状态更新，必要时回退到轮询。
 - **函数模式：** 服务层 wrapper 把 typed JSON 风格的函数输入转换成各语言可执行
-  harness；ACM 模式仍保留原始 stdin/stdout 执行。
+  harness，并为 seed 链表/二叉树题提供节点对象适配；ACM 模式仍保留原始
+  stdin/stdout 执行。
 - **AI 辅助：** API 只用公开样例、判题结果、用户代码和安全摘要构造 prompt。隐藏
   用例内容留在管理员专用接口之后，不进入学习者侧 AI prompt。
 - **管理端出题：** 草稿生成、题目导入、校验、修复尝试、官方题解和用例审核都经过

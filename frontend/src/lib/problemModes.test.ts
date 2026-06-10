@@ -41,6 +41,28 @@ const alienDictionary = {
   tags: ["Graph", "Topological Sort", "Function"],
 };
 
+const reverseLinkedList = {
+  ...twoSum,
+  id: "5",
+  title: "Reverse Linked List",
+  slug: "reverse-linked-list",
+  tags: ["Linked List", "Function"],
+  mode: "both",
+  function_signature: "def reverseList(head: ListNode | None) -> ListNode | None",
+  sample_testcases: [{ input: "[1,2,3]", output: "[3,2,1]", display_mode: "function" }],
+};
+
+const maxDepthTree = {
+  ...twoSum,
+  id: "6",
+  title: "Maximum Depth of Binary Tree",
+  slug: "maximum-depth-of-binary-tree",
+  tags: ["Binary Tree", "Function"],
+  mode: "both",
+  function_signature: "def maxDepth(root: TreeNode | None) -> int",
+  sample_testcases: [{ input: "[3,9,20,null,null,15,7]", output: "3", display_mode: "function" }],
+};
+
 describe("problem mode metadata", () => {
   it("detects function-mode problems", () => {
     expect(getProblemMode(twoSum).supportsFunction).toBe(true);
@@ -71,6 +93,24 @@ describe("problem mode metadata", () => {
   it("builds the Alien Dictionary LeetCode-style Python starter", () => {
     expect(getProblemMode(alienDictionary).supportsFunction).toBe(true);
     expect(buildStarter(alienDictionary, "python", "function")).toContain("def alienOrder");
+  });
+
+  it("builds linked-list node starters for every supported language", () => {
+    expect(buildStarter(reverseLinkedList, "python", "function")).toContain("def reverseList(head)");
+    expect(buildStarter(reverseLinkedList, "python", "function")).toContain("class ListNode");
+    expect(buildStarter(reverseLinkedList, "cpp", "function")).toContain("ListNode* reverseList(ListNode* head)");
+    expect(buildStarter(reverseLinkedList, "java", "function")).toContain("public ListNode reverseList(ListNode head)");
+    expect(buildStarter(reverseLinkedList, "javascript", "function")).toContain("function reverseList(head)");
+    expect(buildStarter(reverseLinkedList, "typescript", "function")).toContain("function reverseList(head: any): ListNode | null");
+    expect(buildStarter(reverseLinkedList, "golang", "function")).toContain("func reverseList(head *ListNode) *ListNode");
+    expect(buildStarter(reverseLinkedList, "c", "function")).toContain("struct ListNode* reverseList(struct ListNode* head)");
+  });
+
+  it("builds binary-tree node starters", () => {
+    expect(buildStarter(maxDepthTree, "python", "function")).toContain("def maxDepth(root)");
+    expect(buildStarter(maxDepthTree, "python", "function")).toContain("class TreeNode");
+    expect(buildStarter(maxDepthTree, "cpp", "function")).toContain("int maxDepth(TreeNode* root)");
+    expect(buildStarter(maxDepthTree, "java", "function")).toContain("public int maxDepth(TreeNode root)");
   });
 
   it("builds a dynamic Python starter from approved agent metadata", () => {

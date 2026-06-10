@@ -295,8 +295,9 @@ const AGENT_LEFT_DRAWER_SNAP = 180;
 const AGENT_RIGHT_DRAWER_MIN = 360;
 const AGENT_RIGHT_DRAWER_MAX = 760;
 const AGENT_RIGHT_DRAWER_SNAP = 300;
-const EDITOR_MIN_HEIGHT = 260;
+const EDITOR_MIN_HEIGHT = 220;
 const EDITOR_MAX_HEIGHT = 720;
+const RUN_RESULT_MIN_HEIGHT = 150;
 
 function runCasesFromProblem(problem?: ProblemDetail): EditableRunCase[] {
   const samples = problem?.sample_testcases ?? [];
@@ -1431,6 +1432,7 @@ function Workspace({
   const judgeRequestRef = useRef(0);
   const pollRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const codingPanelRef = useRef<HTMLElement | null>(null);
 
   const problemQuery = useQuery({ queryKey: ["problem", problemId, locale, judgeMode], queryFn: () => api.problem(problemId ?? "", locale, judgeMode), enabled: Boolean(problemId) });
   const trailQuery = useQuery({ queryKey: ["submissions", problemId, submission?.id], queryFn: () => api.submissions(problemId ?? ""), enabled: Boolean(problemId && authenticated) });
@@ -1593,11 +1595,15 @@ function Workspace({
     event.preventDefault();
     const startY = event.clientY;
     const startHeight = editorHeight;
+    const panelHeight = codingPanelRef.current?.clientHeight ?? 0;
+    const dynamicMax = panelHeight
+      ? Math.max(EDITOR_MIN_HEIGHT, Math.min(EDITOR_MAX_HEIGHT, panelHeight - RUN_RESULT_MIN_HEIGHT - 170))
+      : EDITOR_MAX_HEIGHT;
     setResizing("editor");
     document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
     const onMove = (moveEvent: PointerEvent) => {
-      setEditorHeight(clamp(startHeight + moveEvent.clientY - startY, EDITOR_MIN_HEIGHT, EDITOR_MAX_HEIGHT));
+      setEditorHeight(clamp(startHeight + moveEvent.clientY - startY, EDITOR_MIN_HEIGHT, dynamicMax));
     };
     const onUp = () => {
       setResizing(null);
@@ -1934,7 +1940,7 @@ function Workspace({
           />
         </div>
 
-        <section className="coding-panel feature-frame code-frame" style={codingStyle}>
+        <section className="coding-panel feature-frame code-frame" style={codingStyle} ref={codingPanelRef}>
           <div className="editor-toolbar">
             <button
               className={`mode-toggle ${judgeMode === "function" ? "active function-mode" : "active acm-mode"}`}
@@ -2162,6 +2168,23 @@ function functionSignaturePreview(starter: string, language: string, fallback: s
   return (line ?? fallback).replace(/\s*\{\s*$/, "");
 }
 
+function functionParameterNames(signature?: string | null): string[] {
+  const match = signature?.match(/^def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([\s\S]*?)\)/);
+  if (!match) return [];
+  return match[1]
+    .split(",")
+    .map((part) => part.trim().split("=", 1)[0].trim())
+    .map((part) => part.split(":", 1)[0].trim())
+    .filter((name) => name && name !== "self" && name !== "cls");
+}
+
+function displayFunctionInput(input: string, signature?: string | null): string {
+  const names = functionParameterNames(signature);
+  const lines = input.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!names.length || lines.length !== names.length) return input;
+  return lines.map((line, index) => `${names[index]} = ${line}`).join("\n");
+}
+
 function FunctionFrame({ problem, mode, language, locale }: { problem?: ProblemDetail; mode: JudgeMode; language: string; locale: Locale }) {
   const text = getUI(locale);
   if (mode !== "function") return <div className="function-frame">{text.acmFrame}</div>;
@@ -2193,7 +2216,7 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
             </h3>
             <div className="sample-row">
               <span>{text.input}</span>
-              <pre>{testcase.input}</pre>
+              <pre>{testcase.display_mode === "function" ? displayFunctionInput(testcase.input, problem.function_signature) : testcase.input}</pre>
             </div>
             <div className="sample-row">
               <span>{text.output}</span>

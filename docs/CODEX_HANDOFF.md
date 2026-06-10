@@ -1,10 +1,19 @@
 # Codex Handoff
 
-Updated: 2026-06-09
+Updated: 2026-06-10
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-06-10 Hot100 Node Function Mode And Workbench Layout
+
+- Seeded Hot 100 linked-list and binary-tree function mode now exposes LeetCode-style node entrypoints across Python, C++, Java, JavaScript, TypeScript, Go, and C. Examples include `reverseList(head)`, `detectCycle(head)`, `copyRandomList(head)`, `invertTree(root)`, `flatten(root)`, and `lowestCommonAncestor(root, p, q)`.
+- The testcase storage and run-input contract remain JSON-based. `wrap_function_submission` uses slug-specific node profiles to convert arrays into `ListNode`, random-pointer `Node`, cycle/intersection lists, and level-order `TreeNode` graphs, then serializes returned nodes back to existing public formats.
+- `ProblemService` now prefers canonical `FUNCTION_SIGNATURES` for known seed slugs, so old database signatures do not override the node-style API shape. The content normalization was run in the API container with `docker compose exec -T api uv run python -m backend.scripts.seed_data`, reporting `created 0 missing problems and normalized 108 existing problems`; no Alembic migration was added.
+- Frontend starters now include node class comments and node-style signatures for supported languages, sample cards display parameter labels such as `head = [...]` and `root = [...]`, and raw custom-run textareas still submit the original JSON.
+- The workbench collapsed header is shorter, the result panel minimum height is lower, and editor split sizing is based on the coding panel's available height so the divider can move farther downward.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (248 passed, 2 existing FastAPI `regex` warnings); `cd frontend && npm run build` (existing Vite large chunk warnings); `cd frontend && npm test` (10 files / 46 tests).
 
 ## 2026-06-09 README Refresh
 

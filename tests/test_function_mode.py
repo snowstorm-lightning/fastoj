@@ -413,7 +413,7 @@ def letter_combinations(digits):
 def test_dynamic_python_function_mode_prints_null_for_none():
     wrapped = wrap_function_submission(
         """
-def get_intersection_value(list_a, list_b):
+def getIntersectionNode(headA, headB):
     return None
 """,
         "python",
@@ -430,3 +430,78 @@ def get_intersection_value(list_a, list_b):
         sys.stdin = old_stdin
 
     assert output.getvalue().strip() == "null"
+
+
+@pytest.mark.parametrize(
+    ("slug", "code", "stdin_value", "expected"),
+    [
+        (
+            "reverse-linked-list",
+            "def reverseList(head):\n    prev = None\n    while head:\n        nxt = head.next\n        head.next = prev\n        prev = head\n        head = nxt\n    return prev\n",
+            "[1,2,3,4,5]",
+            "[5,4,3,2,1]",
+        ),
+        (
+            "linked-list-cycle-ii",
+            "def detectCycle(head):\n    slow = fast = head\n    while fast and fast.next:\n        slow = slow.next\n        fast = fast.next.next\n        if slow is fast:\n            cur = head\n            while cur is not slow:\n                cur = cur.next\n                slow = slow.next\n            return cur\n    return None\n",
+            "[3,2,0,-4]\n1",
+            "1",
+        ),
+        (
+            "copy-list-with-random-pointer",
+            "def copyRandomList(head):\n    clones = {}\n    cur = head\n    while cur:\n        clones[cur] = Node(cur.val)\n        cur = cur.next\n    cur = head\n    while cur:\n        clones[cur].next = clones.get(cur.next)\n        clones[cur].random = clones.get(cur.random)\n        cur = cur.next\n    return clones.get(head)\n",
+            "[[7,null],[13,0],[11,4],[10,2],[1,0]]",
+            "[[7,null],[13,0],[11,4],[10,2],[1,0]]",
+        ),
+        (
+            "invert-binary-tree",
+            "def invertTree(root):\n    if root:\n        root.left, root.right = invertTree(root.right), invertTree(root.left)\n    return root\n",
+            "[4,2,7,1,3,6,9]",
+            "[4,7,2,9,6,3,1]",
+        ),
+        (
+            "lowest-common-ancestor-of-a-binary-tree",
+            "def lowestCommonAncestor(root, p, q):\n    if root in (None, p, q):\n        return root\n    left = lowestCommonAncestor(root.left, p, q)\n    right = lowestCommonAncestor(root.right, p, q)\n    return root if left and right else left or right\n",
+            "[3,5,1,6,2,0,8,null,null,7,4]\n5\n1",
+            "3",
+        ),
+        (
+            "flatten-binary-tree-to-linked-list",
+            "def flatten(root):\n    nodes = []\n    def dfs(node):\n        if node:\n            nodes.append(node)\n            dfs(node.left)\n            dfs(node.right)\n    dfs(root)\n    for index, node in enumerate(nodes):\n        node.left = None\n        node.right = nodes[index + 1] if index + 1 < len(nodes) else None\n",
+            "[1,2,5,3,4,null,6]",
+            "[1,2,3,4,5,6]",
+        ),
+    ],
+)
+def test_node_python_function_mode_executes_structured_inputs(slug, code, stdin_value, expected):
+    wrapped = wrap_function_submission(code, "python", slug)
+
+    old_stdin = sys.stdin
+    try:
+        sys.stdin = io.StringIO(stdin_value)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exec(wrapped, {"__name__": "__main__"})
+    finally:
+        sys.stdin = old_stdin
+
+    assert output.getvalue().strip() == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "code", "expected"),
+    [
+        ("cpp", "class Solution { public: ListNode* reverseList(ListNode* head) { return head; } };", "Solution solver"),
+        ("java", "class Solution { public ListNode reverseList(ListNode head) { return head; } }", "class ListNode"),
+        ("javascript", "function reverseList(head) { return head; }", "class ListNode"),
+        ("typescript", "function reverseList(head: any): any { return head; }", "// @ts-nocheck"),
+        ("golang", "package main\nfunc reverseList(head *ListNode) *ListNode { return head }", "type ListNode struct"),
+        ("c", "struct ListNode* reverseList(struct ListNode* head) { return head; }", "struct ListNode"),
+    ],
+)
+def test_node_function_mode_wraps_static_languages(language, code, expected):
+    wrapped = wrap_function_submission(code, language, "reverse-linked-list")
+
+    assert expected in wrapped
+    assert "reverseList" in wrapped
+    assert "listValues" in wrapped or "list_values" in wrapped

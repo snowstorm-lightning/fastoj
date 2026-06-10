@@ -76,13 +76,13 @@ export const PROBLEM_ZH_EXTRA: Record<string, { title: string; description?: str
   },
   "intersection-of-two-linked-lists": {
     title: "相交链表",
-    description: "两个链表用数组表示，返回它们后缀首次相同的节点值；不存在则返回 null。",
-    hint: "可以把这里的数组模型看作公共后缀匹配问题。",
+    description: "函数接收两个链表头节点 headA 和 headB；样例用数组展示节点值，返回相交节点值，不存在则返回 null。",
+    hint: "让两个指针分别走完 A+B 和 B+A，若相交会在公共节点相遇。",
   },
   "reverse-linked-list": {
     title: "反转链表",
-    description: "链表用数组表示，返回反转后的节点值数组。",
-    hint: "数组模型下直接反向输出；链表模型中维护 prev 和 cur。",
+    description: "函数接收链表头节点 head，反转指针后返回新的头节点；样例输出仍显示节点值数组。",
+    hint: "维护 prev 和 cur，逐个把 next 指向前一个节点。",
   },
   "palindrome-linked-list": {
     title: "回文链表",
@@ -91,23 +91,23 @@ export const PROBLEM_ZH_EXTRA: Record<string, { title: string; description?: str
   },
   "linked-list-cycle": {
     title: "环形链表",
-    description: "给定节点数组和入环位置，判断链表是否存在环。",
-    hint: "真实链表可用快慢指针；这里 pos 不为 -1 即表示有环。",
+    description: "函数接收链表头节点 head；测试会按样例数组和 pos 构造带环链表，返回是否存在环。",
+    hint: "用快慢指针，相遇说明存在环。",
   },
   "linked-list-cycle-ii": {
     title: "环形链表 II",
-    description: "给定节点数组和入环位置，返回入环下标；无环返回 -1。",
+    description: "函数接收链表头节点 head，返回入环节点；平台会把返回节点显示为入环下标，无环显示 -1。",
     hint: "真实链表中快慢指针相遇后，从头和相遇点同步走可找到入口。",
   },
   "merge-two-sorted-lists": {
     title: "合并两个有序链表",
-    description: "合并两个升序链表数组，返回一个新的升序数组。",
-    hint: "用两个指针每次取较小值追加到答案。",
+    description: "函数接收两个升序链表头节点 list1 和 list2，返回合并后的头节点；样例用数组展示。",
+    hint: "用哑节点和尾指针，每次接上较小节点。",
   },
   "remove-nth-node-from-end-of-list": {
     title: "删除链表的倒数第 N 个节点",
-    description: "删除链表数组中倒数第 n 个节点并返回结果数组。",
-    hint: "数组可直接计算删除下标；链表中常用快慢指针保持 n 步距离。",
+    description: "函数接收链表头节点 head 和 n，删除倒数第 n 个节点后返回头节点。",
+    hint: "使用哑节点，让快指针先走 n 步，再同步移动到删除位置前一个节点。",
   },
   "swap-nodes-in-pairs": {
     title: "两两交换链表中的节点",
@@ -121,17 +121,17 @@ export const PROBLEM_ZH_EXTRA: Record<string, { title: string; description?: str
   },
   "copy-list-with-random-pointer": {
     title: "复制带随机指针的链表",
-    description: "节点以 [值, 随机指针下标] 表示，返回深拷贝后的同结构数组。",
+    description: "函数接收随机链表头节点 head，返回深拷贝头节点；样例用 [值, random 下标] 展示结构。",
     hint: "用哈希表建立旧节点到新节点的映射。",
   },
   "sort-list": {
     title: "排序链表",
-    description: "将链表节点值排序并返回升序数组。",
-    hint: "链表模型适合归并排序；数组模型可直接排序。",
+    description: "函数接收链表头节点 head，排序后返回新的头节点；样例用数组展示排序结果。",
+    hint: "链表排序适合归并排序，也可以先拆分再合并。",
   },
   "merge-k-sorted-lists": {
     title: "合并 K 个升序链表",
-    description: "合并多个升序链表数组，返回一个升序数组。",
+    description: "函数接收多个升序链表头节点，返回合并后的头节点；样例用二维数组展示。",
     hint: "可用最小堆，也可以分治两两合并。",
   },
   "lru-cache": {
@@ -141,7 +141,7 @@ export const PROBLEM_ZH_EXTRA: Record<string, { title: string; description?: str
   },
   "binary-tree-inorder-traversal": {
     title: "二叉树中序遍历",
-    description: "二叉树用含 null 的层序数组表示，返回中序遍历结果。",
+    description: "函数接收二叉树根节点 root；样例用含 null 的层序数组展示，返回中序遍历结果。",
     hint: "递归顺序是左子树、根节点、右子树。",
   },
   "maximum-depth-of-binary-tree": {
@@ -151,7 +151,7 @@ export const PROBLEM_ZH_EXTRA: Record<string, { title: string; description?: str
   },
   "invert-binary-tree": {
     title: "翻转二叉树",
-    description: "交换二叉树每个节点的左右子树，返回层序数组。",
+    description: "函数接收根节点 root，交换每个节点的左右子树并返回根节点；样例输出层序数组。",
     hint: "对每个节点递归或 BFS 交换左右孩子。",
   },
   "symmetric-tree": {
@@ -171,7 +171,7 @@ export const PROBLEM_ZH_EXTRA: Record<string, { title: string; description?: str
   },
   "convert-sorted-array-to-binary-search-tree": {
     title: "将有序数组转换为二叉搜索树",
-    description: "把升序数组转换为高度平衡的二叉搜索树，并返回层序数组。",
+    description: "函数接收升序数组 nums，返回高度平衡二叉搜索树的根节点；样例输出层序数组。",
     hint: "每次选中点作为根节点，递归构造左右子树。",
   },
   "validate-binary-search-tree": {
@@ -191,12 +191,12 @@ export const PROBLEM_ZH_EXTRA: Record<string, { title: string; description?: str
   },
   "flatten-binary-tree-to-linked-list": {
     title: "二叉树展开为链表",
-    description: "把二叉树按前序遍历顺序展开，并返回展开后的右链值数组。",
+    description: "函数接收根节点 root，原地按前序顺序展开为右指针链；样例输出展开后的右链值数组。",
     hint: "前序遍历结果就是展开后的顺序。",
   },
   "construct-binary-tree-from-preorder-and-inorder-traversal": {
     title: "从前序与中序遍历序列构造二叉树",
-    description: "根据前序和中序遍历数组重建二叉树，返回层序数组。",
+    description: "根据前序和中序遍历数组重建二叉树并返回根节点；样例输出层序数组。",
     hint: "前序第一个值是根，在中序中把左右子树分开。",
   },
   "path-sum-iii": {

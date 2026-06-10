@@ -48,13 +48,19 @@ ${TODO}    return []
 `,
   },
   "add-two-numbers": {
-    signature: "def add_two_numbers(l1: list[int], l2: list[int]) -> list[int]",
+    signature: "def addTwoNumbers(l1: ListNode | None, l2: ListNode | None) -> ListNode | None",
     description: {
-      zh: "这里用数组模拟逆序链表节点，专注练习进位逻辑。",
-      en: "Arrays simulate reversed linked lists so you can focus on carry handling.",
+      zh: "按链表节点接口补全函数体；测试输入仍以数组展示。",
+      en: "Complete the linked-node function. Test input is still shown as arrays.",
     },
-    starter: `def add_two_numbers(l1: list[int], l2: list[int]) -> list[int]:
-${TODO}    return []
+    starter: `# Definition for singly-linked list.
+# class ListNode:
+#     def __init__(self, val=0, next=None):
+#         self.val = val
+#         self.next = next
+
+def addTwoNumbers(l1: ListNode | None, l2: ListNode | None) -> ListNode | None:
+${TODO}    return None
 `,
   },
   "longest-substring-without-repeating": {
@@ -264,6 +270,229 @@ const FUNCTION_STARTERS: Record<string, Partial<Record<string, string>>> = {
 
 FUNCTION_STARTERS["longest-substring-without-repeating-characters"] =
   FUNCTION_STARTERS["longest-substring-without-repeating"];
+
+type NodeStarterKind =
+  | "list_to_list"
+  | "two_lists_to_list"
+  | "list_to_bool"
+  | "cycle_to_bool"
+  | "cycle_to_index"
+  | "intersection_node_value"
+  | "list_int_to_list"
+  | "random_to_random"
+  | "list_array_to_list"
+  | "tree_to_vector"
+  | "tree_to_matrix"
+  | "tree_to_scalar_int"
+  | "tree_to_scalar_bool"
+  | "tree_int_to_scalar"
+  | "tree_to_tree"
+  | "array_to_tree"
+  | "two_arrays_to_tree"
+  | "flatten_tree"
+  | "tree_lca_to_value";
+
+type NodeStarterProfile = {
+  functionName: string;
+  kind: NodeStarterKind;
+};
+
+const NODE_STARTER_PROFILES: Record<string, NodeStarterProfile> = {
+  "add-two-numbers": { functionName: "addTwoNumbers", kind: "two_lists_to_list" },
+  "intersection-of-two-linked-lists": { functionName: "getIntersectionNode", kind: "intersection_node_value" },
+  "reverse-linked-list": { functionName: "reverseList", kind: "list_to_list" },
+  "palindrome-linked-list": { functionName: "isPalindrome", kind: "list_to_bool" },
+  "linked-list-cycle": { functionName: "hasCycle", kind: "cycle_to_bool" },
+  "linked-list-cycle-ii": { functionName: "detectCycle", kind: "cycle_to_index" },
+  "merge-two-sorted-lists": { functionName: "mergeTwoLists", kind: "two_lists_to_list" },
+  "remove-nth-node-from-end-of-list": { functionName: "removeNthFromEnd", kind: "list_int_to_list" },
+  "swap-nodes-in-pairs": { functionName: "swapPairs", kind: "list_to_list" },
+  "reverse-nodes-in-k-group": { functionName: "reverseKGroup", kind: "list_int_to_list" },
+  "copy-list-with-random-pointer": { functionName: "copyRandomList", kind: "random_to_random" },
+  "sort-list": { functionName: "sortList", kind: "list_to_list" },
+  "merge-k-sorted-lists": { functionName: "mergeKLists", kind: "list_array_to_list" },
+  "binary-tree-inorder-traversal": { functionName: "inorderTraversal", kind: "tree_to_vector" },
+  "maximum-depth-of-binary-tree": { functionName: "maxDepth", kind: "tree_to_scalar_int" },
+  "invert-binary-tree": { functionName: "invertTree", kind: "tree_to_tree" },
+  "symmetric-tree": { functionName: "isSymmetric", kind: "tree_to_scalar_bool" },
+  "diameter-of-binary-tree": { functionName: "diameterOfBinaryTree", kind: "tree_to_scalar_int" },
+  "binary-tree-level-order-traversal": { functionName: "levelOrder", kind: "tree_to_matrix" },
+  "convert-sorted-array-to-binary-search-tree": { functionName: "sortedArrayToBST", kind: "array_to_tree" },
+  "validate-binary-search-tree": { functionName: "isValidBST", kind: "tree_to_scalar_bool" },
+  "kth-smallest-element-in-a-bst": { functionName: "kthSmallest", kind: "tree_int_to_scalar" },
+  "binary-tree-right-side-view": { functionName: "rightSideView", kind: "tree_to_vector" },
+  "flatten-binary-tree-to-linked-list": { functionName: "flatten", kind: "flatten_tree" },
+  "construct-binary-tree-from-preorder-and-inorder-traversal": { functionName: "buildTree", kind: "two_arrays_to_tree" },
+  "path-sum-iii": { functionName: "pathSum", kind: "tree_int_to_scalar" },
+  "lowest-common-ancestor-of-a-binary-tree": { functionName: "lowestCommonAncestor", kind: "tree_lca_to_value" },
+  "binary-tree-maximum-path-sum": { functionName: "maxPathSum", kind: "tree_to_scalar_int" },
+};
+
+function nodeParams(profile: NodeStarterProfile, language: string): string {
+  const name = profile.functionName;
+  const pointer = language === "cpp" ? "*" : "";
+  if (language === "cpp") {
+    if (profile.kind === "two_lists_to_list") return "ListNode* l1, ListNode* l2";
+    if (profile.kind === "intersection_node_value") return "ListNode* headA, ListNode* headB";
+    if (profile.kind === "list_int_to_list") return `${name === "removeNthFromEnd" ? "ListNode* head, int n" : "ListNode* head, int k"}`;
+    if (profile.kind === "list_array_to_list") return "vector<ListNode*> lists";
+    if (profile.kind === "array_to_tree") return "vector<int> nums";
+    if (profile.kind === "two_arrays_to_tree") return "vector<int> preorder, vector<int> inorder";
+    if (profile.kind === "tree_int_to_scalar") return name === "kthSmallest" ? "TreeNode* root, int k" : "TreeNode* root, int targetSum";
+    if (profile.kind === "tree_lca_to_value") return "TreeNode* root, TreeNode* p, TreeNode* q";
+    return `${profile.kind.startsWith("tree") || profile.kind === "flatten_tree" ? "TreeNode" : profile.kind === "random_to_random" ? "Node" : "ListNode"}${pointer} ${profile.kind.startsWith("tree") || profile.kind === "flatten_tree" ? "root" : "head"}`;
+  }
+  if (language === "java") {
+    if (profile.kind === "two_lists_to_list") return "ListNode l1, ListNode l2";
+    if (profile.kind === "intersection_node_value") return "ListNode headA, ListNode headB";
+    if (profile.kind === "list_int_to_list") return name === "removeNthFromEnd" ? "ListNode head, int n" : "ListNode head, int k";
+    if (profile.kind === "list_array_to_list") return "ListNode[] lists";
+    if (profile.kind === "array_to_tree") return "int[] nums";
+    if (profile.kind === "two_arrays_to_tree") return "int[] preorder, int[] inorder";
+    if (profile.kind === "tree_int_to_scalar") return name === "kthSmallest" ? "TreeNode root, int k" : "TreeNode root, int targetSum";
+    if (profile.kind === "tree_lca_to_value") return "TreeNode root, TreeNode p, TreeNode q";
+    return `${profile.kind.startsWith("tree") || profile.kind === "flatten_tree" ? "TreeNode" : profile.kind === "random_to_random" ? "Node" : "ListNode"} ${profile.kind.startsWith("tree") || profile.kind === "flatten_tree" ? "root" : "head"}`;
+  }
+  if (language === "golang") {
+    if (profile.kind === "two_lists_to_list") return "l1 *ListNode, l2 *ListNode";
+    if (profile.kind === "intersection_node_value") return "headA *ListNode, headB *ListNode";
+    if (profile.kind === "list_int_to_list") return name === "removeNthFromEnd" ? "head *ListNode, n int" : "head *ListNode, k int";
+    if (profile.kind === "list_array_to_list") return "lists []*ListNode";
+    if (profile.kind === "array_to_tree") return "nums []int";
+    if (profile.kind === "two_arrays_to_tree") return "preorder []int, inorder []int";
+    if (profile.kind === "tree_int_to_scalar") return name === "kthSmallest" ? "root *TreeNode, k int" : "root *TreeNode, targetSum int";
+    if (profile.kind === "tree_lca_to_value") return "root *TreeNode, p *TreeNode, q *TreeNode";
+    return `${profile.kind.startsWith("tree") || profile.kind === "flatten_tree" ? "root *TreeNode" : profile.kind === "random_to_random" ? "head *Node" : "head *ListNode"}`;
+  }
+  if (language === "c") {
+    if (profile.kind === "two_lists_to_list") return "struct ListNode* l1, struct ListNode* l2";
+    if (profile.kind === "intersection_node_value") return "struct ListNode* headA, struct ListNode* headB";
+    if (profile.kind === "list_int_to_list") return name === "removeNthFromEnd" ? "struct ListNode* head, int n" : "struct ListNode* head, int k";
+    if (profile.kind === "list_array_to_list") return "struct ListNode** lists, int listsSize";
+    if (profile.kind === "array_to_tree") return "int* nums, int numsSize";
+    if (profile.kind === "two_arrays_to_tree") return "int* preorder, int preorderSize, int* inorder, int inorderSize";
+    if (profile.kind === "tree_int_to_scalar") return name === "kthSmallest" ? "struct TreeNode* root, int k" : "struct TreeNode* root, int targetSum";
+    if (profile.kind === "tree_lca_to_value") return "struct TreeNode* root, struct TreeNode* p, struct TreeNode* q";
+    if (profile.kind === "tree_to_vector") return "struct TreeNode* root, int* returnSize";
+    if (profile.kind === "tree_to_matrix") return "struct TreeNode* root, int* returnSize, int** returnColumnSizes";
+    return `${profile.kind.startsWith("tree") || profile.kind === "flatten_tree" ? "struct TreeNode* root" : profile.kind === "random_to_random" ? "struct Node* head" : "struct ListNode* head"}`;
+  }
+  if (profile.kind === "two_lists_to_list") return "l1, l2";
+  if (profile.kind === "intersection_node_value") return "headA, headB";
+  if (profile.kind === "list_int_to_list") return name === "removeNthFromEnd" ? "head, n" : "head, k";
+  if (profile.kind === "list_array_to_list") return "lists";
+  if (profile.kind === "array_to_tree") return "nums";
+  if (profile.kind === "two_arrays_to_tree") return "preorder, inorder";
+  if (profile.kind === "tree_int_to_scalar") return name === "kthSmallest" ? "root, k" : "root, targetSum";
+  if (profile.kind === "tree_lca_to_value") return "root, p, q";
+  return profile.kind.startsWith("tree") || profile.kind === "flatten_tree" ? "root" : "head";
+}
+
+function nodeReturn(profile: NodeStarterProfile, language: string): string {
+  const kind = profile.kind;
+  if (language === "cpp") {
+    if (kind === "list_to_bool" || kind === "cycle_to_bool" || kind === "tree_to_scalar_bool") return "bool";
+    if (kind === "tree_to_scalar_int" || kind === "tree_int_to_scalar") return "int";
+    if (kind === "tree_to_vector") return "vector<int>";
+    if (kind === "tree_to_matrix") return "vector<vector<int>>";
+    if (kind === "flatten_tree") return "void";
+    if (kind.includes("tree")) return "TreeNode*";
+    return kind === "random_to_random" ? "Node*" : "ListNode*";
+  }
+  if (language === "java") {
+    if (kind === "list_to_bool" || kind === "cycle_to_bool" || kind === "tree_to_scalar_bool") return "boolean";
+    if (kind === "tree_to_scalar_int" || kind === "tree_int_to_scalar") return "int";
+    if (kind === "tree_to_vector") return "int[]";
+    if (kind === "tree_to_matrix") return "int[][]";
+    if (kind === "flatten_tree") return "void";
+    if (kind.includes("tree")) return "TreeNode";
+    return kind === "random_to_random" ? "Node" : "ListNode";
+  }
+  if (language === "golang") {
+    if (kind === "list_to_bool" || kind === "cycle_to_bool" || kind === "tree_to_scalar_bool") return "bool";
+    if (kind === "tree_to_scalar_int" || kind === "tree_int_to_scalar") return "int";
+    if (kind === "tree_to_vector") return "[]int";
+    if (kind === "tree_to_matrix") return "[][]int";
+    if (kind === "flatten_tree") return "";
+    if (kind.includes("tree")) return "*TreeNode";
+    return kind === "random_to_random" ? "*Node" : "*ListNode";
+  }
+  if (language === "c") {
+    if (kind === "list_to_bool" || kind === "cycle_to_bool" || kind === "tree_to_scalar_bool" || kind === "tree_to_scalar_int" || kind === "tree_int_to_scalar") return "int";
+    if (kind === "tree_to_vector") return "int*";
+    if (kind === "tree_to_matrix") return "int**";
+    if (kind === "flatten_tree") return "void";
+    if (kind.includes("tree")) return "struct TreeNode*";
+    return kind === "random_to_random" ? "struct Node*" : "struct ListNode*";
+  }
+  if (kind === "list_to_bool" || kind === "cycle_to_bool" || kind === "tree_to_scalar_bool") return "boolean";
+  if (kind === "tree_to_scalar_int" || kind === "tree_int_to_scalar") return "number";
+  if (kind === "tree_to_vector") return "number[]";
+  if (kind === "tree_to_matrix") return "number[][]";
+  if (kind === "flatten_tree") return "void";
+  if (kind.includes("tree")) return "TreeNode | null";
+  return kind === "random_to_random" ? "Node | null" : "ListNode | null";
+}
+
+function nodeDefault(profile: NodeStarterProfile, language: string): string {
+  const returnType = nodeReturn(profile, language);
+  if (returnType === "void" || returnType === "") return "";
+  if (["bool", "boolean"].includes(returnType)) return language === "python" ? "False" : "false";
+  if (returnType === "int" || returnType === "number") return "0";
+  if (returnType.includes("[]") || returnType.startsWith("vector")) {
+    if (language === "java") return returnType === "int[][]" ? "new int[0][0]" : "new int[0]";
+    if (language === "golang") return `${returnType}{}`;
+    if (language === "c") return "NULL";
+    return "[]";
+  }
+  if (language === "golang") return "nil";
+  if (language === "c") return "NULL";
+  if (language === "cpp") return "nullptr";
+  if (language === "java") return "null";
+  return "null";
+}
+
+function buildNodeStarter(slug: string | undefined, language: string, locale: Locale): string | null {
+  const profile = slug ? NODE_STARTER_PROFILES[slug] : undefined;
+  if (!profile) return null;
+  const todoLine = localeText(locale, { zh: TODO_ZH, en: "TODO" });
+  const params = nodeParams(profile, language);
+  const returnType = nodeReturn(profile, language);
+  const defaultValue = nodeDefault(profile, language);
+  const returnLine = defaultValue ? `return ${defaultValue};` : "";
+  if (language === "python") {
+    const className = profile.kind.startsWith("tree") || profile.kind === "flatten_tree" || profile.kind === "array_to_tree" || profile.kind === "two_arrays_to_tree" ? "TreeNode" : profile.kind === "random_to_random" ? "Node" : "ListNode";
+    const classComment = className === "TreeNode"
+      ? "# Definition for a binary tree node.\n# class TreeNode:\n#     def __init__(self, val=0, left=None, right=None):\n#         self.val = val\n#         self.left = left\n#         self.right = right"
+      : className === "Node"
+        ? "# Definition for a Node.\n# class Node:\n#     def __init__(self, x: int, next: 'Node' = None, random: 'Node' = None):\n#         self.val = int(x)\n#         self.next = next\n#         self.random = random"
+        : "# Definition for singly-linked list.\n# class ListNode:\n#     def __init__(self, val=0, next=None):\n#         self.val = val\n#         self.next = next";
+    const pyReturn = returnType === "boolean" ? "bool" : returnType === "number" ? "int" : returnType.replace(" | null", " | None").replace("number[]", "list[int]").replace("number[][]", "list[list[int]]");
+    const annotation = pyReturn === "void" ? "" : ` -> ${pyReturn}`;
+    return `${classComment}\n\ndef ${profile.functionName}(${params})${annotation}:\n    # ${todoLine}${returnLine ? `\n    ${returnLine.replace("null", "None").replace("false", "False")}` : ""}\n`;
+  }
+  if (language === "cpp") {
+    return `// Definition for singly-linked list / binary tree nodes is provided by the judge.\nclass Solution {\npublic:\n    ${returnType} ${profile.functionName}(${params}) {\n        // ${todoLine}${returnLine ? `\n        ${returnLine}` : ""}\n    }\n};\n`;
+  }
+  if (language === "java") {
+    return `// Definition for ListNode / TreeNode / Node is provided by the judge.\nclass Solution {\n    public ${returnType} ${profile.functionName}(${params}) {\n        // ${todoLine}${returnLine ? `\n        ${returnLine}` : ""}\n    }\n}\n`;
+  }
+  if (language === "javascript") {
+    return `function ${profile.functionName}(${params}) {\n  // ${todoLine}${returnLine ? `\n  ${returnLine}` : ""}\n}\n`;
+  }
+  if (language === "typescript") {
+    const tsParams = params.split(", ").filter(Boolean).map((param) => `${param}: any`).join(", ");
+    return `function ${profile.functionName}(${tsParams}): ${returnType} {\n  // ${todoLine}${returnLine ? `\n  ${returnLine}` : ""}\n}\n`;
+  }
+  if (language === "golang") {
+    const returnSuffix = returnType ? ` ${returnType}` : "";
+    return `package main\n\nfunc ${profile.functionName}(${params})${returnSuffix} {\n\t// ${todoLine}${returnLine ? `\n\t${returnLine}` : ""}\n}\n`;
+  }
+  if (language === "c") {
+    return `${returnType} ${profile.functionName}(${params}) {\n    /* ${todoLine} */${returnLine ? `\n    ${returnLine}` : ""}\n}\n`;
+  }
+  return null;
+}
 
 type ParameterSpec = {
   name: string;
@@ -748,6 +977,8 @@ function sampleComment(problem: AnyProblem | null | undefined, language: string,
 export function buildStarter(problem: AnyProblem | null | undefined, language: string, mode: JudgeMode, locale: Locale = DEFAULT_LOCALE): string {
   const spec = getFunctionSpec(problem);
   if (mode === "function" && spec) {
+    const nodeStarter = buildNodeStarter(problem?.slug, language, locale);
+    if (nodeStarter) return localizeFunctionStarter(nodeStarter, locale);
     const fixedStarter = FUNCTION_STARTERS[problem?.slug ?? ""]?.[language];
     return localizeFunctionStarter(fixedStarter ?? buildDynamicFunctionStarter(spec, language, locale), locale);
   }

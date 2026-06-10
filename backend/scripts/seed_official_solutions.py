@@ -6,6 +6,8 @@ registry so seeded code can run inside the judge sandbox without importing this
 module.
 """
 
+# ruff: noqa: F821, N802, N803
+
 from __future__ import annotations
 
 import inspect
@@ -600,6 +602,183 @@ def merge_k_lists(lists: list[list[int]]) -> list[int]:
     return answer
 
 
+def addTwoNumbers(l1, l2):
+    dummy = ListNode()
+    tail = dummy
+    carry = 0
+    while l1 or l2 or carry:
+        total = carry
+        if l1:
+            total += l1.val
+            l1 = l1.next
+        if l2:
+            total += l2.val
+            l2 = l2.next
+        tail.next = ListNode(total % 10)
+        tail = tail.next
+        carry = total // 10
+    return dummy.next
+
+
+def getIntersectionNode(headA, headB):
+    left, right = headA, headB
+    while left is not right:
+        left = left.next if left else headB
+        right = right.next if right else headA
+    return left
+
+
+def reverseList(head):
+    prev = None
+    cur = head
+    while cur:
+        nxt = cur.next
+        cur.next = prev
+        prev = cur
+        cur = nxt
+    return prev
+
+
+def isPalindrome(head) -> bool:
+    values = []
+    while head:
+        values.append(head.val)
+        head = head.next
+    return values == values[::-1]
+
+
+def hasCycle(head) -> bool:
+    slow = fast = head
+    while fast and fast.next:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            return True
+    return False
+
+
+def detectCycle(head):
+    slow = fast = head
+    while fast and fast.next:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            entry = head
+            while entry is not slow:
+                entry = entry.next
+                slow = slow.next
+            return entry
+    return None
+
+
+def mergeTwoLists(list1, list2):
+    dummy = ListNode()
+    tail = dummy
+    while list1 and list2:
+        if list1.val <= list2.val:
+            tail.next = list1
+            list1 = list1.next
+        else:
+            tail.next = list2
+            list2 = list2.next
+        tail = tail.next
+    tail.next = list1 or list2
+    return dummy.next
+
+
+def removeNthFromEnd(head, n: int):
+    dummy = ListNode(0, head)
+    fast = slow = dummy
+    for _ in range(n):
+        fast = fast.next
+    while fast and fast.next:
+        fast = fast.next
+        slow = slow.next
+    slow.next = slow.next.next if slow.next else None
+    return dummy.next
+
+
+def swapPairs(head):
+    dummy = ListNode(0, head)
+    prev = dummy
+    while prev.next and prev.next.next:
+        first = prev.next
+        second = first.next
+        first.next = second.next
+        second.next = first
+        prev.next = second
+        prev = first
+    return dummy.next
+
+
+def reverseKGroup(head, k: int):
+    dummy = ListNode(0, head)
+    group_prev = dummy
+    while True:
+        kth = group_prev
+        for _ in range(k):
+            kth = kth.next
+            if kth is None:
+                return dummy.next
+        group_next = kth.next
+        prev, cur = group_next, group_prev.next
+        while cur is not group_next:
+            nxt = cur.next
+            cur.next = prev
+            prev = cur
+            cur = nxt
+        tmp = group_prev.next
+        group_prev.next = kth
+        group_prev = tmp
+
+
+def copyRandomList(head):
+    if head is None:
+        return None
+    clones = {}
+    cur = head
+    while cur:
+        clones[cur] = Node(cur.val)
+        cur = cur.next
+    cur = head
+    while cur:
+        clones[cur].next = clones.get(cur.next)
+        clones[cur].random = clones.get(cur.random)
+        cur = cur.next
+    return clones[head]
+
+
+def sortList(head):
+    values = []
+    while head:
+        values.append(head.val)
+        head = head.next
+    dummy = ListNode()
+    tail = dummy
+    for value in sorted(values):
+        tail.next = ListNode(value)
+        tail = tail.next
+    return dummy.next
+
+
+def mergeKLists(lists):
+    heap = []
+    for index, node in enumerate(lists):
+        if node:
+            heappush(heap, (node.val, index, node))
+    dummy = ListNode()
+    tail = dummy
+    counter = len(lists)
+    while heap:
+        _, _, node = heappop(heap)
+        tail.next = node
+        tail = tail.next
+        if node.next:
+            counter += 1
+            heappush(heap, (node.next.val, counter, node.next))
+    return dummy.next
+
+
 def run_lru_cache(operations: list[str], args: list[list[int]]) -> list[int | None]:
     from collections import OrderedDict
 
@@ -842,6 +1021,196 @@ def max_path_sum(root: list[int | None]) -> int:
         return root[index] + max(left_gain, right_gain)
 
     gain(0)
+    return best
+
+
+def inorderTraversal(root) -> list[int]:
+    answer = []
+
+    def dfs(node):
+        if not node:
+            return
+        dfs(node.left)
+        answer.append(node.val)
+        dfs(node.right)
+
+    dfs(root)
+    return answer
+
+
+def maxDepth(root) -> int:
+    if not root:
+        return 0
+    return 1 + max(maxDepth(root.left), maxDepth(root.right))
+
+
+def invertTree(root):
+    if root:
+        root.left, root.right = invertTree(root.right), invertTree(root.left)
+    return root
+
+
+def isSymmetric(root) -> bool:
+    def mirror(left, right):
+        if not left or not right:
+            return left is right
+        return left.val == right.val and mirror(left.left, right.right) and mirror(left.right, right.left)
+
+    return True if not root else mirror(root.left, root.right)
+
+
+def diameterOfBinaryTree(root) -> int:
+    best = 0
+
+    def depth(node):
+        nonlocal best
+        if not node:
+            return 0
+        left = depth(node.left)
+        right = depth(node.right)
+        best = max(best, left + right)
+        return 1 + max(left, right)
+
+    depth(root)
+    return best
+
+
+def levelOrder(root) -> list[list[int]]:
+    if not root:
+        return []
+    answer = []
+    queue = deque([root])
+    while queue:
+        level = []
+        for _ in range(len(queue)):
+            node = queue.popleft()
+            level.append(node.val)
+            if node.left:
+                queue.append(node.left)
+            if node.right:
+                queue.append(node.right)
+        answer.append(level)
+    return answer
+
+
+def sortedArrayToBST(nums: list[int]):
+    def build(left, right):
+        if left > right:
+            return None
+        mid = (left + right) // 2
+        node = TreeNode(nums[mid])
+        node.left = build(left, mid - 1)
+        node.right = build(mid + 1, right)
+        return node
+
+    return build(0, len(nums) - 1)
+
+
+def isValidBST(root) -> bool:
+    def dfs(node, low, high):
+        if not node:
+            return True
+        if not low < node.val < high:
+            return False
+        return dfs(node.left, low, node.val) and dfs(node.right, node.val, high)
+
+    return dfs(root, -math.inf, math.inf)
+
+
+def kthSmallest(root, k: int) -> int:
+    stack = []
+    cur = root
+    while stack or cur:
+        while cur:
+            stack.append(cur)
+            cur = cur.left
+        cur = stack.pop()
+        k -= 1
+        if k == 0:
+            return cur.val
+        cur = cur.right
+    return 0
+
+
+def rightSideView(root) -> list[int]:
+    return [level[-1] for level in levelOrder(root)]
+
+
+def flatten(root) -> None:
+    prev = None
+
+    def visit(node):
+        nonlocal prev
+        if not node:
+            return
+        visit(node.right)
+        visit(node.left)
+        node.right = prev
+        node.left = None
+        prev = node
+
+    visit(root)
+
+
+def buildTree(preorder: list[int], inorder: list[int]):
+    positions = {value: index for index, value in enumerate(inorder)}
+
+    def build(pre_left, pre_right, in_left, in_right):
+        if pre_left > pre_right:
+            return None
+        value = preorder[pre_left]
+        split = positions[value]
+        left_size = split - in_left
+        node = TreeNode(value)
+        node.left = build(pre_left + 1, pre_left + left_size, in_left, split - 1)
+        node.right = build(pre_left + left_size + 1, pre_right, split + 1, in_right)
+        return node
+
+    return build(0, len(preorder) - 1, 0, len(inorder) - 1)
+
+
+def pathSum(root, targetSum: int) -> int:
+    counts = Counter({0: 1})
+    answer = 0
+
+    def dfs(node, total):
+        nonlocal answer
+        if not node:
+            return
+        total += node.val
+        answer += counts[total - targetSum]
+        counts[total] += 1
+        dfs(node.left, total)
+        dfs(node.right, total)
+        counts[total] -= 1
+
+    dfs(root, 0)
+    return answer
+
+
+def lowestCommonAncestor(root, p, q):
+    if root is None or root is p or root is q:
+        return root
+    left = lowestCommonAncestor(root.left, p, q)
+    right = lowestCommonAncestor(root.right, p, q)
+    if left and right:
+        return root
+    return left or right
+
+
+def maxPathSum(root) -> int:
+    best = -math.inf
+
+    def gain(node):
+        nonlocal best
+        if not node:
+            return 0
+        left = max(gain(node.left), 0)
+        right = max(gain(node.right), 0)
+        best = max(best, node.val + left + right)
+        return node.val + max(left, right)
+
+    gain(root)
     return best
 
 
@@ -1514,26 +1883,12 @@ def find_duplicate(nums: list[int]) -> int:
 
 
 _HELPERS_BY_SLUG: dict[str, list[object]] = {
-    "binary-tree-inorder-traversal": _tree_sources(),
-    "maximum-depth-of-binary-tree": _tree_sources(),
-    "invert-binary-tree": [_trim_tree, _tree_children_cached, _serialize_tree],
-    "symmetric-tree": _tree_sources(),
-    "diameter-of-binary-tree": _tree_sources(),
-    "binary-tree-level-order-traversal": _tree_sources(),
-    "convert-sorted-array-to-binary-search-tree": [_trim_tree],
-    "validate-binary-search-tree": _tree_sources(),
-    "kth-smallest-element-in-a-bst": _tree_sources() + [inorder_traversal],
-    "binary-tree-right-side-view": _tree_sources() + [level_order],
-    "flatten-binary-tree-to-linked-list": _tree_sources(),
-    "construct-binary-tree-from-preorder-and-inorder-traversal": [_trim_tree],
-    "path-sum-iii": _tree_sources(),
-    "lowest-common-ancestor-of-a-binary-tree": _tree_sources(),
-    "binary-tree-maximum-path-sum": _tree_sources(),
+    "binary-tree-right-side-view": [levelOrder],
 }
 
 _FUNCTIONS_BY_SLUG: dict[str, object] = {
     "two-sum": two_sum,
-    "add-two-numbers": add_two_numbers,
+    "add-two-numbers": addTwoNumbers,
     "longest-substring-without-repeating-characters": length_of_longest_substring,
     "valid-parentheses": is_valid_parentheses,
     "alien-dictionary": alienOrder,
@@ -1564,34 +1919,34 @@ _FUNCTIONS_BY_SLUG: dict[str, object] = {
     "spiral-matrix": spiral_order,
     "rotate-image": rotate_image,
     "search-a-2d-matrix-ii": search_matrix_ii,
-    "intersection-of-two-linked-lists": get_intersection_value,
-    "reverse-linked-list": reverse_list,
-    "palindrome-linked-list": is_palindrome_list,
-    "linked-list-cycle": has_cycle,
-    "linked-list-cycle-ii": detect_cycle_index,
-    "merge-two-sorted-lists": merge_two_lists,
-    "remove-nth-node-from-end-of-list": remove_nth_from_end,
-    "swap-nodes-in-pairs": swap_pairs,
-    "reverse-nodes-in-k-group": reverse_k_group,
-    "copy-list-with-random-pointer": copy_random_list,
-    "sort-list": sort_list,
-    "merge-k-sorted-lists": merge_k_lists,
+    "intersection-of-two-linked-lists": getIntersectionNode,
+    "reverse-linked-list": reverseList,
+    "palindrome-linked-list": isPalindrome,
+    "linked-list-cycle": hasCycle,
+    "linked-list-cycle-ii": detectCycle,
+    "merge-two-sorted-lists": mergeTwoLists,
+    "remove-nth-node-from-end-of-list": removeNthFromEnd,
+    "swap-nodes-in-pairs": swapPairs,
+    "reverse-nodes-in-k-group": reverseKGroup,
+    "copy-list-with-random-pointer": copyRandomList,
+    "sort-list": sortList,
+    "merge-k-sorted-lists": mergeKLists,
     "lru-cache": run_lru_cache,
-    "binary-tree-inorder-traversal": inorder_traversal,
-    "maximum-depth-of-binary-tree": max_depth,
-    "invert-binary-tree": invert_tree,
-    "symmetric-tree": is_symmetric,
-    "diameter-of-binary-tree": diameter_of_binary_tree,
-    "binary-tree-level-order-traversal": level_order,
-    "convert-sorted-array-to-binary-search-tree": sorted_array_to_bst,
-    "validate-binary-search-tree": is_valid_bst,
-    "kth-smallest-element-in-a-bst": kth_smallest,
-    "binary-tree-right-side-view": right_side_view,
-    "flatten-binary-tree-to-linked-list": flatten_tree,
-    "construct-binary-tree-from-preorder-and-inorder-traversal": build_tree,
-    "path-sum-iii": path_sum,
-    "lowest-common-ancestor-of-a-binary-tree": lowest_common_ancestor,
-    "binary-tree-maximum-path-sum": max_path_sum,
+    "binary-tree-inorder-traversal": inorderTraversal,
+    "maximum-depth-of-binary-tree": maxDepth,
+    "invert-binary-tree": invertTree,
+    "symmetric-tree": isSymmetric,
+    "diameter-of-binary-tree": diameterOfBinaryTree,
+    "binary-tree-level-order-traversal": levelOrder,
+    "convert-sorted-array-to-binary-search-tree": sortedArrayToBST,
+    "validate-binary-search-tree": isValidBST,
+    "kth-smallest-element-in-a-bst": kthSmallest,
+    "binary-tree-right-side-view": rightSideView,
+    "flatten-binary-tree-to-linked-list": flatten,
+    "construct-binary-tree-from-preorder-and-inorder-traversal": buildTree,
+    "path-sum-iii": pathSum,
+    "lowest-common-ancestor-of-a-binary-tree": lowestCommonAncestor,
+    "binary-tree-maximum-path-sum": maxPathSum,
     "number-of-islands": num_islands,
     "rotting-oranges": oranges_rotting,
     "course-schedule": can_finish,
