@@ -1,10 +1,19 @@
 # Codex Handoff
 
-Updated: 2026-06-10
+Updated: 2026-06-11
 
 ## Current Goal
 
 Upgrade the current FastAPI + PostgreSQL + Redis + Docker Worker + static frontend FastOJ prototype into an AI-explainable interview training OJ platform. The target includes AI explanation/review/hints, hidden-test isolation, Redis Streams worker flow, WebSocket-first judge status, Docker sandbox hardening, Vite + React + TypeScript frontend, tests, Docker verification, and README updates.
+
+## 2026-06-11 Library Default, Auth Refresh, And Dev Proxy
+
+- The problem library now defaults to list view. A localStorage marker `fastoj.libraryLayoutDefaultVersion=list-default-2026-06-11` migrates browsers that only inherited the previous card default; after that, user layout choices continue to persist normally.
+- Login now uses both `fastoj.jwt` for the access token and `fastoj.refresh` for the refresh token. The frontend request wrapper retries an authenticated request once after a 401 by calling `POST /api/v1/auth/refresh?refresh_token=...`, stores the returned access token, and clears both tokens when refresh fails.
+- Default token settings changed from 30-minute access / 7-day refresh to 12-hour access / 30-day refresh. `TokenResponse.expires_in` is now computed from `ACCESS_TOKEN_EXPIRE_MINUTES` instead of a hard-coded 1800 seconds.
+- Expired-session cleanup now clears both tokens from workbench submissions, discussions, account bootstrap, logout, and auth-required transitions. Legacy sessions that only have `fastoj.jwt` still work until the access token expires.
+- Tracked Vite config now proxies `/api` and `/ws` to the local FastAPI service, and the local ignored `frontend/vite.config.js` was patched the same way so the active Vite dev server can load problems. Current local frontend is expected at `http://localhost:5175/`, with API at `http://127.0.0.1:8010`.
+- Verification passed: `uv run ruff check .`; `uv run pytest` (249 passed, 2 existing FastAPI `regex` warnings); `cd frontend && npm run build` (existing Vite large chunk warnings); `cd frontend && npm test` (10 files / 47 tests); `cd frontend && npm run lint`.
 
 ## 2026-06-10 Hot100 Node Function Mode And Workbench Layout
 

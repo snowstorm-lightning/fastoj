@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 
@@ -6,6 +6,9 @@ import "./styles.css";
 import {
   api,
   ApiError,
+  authSessionMarker,
+  clearAuthTokens,
+  hasStoredAuth,
   isUnauthorized,
   makeJudgeSocket,
   streamAdminAgentRun,
@@ -78,6 +81,8 @@ const CONTENT_PERMISSIONS = {
   manageUsers: "user:manage",
   moderateDiscussion: "discussion:moderate",
 } as const;
+
+const LIBRARY_LAYOUT_DEFAULT_VERSION = "list-default-2026-06-11";
 
 function hasContentPermission(user: CurrentUser | null, permission: string): boolean {
   if (!user) return false;
@@ -295,9 +300,29 @@ const AGENT_LEFT_DRAWER_SNAP = 180;
 const AGENT_RIGHT_DRAWER_MIN = 360;
 const AGENT_RIGHT_DRAWER_MAX = 760;
 const AGENT_RIGHT_DRAWER_SNAP = 300;
-const EDITOR_MIN_HEIGHT = 220;
+const EDITOR_MIN_HEIGHT = 24;
 const EDITOR_MAX_HEIGHT = 720;
-const RUN_RESULT_MIN_HEIGHT = 150;
+const RUN_RESULT_MIN_HEIGHT = 72;
+
+function cssPixels(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function editorResizeBounds(panel: HTMLElement | null): { min: number; max: number } {
+  if (!panel) return { min: EDITOR_MIN_HEIGHT, max: EDITOR_MAX_HEIGHT };
+
+  const styles = window.getComputedStyle(panel);
+  const rowGap = cssPixels(styles.rowGap || styles.gap);
+  const verticalPadding = cssPixels(styles.paddingTop) + cssPixels(styles.paddingBottom);
+  const toolbarHeight = panel.querySelector<HTMLElement>(".editor-toolbar")?.offsetHeight ?? 0;
+  const frameHeight = panel.querySelector<HTMLElement>(".function-frame")?.offsetHeight ?? 0;
+  const resizerHeight = panel.querySelector<HTMLElement>(".editor-result-resizer")?.offsetHeight ?? 12;
+  const fixedRows = toolbarHeight + frameHeight + resizerHeight + verticalPadding + rowGap * 4;
+  const editableSpace = panel.clientHeight - fixedRows;
+  const max = Math.max(EDITOR_MIN_HEIGHT, Math.min(EDITOR_MAX_HEIGHT, editableSpace - RUN_RESULT_MIN_HEIGHT));
+  return { min: Math.min(EDITOR_MIN_HEIGHT, max), max };
+}
 
 function runCasesFromProblem(problem?: ProblemDetail): EditableRunCase[] {
   const samples = problem?.sample_testcases ?? [];
@@ -594,8 +619,10 @@ function LibraryPage({
   const [tags, setTags] = useState(selectedTag);
   const [page, setPage] = useState(1);
   const [layout, setLayout] = useState<LibraryLayout>(() => {
+    const defaultVersion = localStorage.getItem("fastoj.libraryLayoutDefaultVersion");
+    if (defaultVersion !== LIBRARY_LAYOUT_DEFAULT_VERSION) return "list";
     const saved = localStorage.getItem("fastoj.libraryLayout");
-    return saved === "list" || saved === "card" ? saved : "card";
+    return saved === "list" || saved === "card" ? saved : "list";
   });
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("fastoj.librarySidebarOpen") !== "false");
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -611,6 +638,7 @@ function LibraryPage({
 
   useEffect(() => {
     localStorage.setItem("fastoj.libraryLayout", layout);
+    localStorage.setItem("fastoj.libraryLayoutDefaultVersion", LIBRARY_LAYOUT_DEFAULT_VERSION);
   }, [layout]);
 
   useEffect(() => {
@@ -737,11 +765,11 @@ function LibraryPage({
         <div className="library-controls">
           <span className="muted">{text.layout}</span>
           <div className="segmented layout-toggle" role="group" aria-label={text.layoutOptions}>
-            <button className={layout === "card" ? "active" : ""} aria-pressed={layout === "card"} onClick={() => setLayout("card")}>
-              {text.cardLayout}
-            </button>
             <button className={layout === "list" ? "active" : ""} aria-pressed={layout === "list"} onClick={() => setLayout("list")}>
               {text.listLayout}
+            </button>
+            <button className={layout === "card" ? "active" : ""} aria-pressed={layout === "card"} onClick={() => setLayout("card")}>
+              {text.cardLayout}
             </button>
           </div>
         </div>
@@ -1448,7 +1476,7 @@ function Workspace({
   const displayProblem = localizedProblem(problem, locale);
   const modeInfo = getProblemMode(problem);
   const draftKey = `${language}.${judgeMode}`;
-  const aiProfiles = aiProfilesQuery.data ?? [];
+  const aiProfiles = useMemo(() => aiProfilesQuery.data ?? [], [aiProfilesQuery.data]);
   const aiPreferredProfile = preferredAIProfile(aiProfiles);
   const aiDisabledReason = !authenticated
     ? localeText(locale, { zh: "请先登录后使用 AI。", en: "Sign in to use AI." })
@@ -1470,14 +1498,28 @@ function Workspace({
   useEffect(() => { if (problemId) setRecentProblemId(problemId); }, [problemId, setRecentProblemId]);
   useEffect(() => { clearCopilotState(); }, [locale]);
   useEffect(() => {
-    if (!aiProfiles.length) return;
-    if (!aiProfiles.some((profile) => profile.available && profile.value === aiModel)) {
-      const next = preferredAIProfile(aiProfiles);
-      if (next) setAiModel(next);
-    }
-  }, [aiProfiles, aiModel]);
+    const panel = codingPanelRef.current;
+    if (!panel) return undefined;
 
-  function editorCodeFor(targetLanguage: string, targetMode: JudgeMode): string {
+    const syncEditorHeight = () => {
+      const bounds = editorResizeBounds(panel);
+      setEditorHeight((height) => {
+        const next = clamp(height, bounds.min, bounds.max);
+        return next === height ? height : next;
+      });
+    };
+
+    syncEditorHeight();
+    window.addEventListener("resize", syncEditorHeight);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncEditorHeight);
+    observer?.observe(panel);
+
+    return () => {
+      window.removeEventListener("resize", syncEditorHeight);
+      observer?.disconnect();
+    };
+  }, [problemId, problem?.function_signature, judgeMode, language, locale, headerCollapsed, leftOpen, rightOpen, leftWidth, rightWidth]);
+  const editorCodeFor = useCallback((targetLanguage: string, targetMode: JudgeMode): string => {
     if (!problemId || !problem) return "";
     const starter = buildStarter(problem, targetLanguage, targetMode, locale);
     const draft = getDraft(problemId, `${targetLanguage}.${targetMode}`);
@@ -1489,7 +1531,15 @@ function Workspace({
       if (stalePythonStarters.includes(draft.trim())) return starter;
     }
     return draft;
-  }
+  }, [getDraft, locale, problem, problemId]);
+
+  useEffect(() => {
+    if (!aiProfiles.length) return;
+    if (!aiProfiles.some((profile) => profile.available && profile.value === aiModel)) {
+      const next = preferredAIProfile(aiProfiles);
+      if (next) setAiModel(next);
+    }
+  }, [aiProfiles, aiModel]);
 
   function resetEditorTemplate() {
     const starter = buildStarter(problem, language, judgeMode, locale);
@@ -1519,19 +1569,19 @@ function Workspace({
     }
     setRunCases(runCasesFromProblem(problem));
     setActiveRunCase(0);
-  }, [problem?.id, problem?.sample_testcases]);
+  }, [problem]);
 
   useEffect(() => {
     if (!problemId || !problem) return;
     const nextMode = modeInfo.defaultMode;
     setJudgeMode(nextMode);
     setCode(editorCodeFor(language, nextMode));
-  }, [problemId, problem?.slug, locale]);
+  }, [editorCodeFor, language, locale, modeInfo.defaultMode, problem, problemId]);
 
   useEffect(() => {
     if (!problemId || !problem) return;
     setCode(editorCodeFor(language, judgeMode));
-  }, [language, judgeMode, locale]);
+  }, [editorCodeFor, judgeMode, language, locale, problem, problemId]);
 
   function updateCode(next: string) {
     setCode(next);
@@ -1594,16 +1644,14 @@ function Workspace({
   function startEditorResize(event: React.PointerEvent<HTMLDivElement>) {
     event.preventDefault();
     const startY = event.clientY;
-    const startHeight = editorHeight;
-    const panelHeight = codingPanelRef.current?.clientHeight ?? 0;
-    const dynamicMax = panelHeight
-      ? Math.max(EDITOR_MIN_HEIGHT, Math.min(EDITOR_MAX_HEIGHT, panelHeight - RUN_RESULT_MIN_HEIGHT - 170))
-      : EDITOR_MAX_HEIGHT;
+    const bounds = editorResizeBounds(codingPanelRef.current);
+    const startHeight = clamp(editorHeight, bounds.min, bounds.max);
+    if (startHeight !== editorHeight) setEditorHeight(startHeight);
     setResizing("editor");
     document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
     const onMove = (moveEvent: PointerEvent) => {
-      setEditorHeight(clamp(startHeight + moveEvent.clientY - startY, EDITOR_MIN_HEIGHT, dynamicMax));
+      setEditorHeight(clamp(startHeight + moveEvent.clientY - startY, bounds.min, bounds.max));
     };
     const onUp = () => {
       setResizing(null);
@@ -1637,7 +1685,7 @@ function Workspace({
 
   async function judge(runOnly: boolean) {
     if (!problemId) return;
-    if (!authenticated || !localStorage.getItem("fastoj.jwt")) {
+    if (!authenticated || !hasStoredAuth()) {
       onRequireAuth();
       return;
     }
@@ -1666,7 +1714,7 @@ function Workspace({
     } catch (error) {
       if (activeProblemIdRef.current !== requestProblemId || judgeRequestRef.current !== requestId) return;
       if (isUnauthorized(error)) {
-        localStorage.removeItem("fastoj.jwt");
+        clearAuthTokens();
         setEvents([{ type: "error", status: "finished", result: "se", message: text.authExpired }]);
         window.alert(text.authExpired);
         onRequireAuth();
@@ -1864,6 +1912,8 @@ function Workspace({
   } as React.CSSProperties;
   const codingStyle = {
     "--editor-height": `${editorHeight}px`,
+    "--editor-min-height": `${EDITOR_MIN_HEIGHT}px`,
+    "--run-result-min-height": `${RUN_RESULT_MIN_HEIGHT}px`,
   } as React.CSSProperties;
 
   return (
@@ -2096,7 +2146,7 @@ function DetailDock({
       <div className="detail-panel">
         {detailTab === "cases" ? <SampleCases problem={problem} locale={locale} /> : null}
         {detailTab === "hint" ? <ProblemGuidance problem={problem} locale={locale} /> : null}
-        {detailTab === "solution" ? <OfficialSolution problem={problem} solution={solution} locale={locale} /> : null}
+        {detailTab === "solution" ? <OfficialSolution solution={solution} locale={locale} /> : null}
         {detailTab === "judge" ? (
           <Suspense fallback={<LazySurface className="timeline" label={localeText(locale, { zh: "正在加载判题记录...", en: "Loading judge timeline..." })} />}>
             <JudgeTimeline events={events} submission={submission} theme={theme} />
@@ -2236,7 +2286,7 @@ function SampleCases({ problem, locale }: { problem?: ProblemDetail; locale: Loc
   );
 }
 
-function OfficialSolution({ problem, solution, locale }: { problem?: ProblemDetail; solution?: { explanation: string; code: string; language: string }; locale: Locale }) {
+function OfficialSolution({ solution, locale }: { solution?: { explanation: string; code: string; language: string }; locale: Locale }) {
   if (!solution) {
     return (
       <article className="prose-panel solution-fallback">
@@ -2445,7 +2495,7 @@ function DiscussionPanel({
       }
     } catch (postError) {
       if (isUnauthorized(postError)) {
-        localStorage.removeItem("fastoj.jwt");
+        clearAuthTokens();
         onRequireAuth();
       }
       setError(postError instanceof Error ? postError.message : localeText(locale, { zh: "发布失败。", en: "Post failed." }));
@@ -2472,7 +2522,7 @@ function DiscussionPanel({
       })));
     } catch (likeError) {
       if (isUnauthorized(likeError)) {
-        localStorage.removeItem("fastoj.jwt");
+        clearAuthTokens();
         onRequireAuth();
       }
       setError(likeError instanceof Error ? likeError.message : localeText(locale, { zh: "操作失败。", en: "Action failed." }));
@@ -2493,7 +2543,7 @@ function DiscussionPanel({
       })));
     } catch (deleteError) {
       if (isUnauthorized(deleteError)) {
-        localStorage.removeItem("fastoj.jwt");
+        clearAuthTokens();
         onRequireAuth();
       }
       setError(deleteError instanceof Error ? deleteError.message : localeText(locale, { zh: "删除失败。", en: "Delete failed." }));
@@ -3588,7 +3638,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const [agentMessage, setAgentMessage] = useState("");
   const [selectedAgentSessionId, setSelectedAgentSessionId] = useState<string | null>(null);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
-  const [localAgentDrafts, setLocalAgentDrafts] = useState<ProblemDraft[]>([]);
   const [selectedAgentRunId, setSelectedAgentRunId] = useState<string | null>(null);
   const [expandedAgentStepIds, setExpandedAgentStepIds] = useState<Set<string>>(() => new Set());
   const [agentFollowUpDraft, setAgentFollowUpDraft] = useState("");
@@ -3607,6 +3656,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
   const initializedProblemEditIdRef = useRef<string | null>(null);
   const agentStreamAbortRef = useRef<AbortController | null>(null);
   const activeAgentStreamRunRef = useRef<string | null>(null);
+  const agentLineIdRef = useRef(0);
   const overviewQuery = useQuery({
     queryKey: [
       "admin-overview",
@@ -3670,7 +3720,7 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     enabled: adminAccess,
     staleTime: 60_000,
   });
-  const adminAiProfiles = adminAiProfilesQuery.data ?? [];
+  const adminAiProfiles = useMemo(() => adminAiProfilesQuery.data ?? [], [adminAiProfilesQuery.data]);
   const agentPreferredProfile = preferredAdminAIProfile(adminAiProfiles);
   const selectedAgentProfile = adminAiProfiles.find((profile) => profile.value === agentModel);
   const agentModelAvailable = Boolean(selectedAgentProfile?.available);
@@ -3758,6 +3808,9 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       setDraftEdit(null);
       setDraftSaveMessage("");
     }
+  // `connectAgentRunStream` is intentionally omitted because it is a render-local
+  // function; reconnecting is driven by the selected/running session data above.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     agentSessionsQuery.data,
     selectedAgentSessionId,
@@ -4058,7 +4111,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
           if (sessionId) void selectedAgentSessionQuery.refetch();
           if (run.draft_id) {
             void api.adminProblemDraft(run.draft_id).then((draft) => {
-              rememberAgentDraft(draft);
               setSelectedDraft(draft);
               setDraftEdit(draftEditFromDraft(draft));
             }).catch(() => undefined);
@@ -4076,7 +4128,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
       const draftId = typeof streamEvent.data.draft_id === "string" ? streamEvent.data.draft_id : "";
       if (draftId) {
         void api.adminProblemDraft(draftId).then((draft) => {
-          rememberAgentDraft(draft);
           setSelectedDraft(draft);
           setDraftEdit(draftEditFromDraft(draft));
           setDraftSaveMessage("");
@@ -4112,11 +4163,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     });
   }
 
-  function rememberAgentDraft(draft: ProblemDraft | null | undefined) {
-    if (!draft?.id) return;
-    setLocalAgentDrafts((value) => mergeDrafts(value, draft));
-  }
-
   async function previewAgentDraft(draft: ProblemDraft) {
     let nextDraft = draft;
     if (!draft.description && draft.id) {
@@ -4126,7 +4172,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
         nextDraft = draft;
       }
     }
-    rememberAgentDraft(nextDraft);
     setSelectedDraft(nextDraft);
     setDraftEdit(draftEditFromDraft(nextDraft));
     setDraftSaveMessage("");
@@ -4134,7 +4179,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
 
   function applyDraftRuns(draft: ProblemDraft, fallbackRun?: AgentRun) {
     const runs = draft.runs?.length ? draft.runs : fallbackRun ? [fallbackRun] : [];
-    rememberAgentDraft(draft);
     setAgentRuns(runs);
     setSelectedAgentRunId(fallbackRun?.id ?? latestAgentRunId(runs));
     setExpandedAgentStepIds(new Set());
@@ -4239,7 +4283,8 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     }
     setAgentFollowUpBusy("chat");
     setAgentMessage("");
-    const lineId = `${Date.now()}`;
+    agentLineIdRef.current += 1;
+    const lineId = `${agentLineIdRef.current}`;
     setAgentFollowUpLines((value) => [...value, { id: `${lineId}.user`, role: "user", message, runId: selectedRun.id }]);
     try {
       const result = await api.adminAgentFollowUp(selectedRun.id, {
@@ -4270,7 +4315,8 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     const retryMessage = agentFollowUpDraft.trim();
     setAgentFollowUpBusy("retry");
     setAgentMessage("");
-    const lineId = `${Date.now()}`;
+    agentLineIdRef.current += 1;
+    const lineId = `${agentLineIdRef.current}`;
     if (retryMessage) {
       setAgentFollowUpLines((value) => [...value, { id: `${lineId}.retry-user`, role: "user", message: retryMessage, runId: selectedRun.id }]);
     }
@@ -4358,14 +4404,6 @@ function AdminPage({ locale, currentUser, onBack }: { locale: Locale; currentUse
     } catch (error) {
       await handleAgentFailure(error, localeText(locale, { zh: "导入失败。", en: "Import failed." }));
     }
-  }
-
-  async function loadDraft(draftId: string) {
-    const draft = await api.adminProblemDraft(draftId);
-    setSelectedDraft(draft);
-    setDraftEdit(draftEditFromDraft(draft));
-    applyDraftRuns(draft);
-    setDraftSaveMessage("");
   }
 
   async function approveSelectedDraft() {
@@ -5617,7 +5655,7 @@ function App() {
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale());
   const [theme, setTheme] = useState<AppTheme>(() => (localStorage.getItem("fastoj.theme") === "light" ? "light" : "dark"));
-  const [authenticated, setAuthenticated] = useState(Boolean(localStorage.getItem("fastoj.jwt")));
+  const [authenticated, setAuthenticated] = useState(hasStoredAuth());
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [graphTag, setGraphTag] = useState("");
   const problemsQuery = useQuery({ queryKey: ["problems", "graph"], queryFn: () => api.problems({}) });
@@ -5640,8 +5678,8 @@ function App() {
       return;
     }
     let cancelled = false;
-    const authToken = localStorage.getItem("fastoj.jwt");
-    if (!authToken) {
+    const sessionMarker = authSessionMarker();
+    if (!sessionMarker) {
       setCurrentUser(null);
       setAuthenticated(false);
       setView("auth");
@@ -5649,15 +5687,16 @@ function App() {
     }
     api.me()
       .then((user) => {
-        if (!cancelled && localStorage.getItem("fastoj.jwt") === authToken) {
+        if (!cancelled && authSessionMarker() === sessionMarker) {
           setCurrentUser(user);
           const userLocale = normalizeLocale(user.locale);
           if (userLocale) setLocale(userLocale);
         }
       })
       .catch((error) => {
-        if (!cancelled && isUnauthorized(error) && localStorage.getItem("fastoj.jwt") === authToken) {
-          localStorage.removeItem("fastoj.jwt");
+        const currentSessionMarker = authSessionMarker();
+        if (!cancelled && isUnauthorized(error) && (!currentSessionMarker || currentSessionMarker === sessionMarker)) {
+          clearAuthTokens();
           setAuthenticated(false);
           setView("auth");
         }
@@ -5691,7 +5730,7 @@ function App() {
   }
 
   function logout() {
-    localStorage.removeItem("fastoj.jwt");
+    clearAuthTokens();
     setAuthenticated(false);
     setCurrentUser(null);
     setView("library");
@@ -5721,7 +5760,7 @@ function App() {
           onBackToLibrary={() => setView("library")}
           authenticated={authenticated}
           onRequireAuth={() => {
-            localStorage.removeItem("fastoj.jwt");
+            clearAuthTokens();
             setAuthenticated(false);
             openAuth("login");
           }}

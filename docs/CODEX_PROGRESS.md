@@ -1,5 +1,14 @@
 # Codex Progress
 
+## 2026-06-11 Library Default, Auth Refresh, And Dev Proxy
+
+- [x] Changed the problem library default layout to list view and added a one-time localStorage default-version marker so browsers that had only inherited the old card default migrate to list.
+- [x] Added frontend refresh-token persistence with `fastoj.refresh` while keeping the existing `fastoj.jwt` access-token key; authenticated API requests now refresh once and retry after a 401.
+- [x] Extended default login duration to a 12-hour access token and a 30-day refresh token, and changed auth responses to derive `expires_in` from `ACCESS_TOKEN_EXPIRE_MINUTES`.
+- [x] Kept expired-session cleanup consistent across workbench submissions, discussions, account bootstrap, logout, and auth-required transitions by clearing both stored tokens.
+- [x] Added tracked Vite proxy config for `/api` and `/ws`, and patched the local ignored Vite JS config so the current dev server can load problems through `http://localhost:5175/`.
+- [x] Verification passed: `uv run ruff check .`; `uv run pytest` (249 passed, 2 existing FastAPI `regex` warnings); `cd frontend && npm run build` (existing Vite large chunk warnings); `cd frontend && npm test` (10 files / 47 tests); `cd frontend && npm run lint`.
+
 ## 2026-06-10 Hot100 Node Function Mode And Workbench Layout
 
 - [x] Migrated seeded Hot 100 linked-list and binary-tree function signatures to LeetCode-style node entrypoints such as `reverseList(head)`, `maxDepth(root)`, and `lowestCommonAncestor(root, p, q)`.

@@ -20,6 +20,8 @@ import type { JudgeMode } from "./problemModes";
 import type { Locale } from "./i18n";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+const ACCESS_TOKEN_KEY = "fastoj.jwt";
+const REFRESH_TOKEN_KEY = "fastoj.refresh";
 
 export type ProblemFilters = {
   keyword?: string;
@@ -415,20 +417,75 @@ function apiErrorRunId(data: unknown): string | null {
     : null;
 }
 
-function token() {
-  return localStorage.getItem("fastoj.jwt") ?? "";
+function accessToken() {
+  return localStorage.getItem(ACCESS_TOKEN_KEY) ?? "";
 }
 
-async function request<T>(path: string, options: RequestInit, parse: (data: unknown) => T): Promise<T> {
+function refreshToken() {
+  return localStorage.getItem(REFRESH_TOKEN_KEY) ?? "";
+}
+
+export function hasStoredAuth() {
+  return Boolean(accessToken() || refreshToken());
+}
+
+export function authSessionMarker() {
+  return refreshToken() || accessToken();
+}
+
+export function clearAuthTokens() {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+function storeAuthTokens(data: any) {
+  if (typeof data.access_token === "string" && data.access_token) {
+    localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
+  }
+  if (typeof data.refresh_token === "string" && data.refresh_token) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+  }
+}
+
+let refreshRequest: Promise<boolean> | null = null;
+
+async function refreshAccessToken() {
+  if (refreshRequest) return refreshRequest;
+  const currentRefreshToken = refreshToken();
+  if (!currentRefreshToken) return false;
+
+  refreshRequest = (async () => {
+    const params = new URLSearchParams({ refresh_token: currentRefreshToken });
+    const response = await fetch(`${API_BASE}/api/v1/auth/refresh?${params}`, { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      clearAuthTokens();
+      return false;
+    }
+    storeAuthTokens(data);
+    return true;
+  })().finally(() => {
+    refreshRequest = null;
+  });
+
+  return refreshRequest;
+}
+
+async function request<T>(path: string, options: RequestInit, parse: (data: unknown) => T, allowRefresh = true): Promise<T> {
+  const currentAccessToken = accessToken();
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(token() ? { Authorization: `Bearer ${token()}` } : {}),
+      ...(currentAccessToken ? { Authorization: `Bearer ${currentAccessToken}` } : {}),
       ...options.headers,
     },
   });
   const data = await response.json().catch(() => ({}));
+  if (response.status === 401 && allowRefresh && refreshToken()) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return request(path, options, parse, false);
+  }
   if (!response.ok) {
     throw new ApiError(formatApiErrorResponse(data, `HTTP ${response.status}`), response.status, apiErrorRunId(data));
   }
@@ -451,7 +508,7 @@ export const api = {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(formatApiErrorResponse(data, "Login failed"));
-    localStorage.setItem("fastoj.jwt", data.access_token);
+    storeAuthTokens(data);
     return data;
   },
   async me(): Promise<CurrentUser> {
@@ -757,7 +814,8 @@ export async function streamAdminAgentRun(
   options: { signal?: AbortSignal; lastEventId?: string | null } = {},
 ): Promise<void> {
   const headers: Record<string, string> = {};
-  if (token()) headers.Authorization = `Bearer ${token()}`;
+  const currentAccessToken = accessToken();
+  if (currentAccessToken) headers.Authorization = `Bearer ${currentAccessToken}`;
   if (options.lastEventId) headers["Last-Event-ID"] = options.lastEventId;
   const response = await fetch(`${API_BASE}/api/v1/admin/agent/runs/${runId}/events`, {
     method: "GET",
@@ -816,7 +874,7 @@ function parseSseEvent(rawEvent: string): AdminAgentStreamEvent | null {
 }
 
 export function makeJudgeSocket(submissionId: string): WebSocket | null {
-  const jwt = token();
+  const jwt = accessToken();
   if (!jwt) return null;
   const base = API_BASE || window.location.origin;
   const url = new URL(base);

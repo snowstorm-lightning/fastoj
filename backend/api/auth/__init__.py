@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
+from backend.core.config import settings
 from backend.core.database import get_db
 from backend.core.locales import DEFAULT_LOCALE, normalize_locale, validate_locale
 from backend.core.security import (
@@ -75,6 +76,10 @@ def _token_version(user: User) -> int:
 
 def _token_payload(user: User) -> dict:
     return {"sub": str(user.id), "username": user.username, "token_version": _token_version(user)}
+
+
+def _access_token_expires_in() -> int:
+    return settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
 
 def _ensure_current_token_version(payload: dict, user: User) -> None:
@@ -151,7 +156,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=1800,
+        expires_in=_access_token_expires_in(),
     )
 
 
@@ -180,7 +185,7 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=1800,
+        expires_in=_access_token_expires_in(),
     )
 
 

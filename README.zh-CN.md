@@ -548,6 +548,9 @@ FastOJ 已包含 GitHub Actions：
   理员管理。
 - 当前忘记密码流程为管理员协助重置：用户联系管理员设置临时密码；密码变更会提升
   用户 token 版本，旧 access/refresh token 会被拒绝。
+- 登录会话由短期 access JWT 和较长期 refresh JWT 组成。默认 access token
+  有效期为 12 小时，refresh token 有效期为 30 天；前端会同时保存两者，并在
+  已认证请求返回 401 时自动刷新一次 access token。
 - 生产判题只使用 Docker 沙箱；`FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true`
   只允许本地开发使用。
 - 生产提交必须走 Redis Streams Worker。inline judge fallback 只允许

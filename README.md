@@ -580,6 +580,10 @@ Full deployment steps are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - Password recovery is admin-assisted for now: users who forget passwords contact
   an administrator, who can set a temporary password. Password changes increment
   the user's token version so existing access and refresh tokens are rejected.
+- Login sessions use a short-lived access JWT and a longer refresh JWT. By
+  default, access tokens last 12 hours and refresh tokens last 30 days; the
+  frontend stores both and refreshes the access token once when an authenticated
+  request returns 401.
 - Production judging uses Docker sandbox execution. The
   `FASTOJ_ALLOW_UNSAFE_LOCAL_EXECUTION=true` escape hatch is for local
   development only.

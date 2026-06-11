@@ -2561,11 +2561,16 @@ p {
 .coding-panel {
   padding: 12px;
   display: grid;
-  grid-template-rows: auto auto minmax(220px, var(--editor-height, 390px)) 12px minmax(150px, 1fr);
+  grid-template-rows:
+    auto
+    auto
+    minmax(var(--editor-min-height, 24px), var(--editor-height, 390px))
+    12px
+    minmax(var(--run-result-min-height, 72px), 1fr);
   gap: 10px;
   min-height: 0;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 
 .editor-result-resizer {
@@ -2942,7 +2947,8 @@ p {
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 0 12px 12px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .run-input-column,
@@ -3828,7 +3834,12 @@ p {
   }
 
   .coding-panel {
-    grid-template-rows: auto auto minmax(260px, var(--editor-height, 390px)) 12px minmax(320px, auto);
+    grid-template-rows:
+      auto
+      auto
+      minmax(var(--editor-min-height, 24px), var(--editor-height, 390px))
+      12px
+      minmax(var(--run-result-min-height, 72px), 1fr);
   }
 
   .run-result-body {

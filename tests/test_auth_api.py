@@ -17,6 +17,7 @@ from backend.api.auth import (
 from backend.api.auth import (
     refresh_token as refresh_access_token,
 )
+from backend.core.config import settings
 from backend.core.security import (
     create_access_token,
     create_refresh_token,
@@ -95,6 +96,8 @@ def test_login_success():
     token = login(SimpleNamespace(username="alice", password="password123"), FakeAuthDb([user]))
     assert token.token_type == "bearer"
     assert token.access_token
+    assert token.refresh_token
+    assert token.expires_in == settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     assert decode_token(token.access_token)["token_version"] == 0
 
 
@@ -177,6 +180,25 @@ def test_refresh_rejects_stale_token_version():
         refresh_access_token(token, FakeAuthDb([user]))
 
     assert exc.value.status_code == 401
+
+
+def test_refresh_success_returns_configured_expiry():
+    user = User(
+        id=uuid4(),
+        username="alice",
+        email="alice@example.com",
+        password_hash=get_password_hash("password123"),
+        is_active=True,
+        token_version=2,
+    )
+    token = create_refresh_token(data={"sub": str(user.id), "username": user.username, "token_version": 2})
+
+    response = refresh_access_token(token, FakeAuthDb([user]))
+
+    assert response.token_type == "bearer"
+    assert response.refresh_token == token
+    assert response.expires_in == settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    assert decode_token(response.access_token)["token_version"] == 2
 
 
 def test_update_me_password_bumps_token_version_and_invalidates_old_token():

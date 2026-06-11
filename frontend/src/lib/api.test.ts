@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { api, ApiError, formatApiErrorDetail, formatApiErrorResponse } from "./api";
+import { api, ApiError, clearAuthTokens, formatApiErrorDetail, formatApiErrorResponse } from "./api";
 
 describe("API error formatting", () => {
   test("summarizes FastAPI validation details without stringifying raw objects", () => {
@@ -41,7 +41,7 @@ describe("API error formatting", () => {
   });
 
   test("preserves structured agent run ids on API errors", async () => {
-    localStorage.removeItem("fastoj.jwt");
+    clearAuthTokens();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       detail: {
         message: "AI provider returned JSON without a problem draft object. Top-level keys: none",
@@ -72,8 +72,66 @@ describe("API error formatting", () => {
     fetchMock.mockRestore();
   });
 
+  test("stores refresh tokens and retries authenticated requests after refresh", async () => {
+    clearAuthTokens();
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: "access-old",
+        refresh_token: "refresh-1",
+        token_type: "bearer",
+        expires_in: 43200,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "Token expired" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: "access-new",
+        refresh_token: "refresh-1",
+        token_type: "bearer",
+        expires_in: 43200,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: "user-1",
+        username: "alice",
+        email: "alice@example.com",
+        locale: "zh",
+        role: "user",
+        content_admin_permissions: [],
+        is_active: true,
+        created_at: "2026-06-11T00:00:00Z",
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+
+    await api.login("alice", "password123");
+    const user = await api.me();
+
+    expect(user.username).toBe("alice");
+    expect(localStorage.getItem("fastoj.jwt")).toBe("access-new");
+    expect(localStorage.getItem("fastoj.refresh")).toBe("refresh-1");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/auth/me");
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      headers: expect.objectContaining({ Authorization: "Bearer access-old" }),
+    });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/v1/auth/refresh?refresh_token=refresh-1");
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/v1/auth/me");
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      headers: expect.objectContaining({ Authorization: "Bearer access-new" }),
+    });
+
+    fetchMock.mockRestore();
+  });
+
   test("posts problem imports to the admin import endpoint", async () => {
-    localStorage.removeItem("fastoj.jwt");
+    clearAuthTokens();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       draft_id: "draft-1",
       run_id: "run-1",
@@ -114,7 +172,7 @@ describe("API error formatting", () => {
   });
 
   test("loads admin agent runs with filters", async () => {
-    localStorage.removeItem("fastoj.jwt");
+    clearAuthTokens();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([{
       id: "run-1",
       run_type: "problem_import",
@@ -155,7 +213,7 @@ describe("API error formatting", () => {
   });
 
   test("posts admin agent follow-ups and retries through run-scoped endpoints", async () => {
-    localStorage.removeItem("fastoj.jwt");
+    clearAuthTokens();
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({
         run_id: "run-2",
@@ -206,7 +264,7 @@ describe("API error formatting", () => {
   });
 
   test("loads admin agent sessions with filters and details", async () => {
-    localStorage.removeItem("fastoj.jwt");
+    clearAuthTokens();
     const session = {
       id: "session-1",
       title: "Two sum variants",
@@ -252,7 +310,7 @@ describe("API error formatting", () => {
   });
 
   test("supports nested discussion replies, likes, unlikes, and deletion endpoints", async () => {
-    localStorage.removeItem("fastoj.jwt");
+    clearAuthTokens();
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({
         success: true,
@@ -316,7 +374,7 @@ describe("API error formatting", () => {
   });
 
   test("returns Python fallback solutions with their real language", async () => {
-    localStorage.removeItem("fastoj.jwt");
+    clearAuthTokens();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       success: true,
       data: [{
@@ -342,7 +400,7 @@ describe("API error formatting", () => {
   });
 
   test("requests problem detail with locale and preserves sample explanations", async () => {
-    localStorage.removeItem("fastoj.jwt");
+    clearAuthTokens();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       success: true,
       data: {

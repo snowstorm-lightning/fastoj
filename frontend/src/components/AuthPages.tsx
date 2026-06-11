@@ -193,7 +193,7 @@ export function SettingsPage({
     setUsername(currentUser?.username ?? "");
     setEmail(currentUser?.email ?? "");
     setAvatarUrl(currentUser?.avatar_url ?? "");
-  }, [currentUser?.id, currentUser?.username, currentUser?.email, currentUser?.avatar_url]);
+  }, [currentUser]);
 
   async function save() {
     localStorage.setItem("fastoj.compactMode", String(compact));

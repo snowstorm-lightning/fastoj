@@ -31,8 +31,8 @@ class TestSettings:
         assert settings.SECRET_KEY is not None
         assert len(settings.SECRET_KEY) > 0
         assert settings.ALGORITHM == "HS256"
-        assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 30
-        assert settings.REFRESH_TOKEN_EXPIRE_DAYS == 7
+        assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 720
+        assert settings.REFRESH_TOKEN_EXPIRE_DAYS == 30
 
     def test_default_limits(self):
         """Test default judge limits."""
