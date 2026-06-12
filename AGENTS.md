@@ -1,6 +1,6 @@
 # fastoj Development Guidelines
 
-Last updated: 2026-06-07
+Last updated: 2026-06-13
 
 ## Current Stack
 
@@ -43,11 +43,14 @@ cd frontend && npm run build
 cd frontend && npm test
 ```
 
-When Docker behavior changes, also run:
+When Docker behavior changes and a rebuild is genuinely required, also run:
 
 ```bash
 docker compose up --build -d api
 ```
+
+Do not use `--build` for routine startup, UI review, or "start the service" requests.
+Reuse the existing environment first.
 
 For ad hoc Python commands, one-off scripts, and local verification snippets, default to:
 
@@ -56,6 +59,14 @@ uv run python
 ```
 
 Do not probe or rely on bare `python` first unless the task is specifically about interpreter discovery or PATH debugging.
+
+## Local Runtime Rules
+
+- PostgreSQL, Redis, and related backing services are Docker-managed in this project. Do not start or depend on host PostgreSQL/Redis for local FastOJ runtime unless the user explicitly asks for that mode.
+- Before starting services, inspect current state with `docker compose ps` and listening ports. Reuse running containers and existing images.
+- For routine startup or UI inspection, use non-building commands such as `docker compose up -d postgres redis api` and `cd frontend && npm run dev`; do not run `docker compose up --build`, `docker compose build`, `npm install`, or other dependency/image download commands unless required by a missing environment or explicitly approved by the user.
+- If an image/container/dependency is missing and a build or download would be needed, stop and explain the situation before starting the expensive command.
+- Vite is already configured to proxy `/api` and `/ws` to the Compose API on `127.0.0.1:8010`; prefer that path for browser review.
 
 ## Product Constraints
 

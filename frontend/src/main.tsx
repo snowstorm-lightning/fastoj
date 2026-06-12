@@ -300,9 +300,11 @@ const AGENT_LEFT_DRAWER_SNAP = 180;
 const AGENT_RIGHT_DRAWER_MIN = 360;
 const AGENT_RIGHT_DRAWER_MAX = 760;
 const AGENT_RIGHT_DRAWER_SNAP = 300;
-const EDITOR_MIN_HEIGHT = 24;
-const EDITOR_MAX_HEIGHT = 720;
-const RUN_RESULT_MIN_HEIGHT = 72;
+const EDITOR_MIN_HEIGHT = 0;
+const EDITOR_FALLBACK_MAX_HEIGHT = 720;
+const RUN_RESULT_MIN_HEIGHT = 0;
+
+type EditorStackEdge = "normal" | "editor-at-top" | "result-at-bottom";
 
 function cssPixels(value: string): number {
   const parsed = Number.parseFloat(value);
@@ -310,18 +312,32 @@ function cssPixels(value: string): number {
 }
 
 function editorResizeBounds(panel: HTMLElement | null): { min: number; max: number } {
-  if (!panel) return { min: EDITOR_MIN_HEIGHT, max: EDITOR_MAX_HEIGHT };
+  if (!panel) return { min: EDITOR_MIN_HEIGHT, max: EDITOR_FALLBACK_MAX_HEIGHT };
 
   const styles = window.getComputedStyle(panel);
   const rowGap = cssPixels(styles.rowGap || styles.gap);
   const verticalPadding = cssPixels(styles.paddingTop) + cssPixels(styles.paddingBottom);
   const toolbarHeight = panel.querySelector<HTMLElement>(".editor-toolbar")?.offsetHeight ?? 0;
-  const frameHeight = panel.querySelector<HTMLElement>(".function-frame")?.offsetHeight ?? 0;
   const resizerHeight = panel.querySelector<HTMLElement>(".editor-result-resizer")?.offsetHeight ?? 12;
-  const fixedRows = toolbarHeight + frameHeight + resizerHeight + verticalPadding + rowGap * 4;
+  const fixedRows = toolbarHeight + resizerHeight + verticalPadding + rowGap * 3;
   const editableSpace = panel.clientHeight - fixedRows;
-  const max = Math.max(EDITOR_MIN_HEIGHT, Math.min(EDITOR_MAX_HEIGHT, editableSpace - RUN_RESULT_MIN_HEIGHT));
+  const max = Math.max(EDITOR_MIN_HEIGHT, editableSpace - RUN_RESULT_MIN_HEIGHT);
   return { min: Math.min(EDITOR_MIN_HEIGHT, max), max };
+}
+
+function savedEditorStackEdge(): EditorStackEdge {
+  const saved = localStorage.getItem("fastoj.editorStackState");
+  if (saved === "editor-at-top" || saved === "result-at-bottom" || saved === "normal") return saved;
+  if (saved === "editor-collapsed") return "editor-at-top";
+  if (saved === "result-collapsed") return "result-at-bottom";
+  const savedHeight = Number(localStorage.getItem("fastoj.editorHeight") ?? DEFAULT_EDITOR_HEIGHT);
+  return Number.isFinite(savedHeight) && savedHeight <= EDITOR_MIN_HEIGHT ? "editor-at-top" : "normal";
+}
+
+function edgeForEditorHeight(height: number, bounds: { min: number; max: number }): EditorStackEdge {
+  if (height <= bounds.min) return "editor-at-top";
+  if (height >= bounds.max) return "result-at-bottom";
+  return "normal";
 }
 
 function runCasesFromProblem(problem?: ProblemDetail): EditableRunCase[] {
@@ -1441,7 +1457,8 @@ function Workspace({
   const [headerCollapsed, setHeaderCollapsed] = useState(() => localStorage.getItem("fastoj.workbenchHeaderCollapsed") === "true");
   const [leftWidth, setLeftWidth] = useState(() => Number(localStorage.getItem("fastoj.leftWidth") ?? DEFAULT_LEFT_PANEL_WIDTH));
   const [rightWidth, setRightWidth] = useState(() => Number(localStorage.getItem("fastoj.rightWidth") ?? DEFAULT_RIGHT_PANEL_WIDTH));
-  const [editorHeight, setEditorHeight] = useState(() => clamp(Number(localStorage.getItem("fastoj.editorHeight") ?? DEFAULT_EDITOR_HEIGHT), EDITOR_MIN_HEIGHT, EDITOR_MAX_HEIGHT));
+  const [editorHeight, setEditorHeight] = useState(() => clamp(Number(localStorage.getItem("fastoj.editorHeight") ?? DEFAULT_EDITOR_HEIGHT), EDITOR_MIN_HEIGHT, EDITOR_FALLBACK_MAX_HEIGHT));
+  const [editorStackEdge, setEditorStackEdge] = useState<EditorStackEdge>(savedEditorStackEdge);
   const [completionEnabled, setCompletionEnabled] = useState(() => localStorage.getItem("fastoj.completionEnabled") !== "false");
   const [resizing, setResizing] = useState<"left" | "right" | "editor" | null>(null);
   const [submission, setSubmission] = useState<SubmissionDetail | null>(null);
@@ -1493,6 +1510,7 @@ function Workspace({
   useEffect(() => { localStorage.setItem("fastoj.leftWidth", String(leftWidth)); }, [leftWidth]);
   useEffect(() => { localStorage.setItem("fastoj.rightWidth", String(rightWidth)); }, [rightWidth]);
   useEffect(() => { localStorage.setItem("fastoj.editorHeight", String(editorHeight)); }, [editorHeight]);
+  useEffect(() => { localStorage.setItem("fastoj.editorStackState", editorStackEdge); }, [editorStackEdge]);
   useEffect(() => { localStorage.setItem("fastoj.completionEnabled", String(completionEnabled)); }, [completionEnabled]);
   useEffect(() => { localStorage.setItem("fastoj.aiModel", aiModel); }, [aiModel]);
   useEffect(() => { if (problemId) setRecentProblemId(problemId); }, [problemId, setRecentProblemId]);
@@ -1504,7 +1522,11 @@ function Workspace({
     const syncEditorHeight = () => {
       const bounds = editorResizeBounds(panel);
       setEditorHeight((height) => {
-        const next = clamp(height, bounds.min, bounds.max);
+        const next = editorStackEdge === "editor-at-top"
+          ? bounds.min
+          : editorStackEdge === "result-at-bottom"
+            ? bounds.max
+            : clamp(height, bounds.min, bounds.max);
         return next === height ? height : next;
       });
     };
@@ -1518,7 +1540,7 @@ function Workspace({
       window.removeEventListener("resize", syncEditorHeight);
       observer?.disconnect();
     };
-  }, [problemId, problem?.function_signature, judgeMode, language, locale, headerCollapsed, leftOpen, rightOpen, leftWidth, rightWidth]);
+  }, [problemId, problem?.function_signature, judgeMode, language, locale, headerCollapsed, leftOpen, rightOpen, leftWidth, rightWidth, editorStackEdge]);
   const editorCodeFor = useCallback((targetLanguage: string, targetMode: JudgeMode): string => {
     if (!problemId || !problem) return "";
     const starter = buildStarter(problem, targetLanguage, targetMode, locale);
@@ -1645,13 +1667,20 @@ function Workspace({
     event.preventDefault();
     const startY = event.clientY;
     const bounds = editorResizeBounds(codingPanelRef.current);
-    const startHeight = clamp(editorHeight, bounds.min, bounds.max);
+    const currentHeight = editorStackEdge === "editor-at-top"
+      ? bounds.min
+      : editorStackEdge === "result-at-bottom"
+        ? bounds.max
+        : editorHeight;
+    const startHeight = clamp(currentHeight, bounds.min, bounds.max);
     if (startHeight !== editorHeight) setEditorHeight(startHeight);
     setResizing("editor");
     document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
     const onMove = (moveEvent: PointerEvent) => {
-      setEditorHeight(clamp(startHeight + moveEvent.clientY - startY, bounds.min, bounds.max));
+      const nextHeight = clamp(startHeight + moveEvent.clientY - startY, bounds.min, bounds.max);
+      setEditorHeight(nextHeight);
+      setEditorStackEdge(edgeForEditorHeight(nextHeight, bounds));
     };
     const onUp = () => {
       setResizing(null);
@@ -1915,6 +1944,8 @@ function Workspace({
     "--editor-min-height": `${EDITOR_MIN_HEIGHT}px`,
     "--run-result-min-height": `${RUN_RESULT_MIN_HEIGHT}px`,
   } as React.CSSProperties;
+  const editorAtTop = editorStackEdge === "editor-at-top";
+  const resultAtBottom = editorStackEdge === "result-at-bottom";
 
   return (
     <main className={`workbench-page ${headerCollapsed ? "header-collapsed" : ""} ${leftOpen ? "" : "left-collapsed"} ${rightOpen ? "" : "right-collapsed"} ${resizing ? "is-resizing" : ""}`} style={gridStyle}>
@@ -1990,7 +2021,7 @@ function Workspace({
           />
         </div>
 
-        <section className="coding-panel feature-frame code-frame" style={codingStyle} ref={codingPanelRef}>
+        <section className={`coding-panel feature-frame code-frame ${editorStackEdge}`} style={codingStyle} ref={codingPanelRef}>
           <div className="editor-toolbar">
             <button
               className={`mode-toggle ${judgeMode === "function" ? "active function-mode" : "active acm-mode"}`}
@@ -2032,10 +2063,12 @@ function Workspace({
             <button className="icon-button run-action tip" data-tip={text.runTitle} onClick={() => judge(true)}><IconGlyph>▶</IconGlyph></button>
             <button className="icon-button primary submit-action tip" data-tip={text.submitTitle} onClick={() => judge(false)}><IconGlyph>↑</IconGlyph></button>
           </div>
-          <FunctionFrame problem={problem} mode={judgeMode} language={language} locale={locale} />
-          <Suspense fallback={<LazySurface className="code-editor" label={localeText(locale, { zh: "正在加载编辑器...", en: "Loading editor..." })} />}>
-            <CodeEditor language={language} value={code} onChange={updateCode} theme={theme} completionEnabled={completionEnabled} />
-          </Suspense>
+          <div className="editor-stack-area" aria-hidden={editorAtTop}>
+            <FunctionFrame problem={problem} mode={judgeMode} language={language} locale={locale} />
+            <Suspense fallback={<LazySurface className="code-editor" label={localeText(locale, { zh: "正在加载编辑器...", en: "Loading editor..." })} />}>
+              <CodeEditor language={language} value={code} onChange={updateCode} theme={theme} completionEnabled={completionEnabled} />
+            </Suspense>
+          </div>
           <div
             className="editor-result-resizer"
             role="separator"
@@ -2044,22 +2077,24 @@ function Workspace({
             title={localeText(locale, { zh: "拖动调整代码编辑器高度", en: "Drag to resize editor height" })}
             onPointerDown={startEditorResize}
           />
-          <Suspense fallback={<LazySurface className="run-result-panel" label={localeText(locale, { zh: "正在加载运行结果...", en: "Loading run results..." })} />}>
-            <RunResultPanel
-              locale={locale}
-              cases={runCases}
-              activeIndex={activeRunCase}
-              submission={submission}
-              snapshot={runSnapshot}
-              canRun={Boolean(problem)}
-              onActiveIndex={setActiveRunCase}
-              onChangeInput={updateRunCase}
-              onAddCase={addRunCase}
-              onRemoveCase={removeRunCase}
-              onResetCases={resetRunCases}
-              onRun={() => judge(true)}
-            />
-          </Suspense>
+          <div className="run-result-area" aria-hidden={resultAtBottom}>
+            <Suspense fallback={<LazySurface className="run-result-panel" label={localeText(locale, { zh: "正在加载运行结果...", en: "Loading run results..." })} />}>
+              <RunResultPanel
+                locale={locale}
+                cases={runCases}
+                activeIndex={activeRunCase}
+                submission={submission}
+                snapshot={runSnapshot}
+                canRun={Boolean(problem)}
+                onActiveIndex={setActiveRunCase}
+                onChangeInput={updateRunCase}
+                onAddCase={addRunCase}
+                onRemoveCase={removeRunCase}
+                onResetCases={resetRunCases}
+                onRun={() => judge(true)}
+              />
+            </Suspense>
+          </div>
         </section>
 
         <div className="panel-edge right-edge">

@@ -2340,7 +2340,7 @@ p {
 }
 
 .workbench-page.header-collapsed {
-  padding-top: 4px;
+  padding-top: 0;
 }
 
 .workbench-header {
@@ -2354,13 +2354,19 @@ p {
   background: #15171b;
   margin-bottom: 12px;
   box-shadow: var(--shadow-card);
-  transition: padding 160ms ease, margin 160ms ease, border-radius 160ms ease;
+  transition: padding 160ms ease, margin 160ms ease, border-radius 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .workbench-header.collapsed {
-  padding: 4px 8px;
-  margin-bottom: 4px;
-  border-radius: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 38px;
+  gap: 8px;
+  padding: 2px 4px;
+  margin-bottom: 2px;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .workbench-header h1 {
@@ -2373,10 +2379,17 @@ p {
 
 .workbench-header.collapsed h1 {
   font-size: 16px;
+  line-height: 1.2;
 }
 
 .workbench-title-block {
   min-width: 0;
+}
+
+.workbench-header.collapsed .workbench-title-block {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
 }
 
 .workbench-header-actions {
@@ -2385,6 +2398,22 @@ p {
   justify-content: end;
   gap: 8px;
   min-width: 0;
+}
+
+.workbench-header.collapsed .workbench-header-actions {
+  gap: 6px;
+}
+
+.workbench-header.collapsed .icon-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.workbench-header.collapsed .status-badge {
+  min-width: 76px;
+  padding: 3px 8px;
 }
 
 .workbench-header-toggle {
@@ -2563,14 +2592,68 @@ p {
   display: grid;
   grid-template-rows:
     auto
-    auto
-    minmax(var(--editor-min-height, 24px), var(--editor-height, 390px))
+    minmax(var(--editor-min-height, 0px), var(--editor-height, 390px))
     12px
-    minmax(var(--run-result-min-height, 72px), 1fr);
+    minmax(var(--run-result-min-height, 0px), 1fr);
   gap: 10px;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: hidden;
+  transition: grid-template-rows 140ms ease-out;
+}
+
+.workbench-page.is-resizing .coding-panel {
+  transition: none;
+}
+
+.coding-panel.editor-at-top {
+  grid-template-rows:
+    auto
+    0px
+    12px
+    minmax(var(--run-result-min-height, 0px), 1fr);
+}
+
+.coding-panel.result-at-bottom {
+  grid-template-rows:
+    auto
+    minmax(var(--editor-min-height, 0px), 1fr)
+    12px
+    0px;
+}
+
+.editor-stack-area {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+.run-result-area {
+  min-height: 0;
+  display: grid;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+.coding-panel.editor-at-top .editor-stack-area,
+.coding-panel.result-at-bottom .run-result-area {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.editor-stack-area > .code-editor,
+.editor-stack-area > .lazy-surface.code-editor,
+.run-result-area > .run-result-panel,
+.run-result-area > .lazy-surface.run-result-panel {
+  min-height: 0;
 }
 
 .editor-result-resizer {
@@ -2850,7 +2933,8 @@ p {
 
 .run-result-panel {
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid #2f343b;
   border-radius: 8px;
   background: #101214;
@@ -2883,6 +2967,8 @@ p {
 .run-case-tabs {
   padding: 8px 12px;
   overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
 }
 
 .run-case-tab {
@@ -2947,8 +3033,7 @@ p {
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 0 12px 12px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .run-input-column,
@@ -3836,10 +3921,9 @@ p {
   .coding-panel {
     grid-template-rows:
       auto
-      auto
-      minmax(var(--editor-min-height, 24px), var(--editor-height, 390px))
+      minmax(var(--editor-min-height, 0px), var(--editor-height, 390px))
       12px
-      minmax(var(--run-result-min-height, 72px), 1fr);
+      minmax(var(--run-result-min-height, 0px), 1fr);
   }
 
   .run-result-body {
@@ -4979,6 +5063,12 @@ p {
   background: linear-gradient(180deg, #182231 0%, #121a25 100%);
   border-color: #3a4961;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+[data-theme="dark"] .workbench-header.collapsed {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 [data-theme="dark"] .problem-card,
