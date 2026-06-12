@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-在线体验：[fastoj.snowstormlightning.top](http://fastoj.snowstormlightning.top)
+在线体验：[fastoj.snowstormlightning.top](https://fastoj.snowstormlightning.top)
 
 FastOJ 是一个面向面试训练的全栈 AI 辅助在线评测平台。它把类 LeetCode 的学习
 体验和更接近生产系统的后端组合在一起：FastAPI、PostgreSQL、Redis Streams、
